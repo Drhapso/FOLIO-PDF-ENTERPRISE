@@ -1,0 +1,14 @@
+{
+  "max_file_mb": 1024,
+  "max_upload_mb": 1024,
+  "max_output_mb": 2048,
+  "max_active_upload_mb": 1026,
+  "max_queued_upload_mb": 2048,
+  "max_parallel_jobs": 5,
+  "max_heavy_jobs": 2,
+  "max_queued_jobs": 12,
+  "queue_wait_seconds": 45,
+  "heavy_upload_mb": 10,
+  "recommended_upload_mb": 3,
+  "editor_live_preview": true
+}

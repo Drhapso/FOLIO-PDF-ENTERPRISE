@@ -6,11 +6,13 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import secrets
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -20,11 +22,31 @@ from werkzeug.exceptions import HTTPException
 from isolation import InstanceLock, ProcessTree, worker_command
 from pdf_engine import BULK_OPERATIONS, OPERATIONS, ProcessingError, capabilities, file_limit
 from settings import ROOT, load_settings
+from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
+from recovery_events import install_recovery, report_failure, request_recovery
 
-CLIENT_BUILD = "2026-10-20-editor-lan-1"
+CLIENT_BUILD = "2026-10-20-queue-lan-1"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
+
+
+def remove_job_folder(folder: Path) -> None:
+    delays = (0.1, 0.2, 0.4, 0.8, 1.6)
+    for attempt in range(len(delays) + 1):
+        try:
+            shutil.rmtree(folder)
+            return
+        except FileNotFoundError:
+            if not folder.exists():
+                return
+            raise
+        except OSError as error:
+            if getattr(error, "winerror", None) not in (32, 33, 145) or attempt == len(delays):
+                raise
+            LOG.warning("Limpieza temporal en espera: intento=%s winerror=%s",
+                        attempt + 1, error.winerror)
+            time.sleep(delays[attempt])
 
 
 class SpoolRequest(Request):
@@ -58,6 +80,7 @@ class TransientFile:
             self.path.unlink(missing_ok=True)
         except OSError:
             LOG.critical("No se pudo eliminar un resultado entregado; se borrara al reiniciar.")
+            request_recovery("outgoing_cleanup_failed")
 
 
 def purge_folder(folder: Path):
@@ -70,7 +93,10 @@ def purge_folder(folder: Path):
 
 def create_app(root: Path = ROOT) -> Flask:
     config = load_settings(root)
+    if "FOLIO_TEST_LIVE_PREVIEW" in os.environ:
+        config["editor_live_preview"] = os.environ["FOLIO_TEST_LIVE_PREVIEW"] == "1"
     app = Flask(__name__, template_folder=str(ROOT / "templates"), static_folder=str(ROOT / "static"))
+    install_recovery(app)
     runtime = root / "runtime"
     runtime.mkdir(exist_ok=True)
     spool = runtime / "spool"
@@ -98,6 +124,8 @@ def create_app(root: Path = ROOT) -> Flask:
         raise RuntimeError("No se pudieron eliminar temporales anteriores. Arranque cancelado.") from None
     gate = threading.BoundedSemaphore(config["max_parallel_jobs"])
     app.extensions["job_gate"] = gate
+    queue = WorkloadQueue(config, gate)
+    app.extensions["workload_queue"] = queue
     app.extensions["pdf_settings"] = config
     app.extensions["spool_dir"] = spool
 
@@ -156,7 +184,28 @@ def create_app(root: Path = ROOT) -> Flask:
                        max_files=config["max_files"], max_pages=config["max_pages"],
                        timeout_seconds=config["timeout_seconds"], build=CLIENT_BUILD,
                        performance=config["performance"],
+                       queue={"max_waiting": config["max_queued_jobs"],
+                              "max_wait_seconds": config["queue_wait_seconds"],
+                              "max_heavy_jobs": config["max_heavy_jobs"],
+                              "heavy_upload_mb": config["heavy_upload_mb"],
+                              "recommended_upload_mb": config["recommended_upload_mb"],
+                              "max_active_upload_mb": config["max_active_upload_mb"],
+                              "max_queued_upload_mb": config["max_queued_upload_mb"],
+                              "heavy_operations": sorted(HEAVY_OPERATIONS)},
                        secure_transport=config["secure_transport"])
+
+    @app.get("/api/queue/<token>")
+    def queue_status(token: str):
+        status = queue.status(token)
+        if status is None:
+            return jsonify(error="Solicitud no registrada o ya finalizada."), 404
+        return jsonify(status)
+
+    @app.post("/api/queue/<token>/cancel")
+    def queue_cancel(token: str):
+        if not queue.cancel(token):
+            return jsonify(error="La solicitud ya inicio o finalizo; no se puede cancelar en cola."), 409
+        return jsonify(state="cancelled")
 
     @app.get("/desktop/download")
     def desktop_download():
@@ -167,10 +216,19 @@ def create_app(root: Path = ROOT) -> Flask:
     def handle(operation: str):
         if operation not in OPERATIONS:
             return jsonify(error="Herramienta desconocida."), 404
-        if not gate.acquire(blocking=False):
-            response = jsonify(error="Todos los motores estan ocupados. Intente nuevamente en unos segundos.")
-            response.headers["Retry-After"] = "5"
-            return response, 429
+        if not request.content_length or request.content_length > app.config["MAX_CONTENT_LENGTH"]:
+            return jsonify(error="Carga vacia o superior al limite de entrada."), 413
+        token = request.headers.get("X-PDF-Job", secrets.token_hex(16))
+        if not re.fullmatch(r"[a-f0-9]{32}", token):
+            return jsonify(error="Identificador de solicitud no valido."), 400
+        try:
+            ticket = queue.enter(token, operation, request.content_length)
+        except AdmissionError as error:
+            LOG.warning("Admision de trabajo: HTTP %s", error.status)
+            response = jsonify(error=str(error))
+            if error.status in (429, 503):
+                response.headers["Retry-After"] = "5"
+            return response, error.status
         folder = None
         data = None
         delivery = None
@@ -260,6 +318,7 @@ def create_app(root: Path = ROOT) -> Flask:
         except subprocess.TimeoutExpired:
             failure = ("El trabajo excedio el tiempo limite. Use menos paginas.", 408)
         except (OSError, RuntimeError, KeyError, json.JSONDecodeError) as error:
+            report_failure(error)
             LOG.error("Fallo de infraestructura: %s", type(error).__name__)
             failure = ("No se pudo completar el trabajo. Consulte al administrador.", 500)
         finally:
@@ -267,12 +326,18 @@ def create_app(root: Path = ROOT) -> Flask:
                 for upload in uploads:
                     upload.close()
                 if folder is not None:
-                    shutil.rmtree(folder)
-            except OSError:
-                LOG.critical("No se pudo limpiar un espacio temporal; procesamiento bloqueado hasta reiniciar.")
+                    remove_job_folder(folder)
+            except OSError as error:
+                LOG.critical(
+                    "No se pudo limpiar un espacio temporal; procesamiento bloqueado hasta reiniciar. "
+                    "operation=%s exception=%s errno=%s winerror=%s previous_status=%s",
+                    operation, type(error).__name__, error.errno, getattr(error, "winerror", None),
+                    failure[1] if failure else None,
+                )
                 app.extensions["cleanup_failed"] = True
                 failure = ("Fallo de eliminacion temporal. El administrador debe revisar el servidor.", 503)
-            gate.release()
+                queue.close()
+            queue.leave(ticket)
         if failure and delivery is not None:
             delivery.unlink(missing_ok=True)
         if failure:
@@ -336,9 +401,11 @@ def main():
     tempfile.tempdir = str(application.extensions["spool_dir"])
     print(f"PDF LAN | {config['host']}:{config['port']} | build {CLIENT_BUILD}", flush=True)
     serve(application, host=config["host"], port=config["port"],
-          threads=config["max_parallel_jobs"] * 2 + 4,
+          threads=config["max_parallel_jobs"] + config["max_queued_jobs"] + 4,
           max_request_body_size=(config["max_upload_mb"] + 1) * 1024 * 1024,
-          channel_timeout=config["timeout_seconds"] + 60, clear_untrusted_proxy_headers=True)
+          connection_limit=config["max_parallel_jobs"] + config["max_queued_jobs"] + 16,
+          channel_timeout=config["timeout_seconds"] + config["queue_wait_seconds"] + 60,
+          clear_untrusted_proxy_headers=True)
 
 
 if __name__ == "__main__":

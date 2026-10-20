@@ -131,9 +131,10 @@ class AcrobatEditorTests(unittest.TestCase):
             # Otros textos deben permanecer
             self.assertIn("Encabezado Original", text)
 
-    def editor_bundle(self, source, change):
+    def editor_bundle(self, source, change, *, experimental=False):
         response = self.call("edit_text_pro", {
             "changes": [change], "editor_preview": True, "page": 1,
+            "experimental_preview": experimental,
         }, uploads=[(source, "edicion.pdf")])
         body = response.get_data()
         self.assertEqual(response.mimetype, "multipart/form-data")
@@ -152,6 +153,62 @@ class AcrobatEditorTests(unittest.TestCase):
         self.assertEqual(list((self.root / "runtime").glob("job-*")), [])
         response.close()
         return document, preview
+
+    def test_live_preview_matches_saved_document_across_edits(self):
+        source, _ = self.background_sample()
+        with patch.dict(self.app.extensions["pdf_settings"], editor_live_preview=True):
+            target = next(block for block in self.call(
+                "inspect", uploads=[(source, "color.pdf")]
+            ).json["blocks"] if block["text"] == "TEXTO ORIGINAL")
+            change = {"action": "modify", "page": 1, "orig_bbox": target["bbox"],
+                      "bbox": target["bbox"], "text": "NUEVO", "size": target["size"],
+                      "font": target["font"], "bold": True}
+            document, preview = self.editor_bundle(source, change, experimental=True)
+            reopened = self.call("inspect", {
+                "page": 1, "dpi": 130, "text_background": True,
+            }, uploads=[(document, "resultado.pdf")]).json
+            self.assertEqual(preview, reopened)
+            target = next(block for block in preview["blocks"] if block["text"] == "NUEVO")
+            document, preview = self.editor_bundle(document, {
+                "action": "delete", "page": 1, "orig_bbox": target["bbox"],
+            }, experimental=True)
+            with pdf.open(stream=document, filetype="pdf") as edited:
+                self.assertNotIn("NUEVO", edited[0].get_text())
+                self.assertNotIn("ORIGINAL", edited[0].get_text())
+                self.assertIn("VECINO", edited[0].get_text())
+            reopened = self.call("inspect", {
+                "page": 1, "dpi": 130, "text_background": True,
+            }, uploads=[(document, "resultado.pdf")]).json
+            self.assertEqual(preview, reopened)
+
+    def test_live_preview_requires_server_flag_and_request_opt_in(self):
+        from acrobat_tools import process_acrobat
+        from pdf_engine import process
+
+        change = {"action": "add", "page": 1, "bbox": [50, 300, 400, 340],
+                  "text": "PRUEBA", "size": 12}
+        for enabled, requested in ((False, True), (True, False), (True, True)):
+            with self.subTest(enabled=enabled, requested=requested):
+                with tempfile.TemporaryDirectory() as directory:
+                    folder = Path(directory)
+                    source = folder / "entrada.pdf"
+                    source.write_bytes(self.sample)
+                    config = dict(self.app.extensions["pdf_settings"], editor_live_preview=enabled)
+                    with patch("pdf_engine.process", wraps=process) as inspect_call:
+                        process_acrobat("edit_text_pro", [source], {
+                            "changes": [change], "editor_preview": True,
+                            "experimental_preview": requested,
+                        }, folder, config)
+                    self.assertEqual(inspect_call.call_count, 0 if enabled and requested else 1)
+
+    def test_live_preview_streaming_cleanup(self):
+        with patch.dict(self.app.extensions["pdf_settings"], editor_live_preview=True):
+            with patch("server.INLINE_RESULT_BYTES", 1):
+                self.editor_bundle(self.sample, {
+                    "action": "add", "page": 1, "bbox": [50, 300, 400, 340],
+                    "text": "PRUEBA", "size": 12,
+                }, experimental=True)
+        self.assertEqual(list((self.root / "runtime" / "outgoing").iterdir()), [])
 
     def test_save_returns_updated_pdf_and_preview_for_next_edit(self):
         change = {"action": "add", "page": 1, "bbox": [50, 300, 400, 340],

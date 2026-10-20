@@ -135,6 +135,30 @@ def save(document: pdf.Document, path: Path, **kwargs):
     document.save(path, garbage=4, deflate=True, use_objstms=1, **kwargs)
 
 
+def inspect_document(doc: pdf.Document, options: dict, config: dict) -> dict:
+    from acrobat_tools import extract_page_blocks, text_background
+
+    number = integer(options.get("page", 1), 1, len(doc), "Pagina")
+    page = doc[number - 1]
+    dpi = integer(options.get("dpi", 90), 72, 300, "DPI") if "dpi" in options else 90
+    editable_background = options.get("text_background") is True
+    if editable_background and page.rotation:
+        raise ProcessingError("Quite la rotacion con Rotar PDF antes de editar el texto.")
+    pix = render(page, dpi, config)
+    payload = {
+        "pages": len(doc), "page": number, "width": page.rect.width,
+        "height": page.rect.height, "dpi": dpi,
+        "image": base64.b64encode(
+            pix.tobytes("png") if editable_background else pix.tobytes("jpeg", jpg_quality=80)
+        ).decode("ascii"),
+        "blocks": extract_page_blocks(page),
+    }
+    if editable_background:
+        payload["background"] = text_background(doc, number - 1, dpi, config)
+        payload["image_mime"] = "image/png"
+    return payload
+
+
 def validate_office(path: Path):
     with zipfile.ZipFile(path) as archive:
         entries = archive.infolist()
@@ -265,29 +289,8 @@ def process(operation: str, sources: list[Path], options: dict, folder: Path, co
             doc = documents[0]
             selected = pages_from(options.get("pages", ""), len(doc))
             if operation == "inspect":
-                number = integer(options.get("page", 1), 1, len(doc), "Pagina")
-                page = doc[number - 1]
-                dpi = integer(options.get("dpi", 90), 72, 300, "DPI") if "dpi" in options else 90
-                pix = render(page, dpi, config)
                 output = folder / "vista.json"
-                from acrobat_tools import extract_page_blocks
-                blocks = extract_page_blocks(page)
-                editable_background = options.get("text_background") is True
-                payload = {
-                    "pages": len(doc), "page": number, "width": page.rect.width,
-                    "height": page.rect.height, "dpi": dpi,
-                    "image": base64.b64encode(
-                        pix.tobytes("png") if editable_background else pix.tobytes("jpeg", jpg_quality=80)
-                    ).decode("ascii"),
-                    "blocks": blocks,
-                }
-                if editable_background:
-                    if page.rotation:
-                        raise ProcessingError("Quite la rotacion con Rotar PDF antes de editar el texto.")
-                    from acrobat_tools import text_background
-                    payload["background"] = text_background(doc, number - 1, dpi, config)
-                    payload["image_mime"] = "image/png"
-                output.write_text(json.dumps(payload), encoding="utf-8")
+                output.write_text(json.dumps(inspect_document(doc, options, config)), encoding="utf-8")
             elif operation == "merge":
                 with pdf.open() as combined:
                     for document in documents:

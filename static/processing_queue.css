@@ -1,0 +1,18 @@
+.processing-notice {
+  position: fixed;
+  inset: auto 1.25rem 1.25rem auto;
+  width: min(29rem, calc(100vw - 2.5rem));
+  padding: 1.1rem 1.25rem;
+  background: var(--paper, #fff);
+  color: var(--ink, #222);
+  border: 2px solid var(--accent, #7060c0);
+  border-radius: 1rem;
+  box-shadow: 0 .5rem 2rem #0003;
+  z-index: 10000;
+  text-align: left;
+}
+.processing-notice strong { display: block; font-size: 1.05rem; }
+.processing-notice p { margin: .65rem 0; }
+.processing-notice small { display: block; line-height: 1.5; }
+.processing-notice button { margin-top: .75rem; }
+.processing-notice [hidden] { display: none; }

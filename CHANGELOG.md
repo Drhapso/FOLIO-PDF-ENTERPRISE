@@ -1,5 +1,39 @@
 # Cambios
 
+## 2026-10-20 - Cola LAN, edicion multiple y rendimiento
+
+- Publicado build `2026-10-20-queue-lan-1`. Respaldada version anterior,
+  reiniciada exclusivamente la tarea Folio-PDF-LAN, verificados acceso directo
+  y proxy, limites efectivos de 1024 MiB y edicion sintetica por LAN:
+  HTTP 200, resultado/preview validados y limpieza confirmada.
+- Validacion previa final: 31 pruebas enfocadas aprobadas. La prueba de
+  admision de 1 GiB usa contabilidad de tamaños, no transfiere un archivo de
+  1 GiB ni certifica su tiempo de procesamiento.
+
+- Espacio de Edicion multiple con 24 acciones y reutilizacion del PDF.
+- Corregida compatibilidad de paneles y recursos versionados para evitar
+  controles inactivos; retorno del editor conserva el modo multiple.
+- Guardado de texto devuelve PDF y vista en una respuesta multipart, sin
+  segunda subida; imports Office diferidos y extraccion sin imagenes embebidas.
+- Vista posterior al guardado reutiliza el documento abierto solo en edicion
+  multiple cuando `editor_live_preview` esta habilitado.
+- Cola acotada con FIFO entre trabajos admisibles, cinco motores como techo,
+  dos pesados, doce en espera, espera de 45 s y motor de 120 s.
+- Presupuestos agregados de entrada activa (1026 MiB) y en cola (2048 MiB);
+  conservados 1 GiB conjunto por envio, 1 GiB por archivo y 2 GiB de salida.
+- Avisos emergentes de carga, cola, procesamiento y entrega en herramientas
+  generales y editor; cancelacion durante espera y errores explicitos.
+- Recomendacion inicial hasta 3 MB conjuntos; desde 10 MB o por tipo de
+  operacion se limita como pesado. No confundir recomendacion con cuota.
+- Editor bloquea cambios mientras guarda para evitar perder modificaciones.
+- Pruebas de FIFO, cancelacion, saturacion, presupuestos, cierre por fallo de
+  limpieza y liberacion de admision. Validacion LAN con 12 clientes, 72 envios,
+  todos completados; documentos sinteticos de 1, 50 y 200 paginas.
+- Perfil reducido de prueba no desplegado. Sin certificacion de OCR/Office
+  bajo carga ni de archivos de 1 GiB; no se promete un optimo universal.
+- Proyecto activo en FOLIO PDF ENTERPRISE; despliegue y tarea Folio-PDF-LAN
+  mantienen el puerto 8090 y no modifican los demas servicios.
+
 ## 2026-10-19 - README de presentacion para GitHub
 
 - Resumen de novedades, diferencias de despliegue y privacidad, uso local/LAN
@@ -214,3 +248,25 @@
 - Instalador de modelos OCR, lanzadores y firewall explicito por subred.
 - Documentacion de limites, licencias, HTTPS y borrado logico.
 - Build cliente/servidor: `2026-10-16-pdf-lan-1`.
+
+## Recuperacion de servicios - 2026-10-20
+
+- Senales internas de errores de memoria y E/S y de fallos de limpieza temporal.
+- Supervisor comun para Folio, HelpDesk y Falcon: comprobaciones de salud,
+  espera entre reintentos e historial persistente para evitar bucles de reinicio.
+- Logs de eventos y salida con rotacion por proyecto; scripts administrativos
+  de reinicio manual que validan la identidad del servicio.
+- Se mantiene el limite conjunto de 1024 MiB y el perfil de cola publicado.
+- Detalles y operacion: [RECUPERACION_SERVICIOS.md](RECUPERACION_SERVICIOS.md).
+
+## Limpieza de cargas grandes - 2026-10-20
+
+- Reintento acotado del borrado temporal ante bloqueos transitorios Windows
+  32/33/145; conserva el bloqueo de seguridad si el borrado sigue fallando.
+- Diagnostico de limpieza con operacion, errno/winerror y estado previo del trabajo,
+  sin registrar rutas, nombres de documentos ni contenido.
+- Prueba con bloqueo real Windows y regresion de limpieza permanente.
+- Compresion sin perdida de PDF sintetico de 1000 MiB en instancia aislada:
+  HTTP 200, salud 200, sin carpetas job pendientes. No certifica rendimiento
+  para PDFs escaneados ni identifica retrospectivamente el error historico,
+  cuyo registro anterior no guardaba codigos de Windows.

@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='extended.css', v=build) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='acrobat_editor.css', v=build) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='palette.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='processing_queue.css', v=build) }}">
 </head>
 <body class="folio-editor-page">
   <div class="acro-standalone-container" id="acrobat-container">
@@ -222,6 +223,7 @@
     </footer>
   </div>
 
+  <script src="{{ url_for('static', filename='processing_queue.js', v=build) }}"></script>
   <script src="{{ url_for('static', filename='acrobat_editor.js', v=build) }}"></script>
 </body>
 </html>

@@ -50,6 +50,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
 
   // Estado del Editor Acrobat Pro
   const state = {
+    processing: false,
     file: null,
     totalPages: 1,
     currentPage: 1,
@@ -143,7 +144,8 @@ window.retrieveFileForEditor = retrieveFileForEditor;
         if (!state.file) { setStatusNotice("Selecciona un PDF antes de volver a las herramientas.", true); return; }
         if (!window.saveFileForEditor) { setStatusNotice("No se pudo preparar el PDF para continuar.", true); return; }
         window.saveFileForEditor(state.file).then(() => {
-          window.location.href = "/?resume=1";
+          window.location.href = new URLSearchParams(window.location.search).get("multi") === "1"
+            ? "/?resume=1&multi=1" : "/?resume=1";
         }).catch(error => setStatusNotice("No se pudo transferir el PDF: " + error.message, true));
       });
     }
@@ -394,6 +396,9 @@ window.retrieveFileForEditor = retrieveFileForEditor;
   };
 
   async function loadPage(pageNum) {
+    if (state.processing) return;
+    state.processing = true;
+    if (dom.standalone) dom.standalone.inert = true;
     deselectBlock();
     state.currentPage = pageNum;
     dom.pageCurrent.value = pageNum;
@@ -409,11 +414,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       // Inspección a 130 DPI para nitidez visual de maquetación
       form.append("options", JSON.stringify({ page: pageNum, dpi: 130, text_background: true }));
 
-      const res = await fetch("/api/process/inspect", {
-        method: "POST",
-        body: form,
-        headers: { "X-PDF-Client": document.querySelector('meta[name="client-build"]').content },
-      });
+      const res = await window.folioProcess("inspect", form);
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Error al inspeccionar la página." }));
@@ -424,6 +425,9 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       displayPage(data);
     } catch (err) {
       setStatusNotice("Error: " + err.message, true);
+    } finally {
+      state.processing = false;
+      if (dom.standalone) dom.standalone.inert = false;
     }
   }
 
@@ -972,6 +976,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
 
   // Guardar todas las modificaciones y descargar el PDF procesado
   async function saveChanges() {
+    if (state.processing) return;
     const payloadChanges = [];
 
     // 1. Modificaciones
@@ -1007,6 +1012,8 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     }
 
     dom.btnSave.disabled = true;
+    state.processing = true;
+    if (dom.standalone) dom.standalone.inert = true;
     setStatusNotice("Procesando modificaciones vectoriales…");
 
     try {
@@ -1014,13 +1021,10 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       form.append("files", state.file);
       form.append("options", JSON.stringify({
         changes: payloadChanges, editor_preview: true, page: state.currentPage,
+        experimental_preview: new URLSearchParams(window.location.search).get("multi") === "1",
       }));
 
-      const res = await fetch("/api/process/edit_text_pro", {
-        method: "POST",
-        body: form,
-        headers: { "X-PDF-Client": document.querySelector('meta[name="client-build"]').content },
-      });
+      const res = await window.folioProcess("edit_text_pro", form);
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Error en el servidor al guardar el PDF." }));
@@ -1065,6 +1069,8 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     } catch (err) {
       setStatusNotice("Error al guardar: " + err.message, true);
     } finally {
+      state.processing = false;
+      if (dom.standalone) dom.standalone.inert = false;
       dom.btnSave.disabled = false;
     }
   }

@@ -1,5 +1,58 @@
 # Folio PDF
 
+## Cola de produccion y limites efectivos (2026-10-20)
+
+El perfil de produccion `config/production_queue.json`, instalado como
+`config/site_config.json`, conserva 1024 MiB (1 GiB) por archivo y por envio
+conjunto, y 2048 MiB por resultado. No es 1 GiB por cada archivo de un lote.
+Hasta 3 MB conjuntos es un rango
+recomendado inicial, no una garantia de tiempo. Desde 10 MB, o en OCR,
+conversiones y rasterizacion, el trabajo entra en la clase pesada.
+La complejidad, las imagenes, las paginas y las fuentes tambien afectan el coste.
+
+- Hasta cinco motores, reducidos automaticamente por CPU, RAM y calibracion.
+- Hasta dos trabajos pesados; si solo hay un motor, se permite uno pesado.
+  Los pesados no aumentan el presupuesto de RAM de cada proceso.
+- Hasta doce solicitudes en espera y 2048 MiB conjuntos de cuerpos en cola.
+  El presupuesto agregado de entrada activa es 1026 MiB (incluye multipart).
+  Una carga proxima a 1 GiB puede ocupar casi todo ese presupuesto y esperar
+  a que otros trabajos liberen capacidad. La cola tiene tambien un limite de
+  bytes: doce plazas no garantizan admitir doce archivos grandes.
+- Espera maxima de 45 s; motor hasta 120 s despues de la admision.
+- FIFO entre trabajos que caben; una tarea ligera puede adelantar una pesada
+  bloqueada por su cupo o presupuesto. No se promete un tiempo estimado exacto.
+- Cola llena: HTTP 429; espera agotada o fallo de limpieza: HTTP 503.
+  No se reintentan automaticamente trabajos, para evitar ejecuciones duplicadas.
+- El aviso emergente muestra envio, posicion de llegada, procesamiento y entrega;
+  permite cancelar solo mientras el trabajo esta en cola.
+  No cerrar ni recargar la pestaña: una desconexion no garantiza cancelar el motor.
+
+Los cuerpos HTTP pueden permanecer en archivos transitorios del servidor mientras
+esperan. No se escriben documentos en SQLite. Los archivos de trabajo se crean
+solo tras la admision y se limpian tambien tras errores; el transporte y los
+resultados grandes conservan su limpieza al cerrar. La cola no sobrevive un
+reinicio: el cliente recibira un error y debera volver a seleccionar su archivo.
+Los limites de cola no incluyen descargas en curso ni todos los buffers de red;
+mantener espacio libre en `runtime`. Waitress reserva hilos para estado/avisos
+y limita conexiones, pero esto no equivale a aislamiento frente a cualquier
+saturacion de red o de otros servicios.
+
+Prueba LAN del prototipo: doce clientes desde un solo equipo, dos rondas por
+documento, 72 solicitudes medidas, todas completadas sin HTTP 429/500.
+Medianas de carga, procesamiento y descarga: 0,654 s para 1 pagina,
+6,472 s para 50 paginas (2,86 MB) y 23,698 s para 200 paginas (11,44 MB).
+Se observaron como maximo cinco trabajos activos y dos pesados.
+Son documentos sinteticos y mediciones orientativas; no certifican el rendimiento
+de OCR, Office ni archivos de 1 GiB. Las cuotas superiores son protecciones,
+no tamaños recomendados para edicion interactiva.
+
+El perfil reducido de prueba (64/128 MB, cola de 256 MB) no se instala en
+produccion. Se mantienen hasta 200 archivos en herramientas masivas y la
+cantidad exigida por cada herramienta en las demas. No se certifica completar
+1 GiB en 120 s. No se aumentaron CPU, hilos de motores ni memoria por motor.
+La cola usa un proceso servidor; no iniciar varias instancias compartiendo
+`runtime`. Se reservan hilos HTTP para consultas de estado y cancelacion.
+
 ## Directorio activo y servidor principal
 
 - Desarrollo: `D:\PROYECTOS IA INDEPENDIENTES\FOLIO PDF\FOLIO PDF ENTERPRISE`.
@@ -10,6 +63,18 @@
   y las entradas de los demas servicios sin cambios.
 - Los recursos y motores se resuelven desde esta carpeta; no iniciar la copia
   anterior al mismo tiempo en el puerto de produccion.
+
+### Vista de edicion en memoria
+
+La opcion `editor_live_preview: true` del perfil de produccion permite generar la vista posterior al guardado usando
+el documento abierto, sin reabrir el PDF de salida. Solo se solicita al entrar
+al editor desde Edicion multiple (`multi=1`). Por defecto base esta desactivada;
+el perfil de produccion la activa. `FOLIO_TEST_LIVE_PREVIEW` permite sustituir
+ese valor en instancias de prueba.
+El guardado completo, la compresion, el aislamiento y la limpieza de temporales
+se conservan. No retiene documentos entre peticiones ni implementa un motor
+local en el navegador. Se validaron equivalencia de vista, ediciones sucesivas,
+eliminacion real y limpieza; no garantiza una mejora para todos los PDF.
 
 ### Tu centro documental. En tu equipo o en tu red. Sin subir archivos a una nube.
 
@@ -70,7 +135,7 @@ politicas de otros productos varian segun su version y modalidad.
 | Frente a un servicio alojado en la nube | El procesamiento ocurre en el equipo o servidor que administras. No necesita enviar documentos a un proveedor externo. |
 | Frente a un editor de escritorio por puesto | Los clientes LAN usan el navegador; los motores y dependencias se mantienen en el servidor. El servidor debe estar encendido y accesible. |
 | Conservacion documental | No incorpora cuentas, biblioteca permanente ni historial de documentos. La descarga queda en el equipo del usuario. |
-| Control de capacidad | Cuota de entrada conjunta, procesos aislados, calibracion local y corte de tiempo; sin cola de procesamiento cuando los motores estan ocupados. |
+| Control de capacidad | Cuota de entrada conjunta, procesos aislados, calibracion local, corte de tiempo y cola acotada cuando los motores estan ocupados. |
 | Lotes | Varias herramientas procesan multiples PDF y entregan ZIP numerados; expediente y union combinan los anexos en un solo PDF. |
 | Alcance profesional | Prioriza tareas documentales locales. No ofrece paridad con Acrobat, certificacion PDF/A, firma con custodia de claves ni maquetacion semantica avanzada. |
 
@@ -425,7 +490,9 @@ eliminan sus temporales; no se entrega un resultado parcial.
 Los 5 trabajos (`max_parallel_jobs`) y 4 GB por trabajo (`max_job_memory_mb`)
 son techos: al arrancar se reducen segun CPU y RAM disponible, reservando como
 minimo la mitad de la RAM total y el 40% de la disponible para otros usos.
-No hay cola de procesamiento: si no hay cupo se responde 429.
+En este prototipo hay cola acotada: solo se responde 429 al agotar sus plazas
+o presupuesto de entrada; HTTP 503 al agotar la espera. El perfil de produccion
+conserva las cuotas de 1 GiB de entrada y 2 GiB de salida.
 El navegador rechaza al seleccionar los archivos que exceden la cuota y muestra
 el peso usado; el servidor vuelve a validar. En el peor caso el servidor
 necesita unos 20 GB de RAM para los motores y espacio libre en disco para
@@ -539,3 +606,19 @@ Desplegar con una cuenta dedicada **sin privilegios administrativos**, sin acces
 a otras bases o carpetas sensibles; mantener motores actualizados y restringir
 salida de red del procesador en el entorno de produccion. No ejecutar como SYSTEM.
 Para documentos no confiables se recomienda una maquina/VM dedicada.
+
+## Recuperacion operativa
+
+Los tres servicios (Folio PDF, HelpDesk y Falcon) disponen de eventos rotativos,
+scripts de reinicio manual y supervisor con reintentos limitados ante fallos de
+memoria, limpieza y E/S. Consulte [RECUPERACION_SERVICIOS.md](RECUPERACION_SERVICIOS.md)
+para los comandos, ubicaciones de logs, limites y advertencias de interrupcion.
+Los limites de carga y la cola Folio se conservan sin cambios.
+
+La limpieza de un trabajo espera hasta 3,1 segundos adicionales cuando Windows
+informa un bloqueo transitorio de archivo (codigos 32/33/145). Si el bloqueo no
+desaparece, se mantiene el cierre de admision y la recuperacion controlada; no se
+ignoran errores de permisos ni se dejan temporales deliberadamente. Los eventos
+de fallo incluyen operacion, clase y codigos del sistema, sin rutas de documentos.
+El limite de 1 GiB es de admision: no garantiza que cualquier PDF de ese tamano
+termine dentro de los 120 segundos o del presupuesto de memoria del motor.

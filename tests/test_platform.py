@@ -319,7 +319,9 @@ class PlatformTests(unittest.TestCase):
         for _ in range(self.config["max_parallel_jobs"]):
             gate.acquire()
         try:
-            self.call("rotate", expected=429)
+            with patch.dict(self.config, queue_wait_seconds=.02):
+                self.call("rotate", expected=503)
+            self.assertEqual(list((self.root / "runtime").glob("job-*")), [])
         finally:
             for _ in range(self.config["max_parallel_jobs"]):
                 gate.release()
@@ -473,6 +475,7 @@ class PlatformTests(unittest.TestCase):
             self.call("rotate", expected=503)
         finally:
             self.app.extensions.pop("cleanup_failed", None)
+            self.app.extensions["workload_queue"].closed = False
             for folder in (self.root / "runtime").glob("job-*"):
                 real_rmtree(folder)
 

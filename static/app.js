@@ -157,7 +157,8 @@ function openTextEditorSession(file) {
     throw new Error("No se pudo preparar el PDF para el editor.");
   }
   window.saveFileForEditor(file).then(()=>{
-    window.location.href="/editor?session=1";
+    window.location.href=$("workspace").classList.contains("multi-edit-workspace")
+      ? "/editor?session=1&multi=1" : "/editor?session=1";
   }).catch(error=>setStatus("No se pudo abrir el editor: "+error.message,true));
 }
 document.addEventListener("DOMContentLoaded",async()=>{
@@ -168,7 +169,12 @@ document.addEventListener("DOMContentLoaded",async()=>{
     return;
   }
   const editTool=tools.find(tool=>tool.id==="edit");
-  openTool(editTool);
+  if(new URLSearchParams(window.location.search).get("multi")==="1") {
+    startMultiEdit();
+    openTool(editTool,{keepSessionFile:true});
+  } else {
+    openTool(editTool);
+  }
   addFiles([file]);
 });
 function openTool(tool,{keepSessionFile=false}={}) {
@@ -374,7 +380,10 @@ function uploadLimits(tool) {
   const usage=files.length ? ` · usado ${sizeLabel(used)} de ${sizeLabel(limit.total)} (${files.length} ${files.length===1?"archivo":"archivos"})` : "";
   const budget=caps?.timeout_seconds || 120;
   const pages=caps?.max_pages ? `hasta ${caps.max_pages} páginas por PDF` : "sin tope fijo de páginas";
-  return `${scope}${usage} · ${tool.accept || "PDF"} · ${pages} · motor: máximo ${budget} s`;
+  const recommended=caps?.queue
+    ? ` · recomendado: hasta ${caps.queue.recommended_upload_mb} MB en conjunto; desde ${caps.queue.heavy_upload_mb} MB, carga pesada`
+    : "";
+  return `${scope}${usage} · ${tool.accept || "PDF"} · ${pages} · motor: máximo ${budget} s${recommended}`;
 }
 function validateFiles() {
   if(!files.length) throw new Error("Selecciona un archivo antes de continuar.");
@@ -385,7 +394,7 @@ function validateFiles() {
 async function send(operation, extra={}, signal) {
   validateFiles();
   const form=new FormData(); files.forEach(file=>form.append("files",file)); form.append("options",JSON.stringify({...options(),...extra}));
-  const response=await fetch("/api/process/"+operation,{method:"POST",body:form,headers:{"X-PDF-Client":BUILD},signal});
+  const response=await window.folioProcess(operation,form,{signal});
   if(!response.ok) {
     const json=await response.json().catch(()=>({error:"El servidor rechazó la solicitud."}));
     throw new Error(json.error);
@@ -434,7 +443,7 @@ $("process-form").addEventListener("submit",async event=>{
     if(current.operation==="edit" && !edits.length) throw new Error("Añade al menos una edición en la vista previa.");
     if(["overlay","compare","stamp"].includes(current.id) && files.length!==2) throw new Error("Selecciona exactamente dos archivos en el orden indicado.");
     const payload=options();
-    setBusy(true); setStatus("Procesando localmente. No cierres esta pestaña…");
+    setBusy(true); setStatus("Enviando al servidor. El aviso mostrará la espera o el procesamiento…");
     // Los controles deshabilitados no se serializan con FormData; options se toma explícitamente.
     const response=await send(current.operation || current.id,payload);
     const blob=await response.blob();

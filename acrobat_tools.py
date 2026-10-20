@@ -191,6 +191,7 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
         raise ProcessingError("Maximo 500 modificaciones por sesion.", 400)
 
     output = folder / "documento_editado.pdf"
+    live_preview = None
 
     with open_pdf(source, password, config["max_pages"]) as doc:
         # 1. Accion: Reemplazar todas las ocurrencias (Find & Replace)
@@ -312,6 +313,14 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
                             )
 
         save(doc, output)
+        if (options.get("editor_preview") is True
+                and options.get("experimental_preview") is True
+                and config.get("editor_live_preview") is True):
+            from pdf_engine import inspect_document
+
+            live_preview = inspect_document(doc, {
+                "page": options.get("page", 1), "dpi": 130, "text_background": True,
+            }, config)
 
     check_size(output, config)
     count = len(changes)
@@ -321,15 +330,20 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
     if options.get("editor_preview") is True:
         from pdf_engine import process
 
-        preview = process("inspect", [output], {
-            "page": options.get("page", 1), "dpi": 130, "text_background": True,
-        }, folder, config, folder)
+        if live_preview is not None:
+            preview_path = folder / "vista.json"
+            preview_path.write_text(json.dumps(live_preview), encoding="utf-8")
+        else:
+            preview = process("inspect", [output], {
+                "page": options.get("page", 1), "dpi": 130, "text_background": True,
+            }, folder, config, folder)
+            preview_path = folder / preview["file"]
         boundary = secrets.token_hex(24)
         bundle = folder / "edicion.multipart"
         with bundle.open("wb") as destination:
             for field, path, mimetype in (
                 ("document", output, "application/pdf"),
-                ("preview", folder / preview["file"], "application/json"),
+                ("preview", preview_path, "application/json"),
             ):
                 destination.write((
                     f"--{boundary}\r\n"
