@@ -22,12 +22,12 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
     animation.autoplay = !reducedMotion.matches;
     if (reducedMotion.matches) animation.pause();
     else animation.play().catch(() => {
-      console.info("Folio: el navegador no permitió reproducir la animación; el estado sigue disponible.");
+      console.info("EVA PDF Enterprise: el navegador no permitió reproducir la animación; el estado sigue disponible.");
     });
   };
   animation.addEventListener("error", () => {
     animation.hidden = true;
-    console.warn("Folio: no se pudo cargar la animación de procesamiento.");
+    console.warn("EVA PDF Enterprise: no se pudo cargar la animación de procesamiento.");
   }, {once: true});
   animation.src = `/static/loadinggif.mp4?v=${encodeURIComponent(build)}`;
   const content = document.createElement("div");

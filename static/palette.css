@@ -254,3 +254,7 @@ dialog::backdrop, .acro-dialog::backdrop { background: var(--backdrop); }
 @media (prefers-reduced-motion: reduce) {
   .hero .eyebrow > span { animation: none; }
 }
+.brand-suffix { margin-left: 9px; font-size: .42em; font-weight: 600; letter-spacing: .4px; opacity: .78; white-space: nowrap; }
+@media (max-width: 520px) {
+  .topbar .brand-suffix { display: none; }
+}

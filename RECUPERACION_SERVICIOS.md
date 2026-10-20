@@ -1,4 +1,4 @@
-# Recuperacion de Folio, HelpDesk y Falcon
+# Recuperacion de EVA PDF Enterprise, HelpDesk y Falcon
 
 ## Alcance
 
@@ -21,7 +21,7 @@ capturados donde corresponde. Las tareas SYSTEM y las conexiones/puertos
   local, identificado con un token distinto para cada arranque.
 * Agotamiento de recursos/handles y errores reales de E/S, incluidos
   `SQLITE_IOERR`: tres eventos en 60 segundos.
-* Folio: fallo de limpieza temporal (`cleanup_failed`) o imposibilidad de borrar
+* EVA PDF Enterprise: fallo de limpieza temporal (`cleanup_failed`) o imposibilidad de borrar
   un resultado entregado. El supervisor detecta la senal; se conserva el bloqueo
   de trabajos hasta reiniciar.
 * Falta de respuesta o respuesta HTTP de salud incorrecta: tres comprobaciones
@@ -105,17 +105,17 @@ Las pruebas automatizadas usan errores sinteticos: no agotan RAM real ni
 provocan averias de disco. Cubren clasificacion, errores que no deben reiniciar,
 ventanas, presupuesto persistente, rotacion, senales Flask, parada de un
 subproceso propio y seleccion segura del proyecto en reinicio manual.
-La regresion Folio valida cola, operaciones y editor utilizando el servidor
+La regresion EVA PDF Enterprise valida cola, operaciones y editor utilizando el servidor
 modificado desde una copia aislada. HelpDesk y Falcon se prueban con base temporal
 o gestor de datos simulado, sin ejecutar pruebas de escritura contra sus bases reales.
 
-Los limites Folio no cambian: 1024 MiB conjuntos por envio, cinco motores como
+Los limites EVA PDF Enterprise no cambian: 1024 MiB conjuntos por envio, cinco motores como
 maximo, dos pesados y doce trabajos en espera.
 
 ### Resultado de activacion
 
 Se aprobaron 19 pruebas de recuperacion (incluido un reinicio automatico real
-de un subproceso sintetico con cambio de PID) y 69 pruebas de regresion Folio.
+de un subproceso sintetico con cambio de PID) y 69 pruebas de regresion EVA PDF Enterprise.
 HelpDesk y Falcon aprobaron importacion, creacion de la aplicacion, login,
 salud HTTP y senal sintetica de memoria con datos aislados.
 
@@ -123,7 +123,7 @@ Los scripts manuales se ejecutaron contra los tres servicios, comprobando
 salud e identidad del listener. Tambien se verifico la creacion real de los
 registros `server_starting` y `application_hooks_ready` en cada proyecto.
 
-Durante la activacion se detecto una instancia anterior de Folio ejecutada
+Durante la activacion se detecto una instancia anterior de EVA PDF Enterprise ejecutada
 desde la carpeta padre: al detener Enterprise ocupaba el mismo puerto con un
 build antiguo. Se detuvo exclusivamente el proceso identificado de esa instancia;
 Enterprise volvio a atender 8090. No se modificaron otros servicios por ese conflicto.

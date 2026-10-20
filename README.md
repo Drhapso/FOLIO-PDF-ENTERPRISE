@@ -1,4 +1,12 @@
-# Folio PDF
+# EVA PDF Enterprise
+
+> Antes llamada **Folio PDF**. Desde el 2026-10-20 la marca visible, el
+> ejecutable (`EVA-PDF.exe`) y el instalador usan el nombre EVA PDF Enterprise.
+> Se conservan a proposito, para no interrumpir produccion ni el repositorio:
+> las carpetas `FOLIO PDF\FOLIO PDF ENTERPRISE`, el repositorio GitHub, la
+> tarea programada `Folio-PDF-LAN`, la entrada `Folio` del gestor de servidores,
+> los scripts `reiniciar-folio.ps1`, la regla de firewall `Folio-PDF-LAN-<puerto>`
+> e identificadores internos (`folio-theme`, `#folio-opening`, `folioProcess`).
 
 ## Cola de produccion y limites efectivos (2026-10-20)
 
@@ -81,7 +89,7 @@ eliminacion real y limpieza; no garantiza una mejora para todos los PDF.
 **46 accesos a herramientas PDF · Compresion estructural sin perdida · OCR local ·
 Expedientes por lote · Edicion de texto · Funcionamiento offline y LAN**
 
-Folio es una plataforma web para organizar, comprimir, convertir y editar
+EVA PDF Enterprise es una plataforma web para organizar, comprimir, convertir y editar
 documentos desde el navegador. Puede ejecutarse en un solo equipo o centralizar
 el procesamiento en un servidor de la red local, sin instalar el editor en cada
 puesto de trabajo. No requiere cuentas ni suscripciones a servicios de nube
@@ -90,7 +98,7 @@ para procesar documentos.
 > **Estado:** aplicacion ejecutable desde codigo fuente, orientada a Windows.
 > La receta del proximo instalador offline esta preparada, pero el nuevo
 > ejecutable y Setup todavia no se han generado ni certificado.
-> Folio no pretende sustituir todas las funciones de un editor profesional.
+> EVA PDF Enterprise no pretende sustituir todas las funciones de un editor profesional.
 
 ## Lo mas destacado
 
@@ -124,13 +132,13 @@ para procesar documentos.
 - **Interfaz propia.** Temas claro/oscuro, paleta violeta/lima, diseno adaptable
   y apertura animada original con respeto por movimiento reducido.
 
-## Que diferencia a Folio
+## Que diferencia a EVA PDF Enterprise
 
 La diferencia principal es **el modelo de despliegue y control del documento**,
 no una afirmacion de superioridad sobre todos los editores. Las funciones y
 politicas de otros productos varian segun su version y modalidad.
 
-| Aspecto | Enfoque de Folio |
+| Aspecto | Enfoque de EVA PDF Enterprise |
 | --- | --- |
 | Frente a un servicio alojado en la nube | El procesamiento ocurre en el equipo o servidor que administras. No necesita enviar documentos a un proveedor externo. |
 | Frente a un editor de escritorio por puesto | Los clientes LAN usan el navegador; los motores y dependencias se mantienen en el servidor. El servidor debe estar encendido y accesible. |
@@ -166,17 +174,17 @@ Tambien existe un modo **visual con perdida**, separado y explicito:
 rasteriza las paginas y utiliza JPEG. Puede reducir mas algunos escaneos,
 pero elimina texto seleccionable, formularios, enlaces y capas; no debe
 confundirse con la compresion estructural ni usarse si esos elementos importan.
-Folio no utiliza JBIG2 con perdida ni sustitucion de simbolos.
+EVA PDF Enterprise no utiliza JBIG2 con perdida ni sustitucion de simbolos.
 
 ## Local, LAN y offline: tres conceptos compatibles
 
 | Modalidad | Donde se procesa | Como se accede |
 | --- | --- | --- |
-| Local | En el mismo equipo que ejecuta Folio | Navegador en `http://127.0.0.1:8090`. |
+| Local | En el mismo equipo que ejecuta EVA PDF Enterprise | Navegador en `http://127.0.0.1:8090`. |
 | LAN | En un servidor propio de la red | Navegadores de los equipos autorizados, mediante la direccion del servidor. |
 | Offline | En cualquiera de las modalidades anteriores, sin salida a Internet | Dependencias, recursos web y modelos OCR previamente instalados. En LAN sigue siendo necesaria la conexion a la red local. |
 
-**Offline no significa sin servidor:** el proceso de Folio debe estar activo.
+**Offline no significa sin servidor:** el proceso de EVA PDF Enterprise debe estar activo.
 Los clientes no necesitan Python, LibreOffice ni modelos OCR; esos componentes
 residen en el equipo servidor. Para trabajar en un unico PC, ese PC cumple
 ambas funciones. Una LAN puede funcionar sin conexion a Internet.
@@ -199,9 +207,9 @@ revocacion ni validez legal.
 - **Salida:** hasta 2 GB. No hay tope fijo de paginas por defecto, pero siguen
   aplicando cuotas de peso, tiempo, pixeles y memoria.
 - **Red:** usar HTTPS para proteger documentos y claves en LAN; HTTP no cifra
-  el trafico. Folio no configura firewall ni certificados automaticamente.
+  el trafico. EVA PDF Enterprise no configura firewall ni certificados automaticamente.
 - **Almacenamiento:** borrado logico, no forense. Tras un corte electrico,
-  los temporales se purgan al siguiente arranque. La politica de Folio no borra
+  los temporales se purgan al siguiente arranque. La politica de EVA PDF Enterprise no borra
   las descargas del usuario ni copias que creen proxies o sistemas externos.
 - **Disponibilidad:** escritorio, camara e impresion estan marcados en
   construccion. Consultar mas abajo las capacidades pendientes.
@@ -210,7 +218,7 @@ revocacion ni validez legal.
 
 ## Manual tecnico y operacion
 
-La portada muestra una presentacion original de Folio a pantalla completa, sin
+La portada muestra una presentacion original de EVA PDF Enterprise a pantalla completa, sin
 marco, sobre la pagina principal desenfocada con `backdrop-filter`.
 Incluye relieve de papel plegado, profundidad, bruma, haces de luz y estelas
 de particulas, sin sonido ni recursos
@@ -234,12 +242,12 @@ No conecta, copia ni modifica las bases de FALCON o Help Desk.
 
 ### Instalador offline 3.1.0 (Windows 10/11 x64)
 
-Generado `dist/Folio-PDF-Offline-3.1.0-win-x64.zip` (120 MB, SHA256 en el
-`.sha256.txt` adjunto): Folio.exe autocontenido con CPython 3.13, todas las
+Generado `dist/EVA-PDF-Enterprise-Offline-3.1.0-win-x64.zip` (120 MB, SHA256 en el
+`.sha256.txt` adjunto): EVA-PDF.exe autocontenido con CPython 3.13, todas las
 librerias, VC++ runtime y modelos OCR; no requiere Python ni Internet.
 Descomprimir y ejecutar `INSTALAR.bat` (sin administrador): instala en
-`%LOCALAPPDATA%\Folio-PDF`, verifica integridad y crea accesos "Folio PDF"
-(local) y "Folio PDF (compartir en LAN)". Complementos opcionales
+`%LOCALAPPDATA%\EVA-PDF-Enterprise`, verifica integridad y crea accesos "EVA PDF Enterprise"
+(local) y "EVA PDF Enterprise (compartir en LAN)". Complementos opcionales
 (LibreOffice para Office a PDF, firewall LAN, WIA) en
 `COMPLEMENTOS_ADICIONALES.txt` dentro del ZIP. Receta, regeneracion y
 validacion en [DISTRIBUCION_OFFLINE](docs/DISTRIBUCION_OFFLINE.md).
@@ -376,11 +384,11 @@ es un indicador de desarrollo, no una alarma del sistema. Las herramientas
 PDF permanecen disponibles. La ruta de descarga del complemento existente
 se conserva para compatibilidad; no se anuncia como lista desde la portada.
 
-El complemento existente `desktop\Folio-Desktop.ps1` esta preparado para ejecutarlo
+El complemento existente `desktop\EVA-Desktop.ps1` esta preparado para ejecutarlo
 en **cada equipo cliente**, no en el servidor para controlar equipos remotos:
 
 ```powershell
-powershell -NoProfile -STA -File .\Folio-Desktop.ps1
+powershell -NoProfile -STA -File .\EVA-Desktop.ps1
 ```
 
 Revisar el script con TI. No necesita administrador, no modifica ExecutionPolicy,
@@ -396,7 +404,7 @@ sortear la restriccion.
   asociacion, abrir PDF y usar Ctrl+P. Para elegir impresora/opciones usar Ctrl+P.
 - Impresoras: abre la configuracion nativa de Windows; no cambia valores.
 - Impresora virtual: usar **Microsoft Print to PDF** si ya esta habilitada.
-  Folio no instala ni administra controladores o colas remotas.
+  EVA PDF Enterprise no instala ni administra controladores o colas remotas.
 - Diagnostico sin captura/impresion: `-Action Diagnose` devuelve estado WIA,
   servicio de impresion y existencia de Microsoft Print to PDF.
 - Los escaneos elegidos y las colas de impresion estan fuera del borrado del
@@ -505,7 +513,7 @@ cargas, temporales y resultados (reserve al menos 15 GB en la unidad de `runtime
 
 ### Calibracion interna de rendimiento
 
-Con Folio detenido y desde la carpeta del proyecto:
+Con EVA PDF Enterprise detenido y desde la carpeta del proyecto:
 
 ```powershell
 .\.venv\Scripts\python.exe .\server.py --calibrate
@@ -621,11 +629,11 @@ finalizar o cancelar. Respeta la preferencia de movimiento reducido. El recurso
 publicado se sirve desde `static/loadinggif.mp4`; si se reemplaza el original,
 actualizar tambien esta copia. Un fallo del video no interrumpe el procesamiento.
 
-Los tres servicios (Folio PDF, HelpDesk y Falcon) disponen de eventos rotativos,
+Los tres servicios (EVA PDF Enterprise, HelpDesk y Falcon) disponen de eventos rotativos,
 scripts de reinicio manual y supervisor con reintentos limitados ante fallos de
 memoria, limpieza y E/S. Consulte [RECUPERACION_SERVICIOS.md](RECUPERACION_SERVICIOS.md)
 para los comandos, ubicaciones de logs, limites y advertencias de interrupcion.
-Los limites de carga y la cola Folio se conservan sin cambios.
+Los limites de carga y la cola EVA PDF Enterprise se conservan sin cambios.
 
 La limpieza de un trabajo espera hasta 3,1 segundos adicionales cuando Windows
 informa un bloqueo transitorio de archivo (codigos 32/33/145). Si el bloqueo no

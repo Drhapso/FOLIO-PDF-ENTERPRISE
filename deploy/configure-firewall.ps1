@@ -23,5 +23,5 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 $name = "Folio-PDF-LAN-$Port"
 $existing = Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue
 if ($existing) { throw "La regla $name ya existe. Revisela antes de sustituirla." }
-New-NetFirewallRule -Name $name -DisplayName "Folio PDF LAN ($Port)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -RemoteAddress $AuthorizedSubnet -Profile Domain,Private | Out-Null
+New-NetFirewallRule -Name $name -DisplayName "EVA PDF Enterprise LAN ($Port)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -RemoteAddress $AuthorizedSubnet -Profile Domain,Private | Out-Null
 Write-Host "Regla creada. No se modificaron otros puertos, IP, DNS ni servicios."

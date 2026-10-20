@@ -1,8 +1,8 @@
-FOLIO PDF - COMPLEMENTOS ADICIONALES (OPCIONALES)
+EVA PDF ENTERPRISE - COMPLEMENTOS ADICIONALES (OPCIONALES)
 =================================================
 
 El paquete offline YA INCLUYE todo lo necesario para el funcionamiento local:
-  - Python 3.13 x64 embebido en Folio.exe (no instale Python).
+  - Python 3.13 x64 embebido en EVA-PDF.exe (no instale Python).
   - Librerias: Flask, Waitress, PyMuPDF/MuPDF 1.28.2, pikepdf 10.17 (qpdf),
     Pillow 12.3 + pillow-heif (HEIC/HEIF), OpenCV headless 4.14, NumPy,
     python-docx, openpyxl, python-pptx, pyHanko (firmas), cryptography/OpenSSL.
@@ -42,31 +42,31 @@ REQUISITOS DEL EQUIPO
   Licencia:        MPL-2.0 (gratuito).
   Instalacion:     doble clic al .msi, o silenciosa (como administrador):
                      msiexec /i LibreOffice_<version>_Win_x86-64.msi /qn
-  Deteccion:       Folio lo detecta automaticamente en:
+  Deteccion:       EVA PDF Enterprise lo detecta automaticamente en:
                      C:\Program Files\LibreOffice\program\soffice.com
                    o si "soffice" esta en el PATH.
   Ruta distinta:   cree el archivo  config\site_config.json  dentro de la
                    carpeta instalada con este contenido (barras dobles):
                      { "libreoffice_path": "D:\\Apps\\LibreOffice\\program\\soffice.com" }
-                   y reinicie Folio. Alternativa portable: LibreOffice Portable
+                   y reinicie EVA PDF Enterprise. Alternativa portable: LibreOffice Portable
                    (https://www.libreoffice.org/download/portable-versions/),
                    indicando la ruta a su soffice.com.
 
 
-2) REGLA DE FIREWALL  ->  compartir Folio con otros equipos de la LAN
+2) REGLA DE FIREWALL  ->  compartir EVA PDF Enterprise con otros equipos de la LAN
 ---------------------------------------------------------------------
-  Necesario solo si usa el acceso "Folio PDF (compartir en LAN)".
-  En modo local (acceso "Folio PDF") no se abre ningun puerto de red.
+  Necesario solo si usa el acceso "EVA PDF Enterprise (compartir en LAN)".
+  En modo local (acceso "EVA PDF Enterprise") no se abre ningun puerto de red.
   No se descarga nada: use la herramienta incluida, como ADMINISTRADOR,
   indicando la subred autorizada (ejemplo):
-    powershell -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\Folio-PDF\herramientas\configure-firewall.ps1" -AuthorizedSubnet 192.168.1.0/24 -Port 8090 -Apply
+    powershell -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\EVA-PDF-Enterprise\herramientas\configure-firewall.ps1" -AuthorizedSubnet 192.168.1.0/24 -Port 8090 -Apply
   Sin -Apply solo muestra un diagnostico. Si el puerto 8090 estaba ocupado,
   el lanzador usa 8091-8099: indique el puerto que muestre el aviso.
 
 
-3) CONTROLADORES DE ESCANER (WIA)  ->  complemento "Folio Desktop"
+3) CONTROLADORES DE ESCANER (WIA)  ->  complemento "EVA PDF Enterprise Desktop"
 ------------------------------------------------------------------
-  Necesario solo para escanear desde  desktop\Folio-Desktop.ps1.
+  Necesario solo para escanear desde  desktop\EVA-Desktop.ps1.
   Descargue el controlador WIA del fabricante del escaner (HP, Epson, Canon,
   Brother, Fujitsu...) desde su sitio oficial de soporte.
   Para "imprimir a PDF" basta la impresora "Microsoft Print to PDF" de Windows
@@ -76,7 +76,7 @@ REQUISITOS DEL EQUIPO
 4) MODELOS OCR (solo si se borraron o danaron)
 ----------------------------------------------
   Ya incluidos en  models\spa.traineddata  y  models\eng.traineddata.
-  Idiomas soportados por Folio: spa, eng o spa+eng (config "ocr_language").
+  Idiomas soportados por EVA PDF Enterprise: spa, eng o spa+eng (config "ocr_language").
   Reposicion (tessdata_fast, revision fijada, licencia Apache-2.0):
     https://github.com/tesseract-ocr/tessdata_fast/raw/65727574dfcd264acbb0c3e07860e4e9e9b22185/spa.traineddata
       SHA256 6F2E04D02774A18F01BED44B1111F2CD7F3BA7AC9DC4373CD3F898A40EA6B464
@@ -91,11 +91,11 @@ REQUISITOS DEL EQUIPO
     Microsoft Visual C++ Redistributable 2015-2022 x64 (gratuito):
     https://aka.ms/vs/17/release/vc_redist.x64.exe
   La politica de la empresa bloquea scripts de PowerShell:
-    Ejecute directamente  Folio.exe --host 127.0.0.1  desde la carpeta
+    Ejecute directamente  EVA-PDF.exe --host 127.0.0.1  desde la carpeta
     instalada y abra http://127.0.0.1:8090/ en el navegador.
-  El antivirus/SmartScreen bloquea Folio.exe (no esta firmado digitalmente):
-    Solicite a TI autorizar la carpeta %LOCALAPPDATA%\Folio-PDF o el hash
-    de Folio.exe publicado en SHA256SUMS.txt.
+  El antivirus/SmartScreen bloquea EVA-PDF.exe (no esta firmado digitalmente):
+    Solicite a TI autorizar la carpeta %LOCALAPPDATA%\EVA-PDF-Enterprise o el hash
+    de EVA-PDF.exe publicado en SHA256SUMS.txt.
 
 
 NO ES NECESARIO INSTALAR

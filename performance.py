@@ -78,7 +78,7 @@ def benchmark(folder: Path, config: dict, root: Path) -> dict:
             page = doc.new_page()
             for row in range(30):
                 page.insert_text((45, 50 + row * 23),
-                                 f"FOLIO PERFORMANCE TEST {index + 1} / {row + 1}", fontsize=11)
+                                 f"EVA PDF PERFORMANCE TEST {index + 1} / {row + 1}", fontsize=11)
             page.draw_rect(pdf.Rect(35, 30, 550, 760), color=(.3, .2, .5))
         doc.save(source)
     samples = {}

@@ -1,4 +1,4 @@
-# Proceso de implementacion de Folio
+# Proceso de implementacion de EVA PDF Enterprise
 
 Este documento resume el trabajo del proyecto para revision y publicacion.
 El detalle por build esta en [CHANGELOG](../CHANGELOG.md); la operacion LAN
@@ -83,7 +83,7 @@ esquinas y luces sutiles indican construccion sin usar logotipos de terceros.
 
 ## 7. Evolucion de la apertura
 
-1. Logo Folio con arco luminoso; al principio solo primera visita por navegador.
+1. Logo EVA PDF Enterprise con arco luminoso; al principio solo primera visita por navegador.
 2. A peticion del usuario paso a reproducirse en cada entrada/recarga.
 3. Emergente con relieve de papel, bruma, particulas y profundidad.
 4. Estado actual: pantalla completa sin recuadro ni boton de omitir, fondo real
@@ -117,9 +117,9 @@ licencias y ejecutable congelado quedan sujetos a aceptacion especifica.
 
 ## 9. Proxima distribucion
 
-Se prepararon parametros `3.1.0` para Folio.exe onedir y Setup.exe offline,
+Se prepararon parametros `3.1.0` para EVA-PDF.exe onedir y Setup.exe offline,
 sin construirlos. Se adapto el despacho de workers en modo congelado para que
-no intenten ejecutar un script `.py` usando Folio.exe como si fuera Python.
+no intenten ejecutar un script `.py` usando EVA-PDF.exe como si fuera Python.
 Se ejecutaron 86 pruebas de fuente con resultado correcto. Se valido la sintaxis
 de los scripts, pero la politica de PowerShell bloqueo la prevalidacion real;
 no se altero esa politica ni se instalaron herramientas de empaquetado.

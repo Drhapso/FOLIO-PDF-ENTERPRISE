@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="client-build" content="{{ build }}">
   <meta name="color-scheme" content="light dark">
-  <title>Folio | Herramientas PDF en tu red</title>
-  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <title>EVA PDF Enterprise | Herramientas PDF en tu red</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg', v=build) }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='extended.css', v=build) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='acrobat_editor.css', v=build) }}">
@@ -19,7 +19,7 @@
   <script src="{{ url_for('static', filename='acrobat_editor.js', v=build) }}" defer></script>
 </head>
 <body>
-  <dialog id="folio-opening" tabindex="-1" aria-label="Bienvenido a Folio" aria-describedby="opening-tagline">
+  <dialog id="folio-opening" tabindex="-1" aria-label="Bienvenido a EVA PDF Enterprise" aria-describedby="opening-tagline">
     <div class="opening-stage">
       <div class="opening-dawn" aria-hidden="true"></div>
       <div class="opening-rays" aria-hidden="true"></div>
@@ -65,14 +65,14 @@
       <div class="opening-mist" aria-hidden="true"></div>
       <div class="opening-mist opening-mist-near" aria-hidden="true"></div>
       <div class="opening-brand">
-        <img src="{{ url_for('static', filename='favicon.svg') }}" width="78" height="78" alt="">
-        <span class="opening-word" aria-hidden="true">folio<span>.</span></span>
+        <img src="{{ url_for('static', filename='favicon.svg', v=build) }}" width="78" height="78" alt="">
+        <span class="opening-word" aria-hidden="true">EVA<span>.</span><small class="opening-edition">PDF Enterprise</small></span>
       </div>
       <p class="opening-tagline" id="opening-tagline">TUS DOCUMENTOS. TU ESPACIO.</p>
     </div>
   </dialog>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Folio, inicio"><span class="brand-icon">F</span>folio<span class="brand-dot">.</span></a>
+    <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
     <nav aria-label="Navegacion principal"><a href="#herramientas">Herramientas</a><a href="#privacidad">Privacidad</a></nav>
     <div class="header-actions"><span class="network"><span></span> Entorno local</span><button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button></div>
   </header>
@@ -108,7 +108,7 @@
         <div class="construction-content">
           <img class="construction-symbol" src="{{ url_for('static', filename='construction.svg') }}" width="112" height="112" alt="" aria-hidden="true">
           <div>
-            <span class="construction-code">FOLIO / ESTADO: DESARROLLO</span>
+            <span class="construction-code">EVA PDF ENTERPRISE / ESTADO: DESARROLLO</span>
             <h3>Funcion en Construccion</h3>
             <p id="construction-description">Este módulo aún no está totalmente desarrollado. El escaneo, la cámara, la captura de pantalla y la impresión no están habilitados desde esta sección.</p>
             <span class="construction-caption">ACCESO CERRADO · LAS HERRAMIENTAS PDF SIGUEN DISPONIBLES</span>
@@ -129,7 +129,7 @@
       <div class="privacy-steps"><span><b>01</b> Selecciona en tu equipo</span><span><b>02</b> Procesa en el servidor local</span><span><b>03</b> Descarga y elimina temporales</span></div>
     </section>
   </main>
-  <footer><a class="brand small" href="/">folio<span class="brand-dot">.</span></a><span>Hecho para tu red. Diseñado para tu tranquilidad.</span><span id="build">Build {{ build }}</span></footer>
+  <footer><a class="brand small" href="/">EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a><span>Hecho para tu red. Diseñado para tu tranquilidad.</span><span id="build">Build {{ build }}</span></footer>
 
   <dialog id="workspace" aria-labelledby="workspace-title">
     <div class="workspace-heading"><div><span class="eyebrow">ESPACIO TEMPORAL · SIN HISTORIAL</span><h2 id="workspace-title"></h2></div><button id="close-workspace" class="icon-button" aria-label="Cerrar herramienta">✕</button></div>

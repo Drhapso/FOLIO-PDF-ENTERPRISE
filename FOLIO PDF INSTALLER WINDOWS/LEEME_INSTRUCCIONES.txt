@@ -1,8 +1,8 @@
-﻿FOLIO PDF - INSTALADOR OFFLINE ACTUAL
+﻿EVA PDF ENTERPRISE - INSTALADOR OFFLINE ACTUAL
 
 Instalador vigente (version 3.1.0, Windows 10/11 x64):
-  ..\dist\Folio-PDF-Offline-3.1.0-win-x64.zip
-  SHA256: 8CE63D712ED3C0AB3C2827A77CA7BB77E947CE295A9AE07C53FC0AA1B6C4EDCA
+  ..\dist\EVA-PDF-Enterprise-Offline-3.1.0-win-x64.zip
+  SHA256: E89D152C44DD71E9420A07F903C560D224E294C4B9D8EFDFA7E7D7844A537352
 
 Uso: copiar el ZIP al equipo, descomprimirlo y ejecutar INSTALAR.bat (no
 requiere administrador, Python ni Internet). Dentro del ZIP estan LEEME.txt

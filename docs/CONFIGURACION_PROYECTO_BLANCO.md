@@ -2,7 +2,7 @@
 
 ## Independencia
 
-Folio toma como referencia el despliegue Flask/Waitress y SQLite central de
+EVA PDF Enterprise toma como referencia el despliegue Flask/Waitress y SQLite central de
 FALCON y Help Desk, no sus datos ni credenciales. Las tres aplicaciones tienen
 entornos, puertos, bases y directorios separados. No mover bases operativas
 a esta carpeta ni publicar contenido de otros proyectos.
@@ -92,7 +92,7 @@ coherente hacia el backend o integrar una politica explicita de origen
 antes del despliegue. No habilitar confianza indiscriminada en X-Forwarded-*.
 Probar carga, descarga y tamanos maximos tambien en el proxy; desactivar
 cache y almacenamiento temporal de cuerpos de solicitudes/respuestas en el proxy.
-La politica de eliminacion solo cubre Folio, no un proxy configurado por terceros.
+La politica de eliminacion solo cubre EVA PDF Enterprise, no un proxy configurado por terceros.
 
 Para inicio con Windows, TI puede registrar `deploy\run-lan.ps1` como tarea
 bajo una cuenta dedicada de privilegios minimos, con acceso solo a este proyecto,
@@ -138,7 +138,7 @@ El complemento se descarga de `/desktop/download`. El operador lo ejecuta
 manualmente en cada cliente Windows con `-STA`, sin permisos administrativos
 ni instalaciones automaticas. El escaneo requiere WIA; la impresion depende
 de una aplicacion PDF con verbo Print registrado y confirmacion explicita.
-Diagnostico: `powershell -NoProfile -STA -File .\Folio-Desktop.ps1 -Action Diagnose`.
+Diagnostico: `powershell -NoProfile -STA -File .\EVA-Desktop.ps1 -Action Diagnose`.
 No interpretar una solicitud al spooler como confirmacion de impresion.
 
 La cabecera Permissions-Policy permite camara y captura solo al propio origen,

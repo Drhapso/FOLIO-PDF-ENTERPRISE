@@ -46,16 +46,16 @@ Push-Location $root
 try {
     & $Python -m unittest discover -s tests
     if ($LASTEXITCODE -ne 0) { throw "Las pruebas fallaron; no se construira." }
-    & $Python -m PyInstaller --noconfirm --distpath $release --workpath (Join-Path $root "build") (Join-Path $PSScriptRoot "folio.spec")
+    & $Python -m PyInstaller --noconfirm --distpath $release --workpath (Join-Path $root "build") (Join-Path $PSScriptRoot "eva-pdf.spec")
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller fallo." }
-    $payload = Join-Path $release "Folio"
+    $payload = Join-Path $release "EVA-PDF"
     $prohibited = @("runtime", "instance", ".git", ".venv", "config\site_config.json")
     foreach ($path in $prohibited) {
         if (Test-Path -LiteralPath (Join-Path $payload $path)) { throw "Contenido local prohibido en paquete: $path" }
     }
     & $Python -m pip list --format=freeze | Set-Content -LiteralPath (Join-Path $payload "BUILD-DEPENDENCIES.txt") -Encoding UTF8
     if ($LASTEXITCODE -ne 0) { throw "No se pudo registrar dependencias." }
-    & (Join-Path $payload "Folio.exe") --calibrate
+    & (Join-Path $payload "EVA-PDF.exe") --calibrate
     if ($LASTEXITCODE -ne 0) { throw "El ejecutable no pudo calibrar sus motores." }
     # El perfil de esta maquina nunca debe viajar al equipo de destino.
     foreach ($name in @("instance", "runtime")) {

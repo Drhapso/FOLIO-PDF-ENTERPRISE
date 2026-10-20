@@ -19,7 +19,7 @@ for folder in ("templates", "static"):
 for language in ("spa", "eng"):
     datas.append((str(root / "models" / f"{language}.traineddata"), "models"))
 for path in (
-    "config/site_config.example.json", "desktop/Folio-Desktop.ps1",
+    "config/site_config.example.json", "desktop/EVA-Desktop.ps1",
     "README.md", "CHANGELOG.md", "requirements.txt", "docs",
 ):
     source = root / path
@@ -33,7 +33,8 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 exe = EXE(
-    pyz, a.scripts, [], exclude_binaries=True, name="Folio",
+    pyz, a.scripts, [], exclude_binaries=True, name="EVA-PDF",
     debug=False, strip=False, upx=False, console=True, contents_directory=".",
+    icon=str(root / "static" / "eva.ico"),
 )
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="Folio")
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="EVA-PDF")

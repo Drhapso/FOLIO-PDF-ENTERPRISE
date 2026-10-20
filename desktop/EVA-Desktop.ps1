@@ -23,7 +23,7 @@ if ($Action -eq "Diagnose") {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 function Show-Notice([string]$Text) {
-    [System.Windows.Forms.MessageBox]::Show($Text, "Folio Desktop", "OK", "Information") | Out-Null
+    [System.Windows.Forms.MessageBox]::Show($Text, "EVA PDF Enterprise Desktop", "OK", "Information") | Out-Null
 }
 function Invoke-Scan {
     $manager = New-Object -ComObject WIA.DeviceManager
@@ -44,7 +44,7 @@ function Invoke-Scan {
         # WIA no sobrescribe: se pide elegir otro nombre y no se borra ningun archivo existente.
         if (Test-Path -LiteralPath $target) { throw "El archivo ya existe. Elija un nombre nuevo para no reemplazarlo." }
         $image.SaveFile($target)
-        Show-Notice "Escaneo guardado localmente. Abra Folio en su navegador y seleccione Imagenes a PDF. El complemento no envia ni guarda copias adicionales."
+        Show-Notice "Escaneo guardado localmente. Abra EVA PDF Enterprise en su navegador y seleccione Imagenes a PDF. El complemento no envia ni guarda copias adicionales."
     }
     finally { $save.Dispose() }
 }
@@ -65,7 +65,7 @@ function Invoke-Print {
         $start.UseShellExecute = $true
         $start.Verb = "Print"
         [System.Diagnostics.Process]::Start($start) | Out-Null
-        Show-Notice "Solicitud enviada a la aplicacion PDF asociada de Windows. Folio no puede confirmar que se imprimio. Revise la cola y la impresora. Si no hay asociacion para Print, abra el PDF y use Ctrl+P. La cola de impresion puede conservar datos segun la politica de Windows."
+        Show-Notice "Solicitud enviada a la aplicacion PDF asociada de Windows. EVA PDF Enterprise no puede confirmar que se imprimio. Revise la cola y la impresora. Si no hay asociacion para Print, abra el PDF y use Ctrl+P. La cola de impresion puede conservar datos segun la politica de Windows."
     }
     finally { $open.Dispose() }
 }
@@ -77,7 +77,7 @@ try {
         "Printers" { Start-Process "ms-settings:printers"; exit 0 }
     }
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Folio - complemento local Windows"
+    $form.Text = "EVA PDF Enterprise - complemento local Windows"
     $form.ClientSize = New-Object System.Drawing.Size(520, 340)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
@@ -114,6 +114,6 @@ try {
     $form.Dispose()
 }
 catch {
-    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Folio Desktop - error", "OK", "Error") | Out-Null
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "EVA PDF Enterprise Desktop - error", "OK", "Error") | Out-Null
     exit 1
 }

@@ -33,19 +33,19 @@ class DistributionTests(unittest.TestCase):
         return module
 
     def test_entry_worker_dispatch(self):
-        with patch.object(sys, "argv", ["Folio.exe", "--worker", "trabajo"]), \
+        with patch.object(sys, "argv", ["EVA-PDF.exe", "--worker", "trabajo"]), \
                 patch("worker.main", return_value=0) as worker:
             self.assertEqual(self.entry().main(), 0)
             worker.assert_called_once_with()
-            self.assertEqual(sys.argv, ["Folio.exe", "trabajo"])
+            self.assertEqual(sys.argv, ["EVA-PDF.exe", "trabajo"])
 
     def test_entry_rejects_invalid_worker_arguments(self):
-        with patch.object(sys, "argv", ["Folio.exe", "--worker"]):
+        with patch.object(sys, "argv", ["EVA-PDF.exe", "--worker"]):
             with self.assertRaises(SystemExit):
                 self.entry().main()
 
     def test_entry_server_dispatch(self):
-        with patch.object(sys, "argv", ["Folio.exe", "--host", "127.0.0.1"]), \
+        with patch.object(sys, "argv", ["EVA-PDF.exe", "--host", "127.0.0.1"]), \
                 patch("server.main") as server:
             self.assertEqual(self.entry().main(), 0)
             server.assert_called_once_with()

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Folio · Interfaz Especializada de Edición de Texto estilo Adobe Acrobat Pro DC
+   EVA PDF Enterprise · Interfaz Especializada de Edición de Texto estilo Adobe Acrobat Pro DC
    ========================================================================== */
 
 .folio-editor-page {
@@ -245,7 +245,7 @@
   pointer-events: auto;
 }
 
-/* Bloques de Texto Estilo Folio Editor */
+/* Bloques de Texto Estilo EVA PDF Enterprise */
 .acro-block {
   position: absolute;
   box-sizing: border-box;

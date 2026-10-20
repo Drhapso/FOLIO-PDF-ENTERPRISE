@@ -2,12 +2,12 @@
 
 ## Paquete offline generado: ZIP autocontenido 3.1.0 (2026-10-20)
 
-Se genero y valido `dist\Folio-PDF-Offline-3.1.0-win-x64.zip` (120 MB,
-SHA256 `8CE63D712ED3C0AB3C2827A77CA7BB77E947CE295A9AE07C53FC0AA1B6C4EDCA`,
+Se genero y valido `dist\EVA-PDF-Enterprise-Offline-3.1.0-win-x64.zip` (120 MB,
+SHA256 `E89D152C44DD71E9420A07F903C560D224E294C4B9D8EFDFA7E7D7844A537352`,
 tambien en el `.sha256.txt` adjunto). Sustituye a Setup.exe/Inno Setup, que no
 esta instalado en el constructor; `installer.iss` queda como alternativa.
 
-Contenido: `Folio\` (Folio.exe PyInstaller onedir con CPython 3.13, todas las
+Contenido: `EVA-PDF\` (EVA-PDF.exe PyInstaller onedir con CPython 3.13, todas las
 librerias de `requirements.txt`, VC++ runtime, plantillas, recursos y modelos
 OCR spa/eng), `app\` (lanzador, desinstalador, `herramientas\configure-firewall.ps1`),
 `INSTALAR.bat`/`INSTALAR.ps1`, `LEEME.txt`, `COMPLEMENTOS_ADICIONALES.txt`
@@ -15,10 +15,10 @@ OCR spa/eng), `app\` (lanzador, desinstalador, `herramientas\configure-firewall.
 y `PAQUETE-INFO.txt`. Listas `SHA256SUMS.txt` y `app\APP-SHA256SUMS.txt`.
 
 Instalacion en el destino: descomprimir y ejecutar `INSTALAR.bat` (sin
-administrador). Copia a `%LOCALAPPDATA%\Folio-PDF`, verifica hashes, calibra
-y crea accesos "Folio PDF", "Folio PDF (compartir en LAN)" y "Desinstalar
-Folio PDF". Opciones de `INSTALAR.ps1`: `-InstallDir`, `-NoShortcuts`,
-`-SkipCalibration`. Actualizar = ejecutar el paquete nuevo con Folio cerrado;
+administrador). Copia a `%LOCALAPPDATA%\EVA-PDF-Enterprise`, verifica hashes, calibra
+y crea accesos "EVA PDF Enterprise", "EVA PDF Enterprise (compartir en LAN)" y "Desinstalar
+EVA PDF Enterprise". Opciones de `INSTALAR.ps1`: `-InstallDir`, `-NoShortcuts`,
+`-SkipCalibration`. Actualizar = ejecutar el paquete nuevo con EVA PDF Enterprise cerrado;
 conserva `config\site_config.json` e `instance\`.
 
 Regenerar (borrar antes la salida de la misma version, los scripts no sobrescriben):
@@ -37,11 +37,11 @@ Se corrigio `build-executable.ps1`: Windows PowerShell 5.1 elimina comillas
 dobles incrustadas en `python -c`; ahora usa comillas simples dentro del codigo.
 
 Validacion del paquete (PATH sin Python, ruta temporal con nombres cortos 8.3):
-pruebas fuente y `Folio.exe --calibrate` con OCR aprobados; instalacion limpia
+pruebas fuente y `EVA-PDF.exe --calibrate` con OCR aprobados; instalacion limpia
 en 10 s (1940 archivos verificados); arranque del lanzador 3,7 s y reutilizacion
 de instancia 0,3 s; `/health`, compresion, OCR (texto reconocido), PDF a DOCX y
 Office a PDF (39 s la primera vez, LibreOffice local) correctos; actualizacion
-rechazada con Folio abierto y correcta cerrado conservando datos; paquete
+rechazada con EVA PDF Enterprise abierto y correcta cerrado conservando datos; paquete
 alterado rechazado; desinstalacion con `-KeepData`; modo LAN accesible por IP.
 Pendiente: VM limpia sin LibreOffice, segundo equipo fisico y revision de
 licencias antes de distribuir fuera de la entidad (PyMuPDF AGPL). Binarios sin
@@ -49,14 +49,14 @@ firma: SmartScreen o antivirus pueden advertir.
 
 ## Estado de la receta original (19 de octubre)
 
-Se preparo una receta Windows x64, sin generar Folio.exe ni Setup.exe.
+Se preparo una receta Windows x64, sin generar EVA-PDF.exe ni Setup.exe.
 Version propuesta: `3.1.0`; es un parametro de empaquetado, no una publicacion.
 El build web sigue identificado por `CLIENT_BUILD` en `server.py`.
 La receta debe certificarse creando y probando los binarios en una siguiente
 entrega autorizada. Pruebas del codigo fuente no certifican un paquete congelado.
 
 - Ejecutable: PyInstaller en modo **onedir**, consola visible para errores.
-- Instalador: Inno Setup 6.3 o posterior de la serie 6, por usuario en `%LOCALAPPDATA%\Folio-PDF`.
+- Instalador: Inno Setup 6.3 o posterior de la serie 6, por usuario en `%LOCALAPPDATA%\EVA-PDF-Enterprise`.
 - Sin Python previo, descargas, servicio automatico ni cambios de firewall
   durante la instalacion. No instala controladores, proxy ni certificados.
 - La consola del servidor debe permanecer abierta. No se abre automaticamente
@@ -70,8 +70,8 @@ entrega autorizada. Pruebas del codigo fuente no certifican un paquete congelado
 | `deploy/release.example.json` | Version propuesta, Python 3.13 x64, compilador Inno y hashes OCR. |
 | `requirements-build.txt` | Dependencias del producto y PyInstaller; no se instala nada automaticamente. |
 | `deploy/build-executable.ps1` | Prevalidacion; construccion solo con `-Build`. |
-| `deploy/folio.spec` | Lista de recursos y motores que PyInstaller debe incorporar. |
-| `deploy/frozen_entry.py` | Separa servidor y worker dentro de Folio.exe. |
+| `deploy/eva-pdf.spec` | Lista de recursos y motores que PyInstaller debe incorporar. |
+| `deploy/frozen_entry.py` | Separa servidor y worker dentro de EVA-PDF.exe. |
 | `deploy/installer.iss` | Receta de Setup.exe, sin acceso a Internet. |
 | `tests/test_distribution.py` | Rutas del worker y despacho fuente/congelado. |
 
@@ -122,23 +122,23 @@ Usar la politica de ejecucion aprobada por TI, sin cambiarla para sortear bloque
 Antes, revisar licencias y aprobar la redistribucion:
 
 ```powershell
-# Solo Folio.exe y dependencias:
+# Solo EVA-PDF.exe y dependencias:
 .\deploy\build-executable.ps1 -ParametersFile .\deploy\release.local.json -Python .\.venv-build\Scripts\python.exe -Build -LicensesReviewed
 
-# Folio.exe y Setup.exe, desde una salida que todavia no exista:
+# EVA-PDF.exe y Setup.exe, desde una salida que todavia no exista:
 .\deploy\build-executable.ps1 -ParametersFile .\deploy\release.local.json -Python .\.venv-build\Scripts\python.exe -Build -Installer -LicensesReviewed
 ```
 
 Se ejecutan las pruebas antes de PyInstaller. Una salida existente se rechaza,
-no se borra ni se sobreescribe. Tras empaquetar se ejecuta `Folio.exe --calibrate`
+no se borra ni se sobreescribe. Tras empaquetar se ejecuta `EVA-PDF.exe --calibrate`
 para ejercitar la entrada congelada, workers, motores y modelos. Se eliminan
 `instance` y `runtime` **solo de esa nueva carpeta de salida** para no distribuir
 un perfil de hardware ni documentos del constructor. Si hay un error, se detiene
 y conserva la salida parcial para investigacion; no distribuirla ni reanudar
 pisandola. Eliminar solo esa salida concreta tras revisarla, o elegir otra version.
 
-Salida prevista: `dist/release-<version>/Folio/Folio.exe`, dependencias al lado
-y, si se solicita, `Folio-Setup-<version>-win-x64.exe`.
+Salida prevista: `dist/release-<version>/EVA-PDF/EVA-PDF.exe`, dependencias al lado
+y, si se solicita, `EVA-PDF-Enterprise-Setup-<version>-win-x64.exe`.
 `SHA256SUMS.txt` enumera el payload; `INSTALLER-SHA256SUMS.txt` verifica el Setup.
 Los hashes no equivalen a firma de editor. Esta receta **no firma** los binarios;
 TI debe revisar firma Authenticode/SmartScreen y politica antivirus antes de publicar.
@@ -192,7 +192,7 @@ No se hizo commit, push ni publicacion como parte de esta preparacion.
   de scripts de este equipo; no se cambio ni se sorteo esa politica.
 - PyInstaller no esta instalado en el entorno actual y no se encontro
   Inno Setup en la ruta de ejemplo. Prepararlos en un constructor dedicado
-  es una tarea futura, no un requisito para continuar usando Folio desde fuente.
+  es una tarea futura, no un requisito para continuar usando EVA PDF Enterprise desde fuente.
 - No se ejecutaron PyInstaller ni Inno Setup; el ejecutable y el instalador
   siguen pendientes de generacion y pruebas en VM offline.
 
@@ -207,9 +207,9 @@ No se hizo commit, push ni publicacion como parte de esta preparacion.
    Repetir Office a PDF con y sin LibreOffice disponible.
 4. Verificar cuotas, cancelacion a 120 s, concurrencia, aislamiento Windows,
    descarga grande y limpieza tras error/reinicio. Recalibrar en el destino.
-5. Probar inicio LAN explicito con `Folio.exe --host 0.0.0.0`, firewall
+5. Probar inicio LAN explicito con `EVA-PDF.exe --host 0.0.0.0`, firewall
    aprobado y un segundo equipo fisico. El instalador no abre la red.
-6. Detener Folio antes de actualizar; respaldar solo configuracion tecnica,
+6. Detener EVA PDF Enterprise antes de actualizar; respaldar solo configuracion tecnica,
    nunca `runtime`. Los archivos locales no forman parte del payload.
    El instalador conserva archivos no instalados (configuracion y estado).
 7. Desinstalar y comprobar restos. Los datos creados en ejecucion no se

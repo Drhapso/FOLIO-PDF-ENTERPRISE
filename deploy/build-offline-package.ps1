@@ -5,14 +5,14 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path -LiteralPath $ParametersFile)) { $ParametersFile = Join-Path $PSScriptRoot "release.example.json" }
 $version = (Get-Content -LiteralPath $ParametersFile -Raw | ConvertFrom-Json).version
-$payload = Join-Path $root "dist\release-$version\Folio"
+$payload = Join-Path $root "dist\release-$version\EVA-PDF"
 if (-not (Test-Path -LiteralPath (Join-Path $payload "SHA256SUMS.txt"))) {
     throw "No existe un build verificado en $payload. Ejecute antes build-executable.ps1 -Build."
 }
 foreach ($path in @("runtime", "instance", ".git", ".venv", "config\site_config.json")) {
     if (Test-Path -LiteralPath (Join-Path $payload $path)) { throw "Contenido local prohibido en el payload: $path" }
 }
-$name = "Folio-PDF-Offline-$version-win-x64"
+$name = "EVA-PDF-Enterprise-Offline-$version-win-x64"
 $stage = Join-Path $root "dist\$name"
 $zip = "$stage.zip"
 foreach ($output in @($stage, $zip)) {
@@ -20,7 +20,7 @@ foreach ($output in @($stage, $zip)) {
 }
 $kit = Join-Path $PSScriptRoot "offline"
 New-Item -ItemType Directory -Path $stage | Out-Null
-Copy-Item -LiteralPath $payload -Destination (Join-Path $stage "Folio") -Recurse
+Copy-Item -LiteralPath $payload -Destination (Join-Path $stage "EVA-PDF") -Recurse
 Copy-Item -LiteralPath (Join-Path $kit "app") -Destination (Join-Path $stage "app") -Recurse
 New-Item -ItemType Directory -Path (Join-Path $stage "app\herramientas") | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "configure-firewall.ps1") -Destination (Join-Path $stage "app\herramientas")
@@ -33,14 +33,14 @@ Get-ChildItem -LiteralPath $app -File -Recurse | ForEach-Object {
 } | Set-Content -LiteralPath (Join-Path $app "APP-SHA256SUMS.txt") -Encoding UTF8
 
 $build = [regex]::Match((Get-Content -LiteralPath (Join-Path $root "server.py") -Raw), 'CLIENT_BUILD\s*=\s*"([^"]+)"').Groups[1].Value
-$exeHash = (Get-FileHash -LiteralPath (Join-Path $stage "Folio\Folio.exe") -Algorithm SHA256).Hash
-$sumsHash = (Get-FileHash -LiteralPath (Join-Path $stage "Folio\SHA256SUMS.txt") -Algorithm SHA256).Hash
+$exeHash = (Get-FileHash -LiteralPath (Join-Path $stage "EVA-PDF\EVA-PDF.exe") -Algorithm SHA256).Hash
+$sumsHash = (Get-FileHash -LiteralPath (Join-Path $stage "EVA-PDF\SHA256SUMS.txt") -Algorithm SHA256).Hash
 @(
-    "Folio PDF offline $version (Windows x64)",
+    "EVA PDF Enterprise offline $version (Windows x64)",
     "Build web: $build",
     "Generado: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))",
     "Python embebido: 3.13 x64 (PyInstaller onedir)",
-    "SHA256 Folio.exe:        $exeHash",
+    "SHA256 EVA-PDF.exe:      $exeHash",
     "SHA256 SHA256SUMS.txt:   $sumsHash",
     "Binarios sin firma Authenticode: verifique las huellas antes de distribuir."
 ) | Set-Content -LiteralPath (Join-Path $stage "PAQUETE-INFO.txt") -Encoding UTF8

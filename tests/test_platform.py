@@ -70,7 +70,7 @@ class PlatformTests(unittest.TestCase):
     def test_health_and_page(self):
         self.assertEqual(self.client.get("/health").json["client_build"], CLIENT_BUILD)
         response = self.client.get("/")
-        self.assertIn(b"folio", response.data)
+        self.assertIn(b"EVA PDF Enterprise", response.data)
         self.assertIn(b'id="multi-edit-tab"', response.data)
         self.assertIn("Edición múltiple".encode(), response.data)
         self.assertIn(b'id="session-tools"', response.data)

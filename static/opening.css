@@ -135,6 +135,16 @@ html:has(#folio-opening[open]) { overflow: hidden; }
   text-shadow: 0 5px 24px #141018, 0 0 55px #c6bef65c;
 }
 .opening-word span { color: #a4db59; }
+.opening-word .opening-edition {
+  display: block;
+  margin-top: 4px;
+  font-size: clamp(16px, 2.6vw, 26px);
+  font-weight: 600;
+  letter-spacing: 6px;
+  text-align: center;
+  text-transform: uppercase;
+  color: #f5f1fa;
+}
 .opening-tagline {
   position: absolute;
   inset: auto 20px 23%;

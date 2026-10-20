@@ -1,5 +1,19 @@
 # Cambios
 
+## 2026-10-20 - Cambio de marca a EVA PDF Enterprise
+
+- Marca visible renombrada de Folio a EVA PDF Enterprise: titulos, logotipo
+  (icono "E" y favicon), apertura animada, editor, pie, mensajes, complemento
+  `desktop/EVA-Desktop.ps1` y documentacion.
+- Ejecutable `EVA-PDF.exe` (`deploy/eva-pdf.spec`), instalador offline
+  `EVA-PDF-Enterprise-Offline-<v>-win-x64.zip`, instalacion en
+  `%LOCALAPPDATA%\EVA-PDF-Enterprise`, lanzador `Iniciar-EVA.ps1` y
+  desinstalador `Desinstalar-EVA.ps1`.
+- Sin cambios: carpetas del proyecto y repositorio, tarea `Folio-PDF-LAN`,
+  scripts de recuperacion, regla de firewall e identificadores internos.
+  Entradas anteriores de este registro conservan el nombre historico.
+- Build web `2026-10-20-eva-brand-1`; favicon versionado para renovar cache.
+
 ## 2026-10-20 - Instalador offline 3.1.0
 
 - Generado `dist/Folio-PDF-Offline-3.1.0-win-x64.zip`: Folio.exe PyInstaller

@@ -6,7 +6,7 @@ import sys
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--worker":
         if len(sys.argv) != 3:
-            raise SystemExit("Uso interno: Folio.exe --worker <directorio>")
+            raise SystemExit("Uso interno: EVA-PDF.exe --worker <directorio>")
         sys.argv = [sys.argv[0], sys.argv[2]]
         from worker import main as run_worker
         return run_worker()

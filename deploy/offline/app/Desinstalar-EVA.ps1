@@ -4,13 +4,13 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $root = (Get-Item -LiteralPath $PSScriptRoot).FullName.TrimEnd("\")
-if (-not (Test-Path -LiteralPath (Join-Path $root "Folio.exe"))) { throw "Esta carpeta no es una instalacion de Folio PDF." }
+if (-not (Test-Path -LiteralPath (Join-Path $root "EVA-PDF.exe"))) { throw "Esta carpeta no es una instalacion de EVA PDF Enterprise." }
 if (-not $Force) {
-    $answer = Read-Host "Se desinstalara Folio PDF de $root. Continuar? (S/N)"
+    $answer = Read-Host "Se desinstalara EVA PDF Enterprise de $root. Continuar? (S/N)"
     if ($answer -notmatch '^[sS]') { Write-Host "Cancelado."; exit 0 }
     if (-not $KeepData) { $KeepData = (Read-Host "Conservar configuracion y datos locales? (S/N)") -match '^[sS]' }
 }
-$running = @(Get-Process -Name Folio -ErrorAction SilentlyContinue | Where-Object {
+$running = @(Get-Process -Name EVA-PDF -ErrorAction SilentlyContinue | Where-Object {
     $_.Path -and $_.Path.StartsWith($root + "\", [StringComparison]::OrdinalIgnoreCase)
 })
 foreach ($process in $running) { Stop-Process -Id $process.Id -Force }
@@ -27,11 +27,11 @@ if ($KeepData) {
     Write-Host "Datos conservados en $backup"
 }
 foreach ($link in @(
-    (Join-Path ([Environment]::GetFolderPath("Programs")) "Folio PDF"),
-    (Join-Path ([Environment]::GetFolderPath("Desktop")) "Folio PDF.lnk")
+    (Join-Path ([Environment]::GetFolderPath("Programs")) "EVA PDF Enterprise"),
+    (Join-Path ([Environment]::GetFolderPath("Desktop")) "EVA PDF Enterprise.lnk")
 )) {
     if (Test-Path -LiteralPath $link) { Remove-Item -LiteralPath $link -Recurse -Force }
 }
 Remove-Item -LiteralPath $root -Recurse -Force
-Write-Host "Folio PDF se desinstalo correctamente."
+Write-Host "EVA PDF Enterprise se desinstalo correctamente."
 if (-not $Force) { Read-Host "Pulse Enter para cerrar" | Out-Null }

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="client-build" content="{{ build }}">
   <meta name="color-scheme" content="light dark">
-  <title>Folio - Editor PDF</title>
-  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <title>EVA PDF Enterprise - Editor PDF</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg', v=build) }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='extended.css', v=build) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='acrobat_editor.css', v=build) }}">
@@ -18,8 +18,8 @@
     <!-- TopBar / Barra Superior estilo Acrobat DC -->
     <header class="acro-topbar">
       <div class="acro-topbar-left">
-        <a class="brand" href="/" title="Volver al menú principal"><span class="brand-icon">F</span>folio<span class="brand-dot">.</span></a>
-        <span class="folio-editor-title">Folio - Editor PDF</span>
+        <a class="brand" href="/" title="Volver al menú principal"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+        <span class="folio-editor-title">EVA PDF Enterprise - Editor PDF</span>
         <div class="acro-divider"></div>
         <button type="button" id="acro-tool-edit" class="acro-tool-btn active" title="Editar texto y párrafos existentes (TouchUpEditPDFTool)">✎ Editar texto</button>
         <button type="button" id="acro-tool-add" class="acro-tool-btn" title="Hacer clic en la página para insertar un nuevo bloque de texto (TouchUpAddTextbox)">+ Agregar texto</button>
