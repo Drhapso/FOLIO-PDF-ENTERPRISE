@@ -1,0 +1,18 @@
+{
+  "host": "127.0.0.1",
+  "port": 8090,
+  "max_file_mb": 1024,
+  "max_upload_mb": 1024,
+  "max_output_mb": 2048,
+  "max_files": 5,
+  "max_batch_files": 200,
+  "max_pages": 0,
+  "max_batch_pages": 0,
+  "max_render_pixels": 16000000,
+  "max_parallel_jobs": 5,
+  "max_job_memory_mb": 4096,
+  "timeout_seconds": 120,
+  "ocr_language": "spa+eng",
+  "libreoffice_path": "",
+  "secure_transport": false
+}

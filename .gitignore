@@ -1,0 +1,17 @@
+.venv/
+.venv-build/
+__pycache__/
+*.pyc
+instance/
+runtime/
+config/site_config.json
+models/*.traineddata
+*.log
+.pytest_cache/
+build/
+dist/
+wheelhouse/
+deploy/release.local.json
+*.exe
+*.msi
+*.zip

@@ -1,0 +1,256 @@
+/* Paleta tomada de la referencia: negro, violeta, purpura, lima y amarillo. */
+:root {
+  --palette-black: #000000;
+  --palette-violet: #6259aa;
+  --palette-purple: #5a2666;
+  --palette-lime: #a4db59;
+  --palette-yellow: #f9bb2c;
+  --bg: #f7f5fb;
+  --surface: #ffffff;
+  --text: #211a29;
+  --muted: #62566e;
+  --border: #887795;
+  --accent: var(--palette-purple);
+  --accent-hover: #461b50;
+  --on-accent: #ffffff;
+  --soft: #eee9f6;
+  --shadow: 0 12px 38px #5a26661a;
+  --focus: var(--palette-violet);
+  --selection: var(--palette-violet);
+  --on-selection: #ffffff;
+  --selection-soft: #6259aa14;
+  --warning: #644300;
+  --warning-bg: #fff0c7;
+  --error: #a12842;
+  --error-soft: #a1284214;
+  --success: #355414;
+  --success-bg: #e9f5d5;
+  --convert: #51458f;
+  --convert-bg: #ece9fa;
+  --organize: var(--palette-purple);
+  --organize-bg: #eee9f6;
+  --viewport: #242029;
+  --backdrop: #141018c9;
+  --paper-muted: #62566e;
+}
+
+:root[data-theme=dark] {
+  --bg: #141018;
+  --surface: #211929;
+  --text: #f5f1fa;
+  --muted: #c2b6d0;
+  --border: #82718f;
+  --accent: var(--palette-lime);
+  --accent-hover: #b9e67d;
+  --on-accent: #151b0c;
+  --soft: #32243e;
+  --shadow: 0 12px 38px #00000040;
+  --focus: var(--palette-yellow);
+  --selection: var(--palette-violet);
+  --on-selection: #ffffff;
+  --warning: var(--palette-yellow);
+  --warning-bg: #382b16;
+  --error: #ffa7bc;
+  --error-soft: #ffa7bc14;
+  --success: var(--palette-lime);
+  --success-bg: #26351d;
+  --convert: #c6bef6;
+  --convert-bg: #302947;
+  --organize: #ead0f2;
+  --organize-bg: #45264d;
+}
+
+button:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible, label:focus-visible,
+summary:focus-visible {
+  outline-color: var(--focus);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+input, select, textarea { accent-color: var(--accent); }
+#option-include_cover {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin: 4px 0 0;
+  cursor: pointer;
+}
+.brand-icon { color: var(--on-accent); }
+.network span, .eyebrow > span { background: var(--success); }
+
+:root .filters, :root[data-theme=dark] .filters { background: var(--soft); }
+.filter.active { background: var(--accent); color: var(--on-accent); }
+.tool-card:hover { border-color: var(--accent); }
+.tool-icon { background: var(--organize-bg); color: var(--organize); }
+:root .tool-card[data-category=convert] .tool-icon,
+:root[data-theme=dark] .tool-card[data-category=convert] .tool-icon {
+  background: var(--convert-bg);
+  color: var(--convert);
+}
+:root .tool-card[data-category=edit] .tool-icon,
+:root[data-theme=dark] .tool-card[data-category=edit] .tool-icon {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+:root .tool-card[data-category=optimize] .tool-icon,
+:root[data-theme=dark] .tool-card[data-category=optimize] .tool-icon {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.card-arrow { color: var(--muted); }
+.privacy-steps b { border-color: var(--border); }
+dialog::backdrop, .acro-dialog::backdrop { background: var(--backdrop); }
+.dropzone { border-color: var(--focus); }
+.dropzone.dragging { background: var(--convert-bg); }
+:root .primary, :root[data-theme=dark] .primary {
+  color: var(--on-accent);
+}
+.primary:disabled, .secondary:disabled {
+  opacity: 1;
+  color: var(--muted);
+  background: var(--soft);
+  border: 1px dashed var(--border);
+}
+#download-link { color: var(--on-accent); }
+
+/* Solo controles del visor: el papel, las firmas y las muestras conservan sus colores. */
+.acro-viewport { background: var(--viewport); }
+.canvas-wrap { background: var(--viewport); }
+.acro-tool-btn:hover, .acro-num-btn:hover, .acro-format-btn:hover {
+  background: var(--soft);
+}
+.acro-tool-btn.active, .acro-format-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.acro-show-outlines .acro-block { border-color: var(--selection); }
+.acro-block:hover { border-color: var(--selection); background: var(--selection-soft); }
+.acro-block.selected { border-color: var(--selection) !important; }
+.acro-block:not(.modified):not(.is-new) .acro-block-editor { caret-color: var(--selection); }
+.acro-block.deleted { border-color: var(--error) !important; }
+.acro-deleted-badge {
+  color: var(--error);
+  background: var(--surface);
+  border-color: var(--error);
+}
+.acro-deleted-badge:hover {
+  background: var(--error-soft);
+  border-color: var(--error);
+}
+.acro-block-toolbar {
+  background: var(--selection);
+  color: var(--on-selection);
+}
+.acro-block-toolbar button { color: inherit; }
+.acro-block-toolbar button:hover { background: var(--selection-soft); color: inherit; }
+.acro-handle { border-color: var(--selection); }
+.acro-status-dot { background: var(--success); }
+.acro-status-dot.dirty { background: var(--warning); }
+
+/* Detalles industriales sobre la interfaz, sin alterar el contenido del PDF. */
+.topbar, .acro-topbar {
+  border-bottom-color: var(--accent);
+  box-shadow: 0 3px 18px var(--selection-soft);
+}
+.tool-card, .privacy, dialog, .acro-rhp {
+  border-top-color: var(--convert);
+}
+.tool-card {
+  background-image: linear-gradient(var(--accent), var(--accent)),
+    linear-gradient(var(--accent), var(--accent));
+  background-size: 17px 2px, 2px 17px;
+  background-position: right 10px bottom 10px;
+  background-repeat: no-repeat;
+}
+.tool-card:hover, .tool-card:focus-visible {
+  box-shadow: 0 0 0 1px var(--accent), 0 6px 24px var(--selection-soft);
+}
+.primary, .secondary, .icon-button, .acro-tool-btn {
+  transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
+}
+.primary:hover, .primary:focus-visible {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 16px var(--selection-soft);
+}
+.hero .eyebrow > span {
+  box-shadow: 0 0 9px var(--success);
+  animation: folio-startup-glow 2.2s ease-in-out 2;
+}
+.construction-sector {
+  display: block;
+  position: relative;
+  border-color: var(--border);
+  padding: 28px;
+}
+.construction-heading { margin-bottom: 22px; }
+.construction-heading h2 { margin-top: 9px; }
+.construction-notice {
+  border: 1px solid #f9bb2c;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #141018;
+  color: #f9bb2c;
+  box-shadow: inset 0 0 28px #f9bb2c0a, 0 0 20px #f9bb2c0d;
+}
+.construction-rail {
+  height: 19px;
+  background: repeating-linear-gradient(135deg, #f9bb2c 0 14px, #141018 14px 29px);
+  border-bottom: 1px solid #f9bb2c;
+}
+.construction-rail:last-child { border-top: 1px solid #f9bb2c; border-bottom: 0; }
+.construction-content {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 30px;
+}
+.construction-symbol { flex: 0 0 112px; filter: drop-shadow(0 0 7px #f9bb2c26); }
+.construction-code, .construction-caption {
+  display: block;
+  font: 600 10px/1.8 "Consolas", monospace;
+  letter-spacing: 1.8px;
+  overflow-wrap: anywhere;
+}
+.construction-content h3 {
+  font-size: clamp(25px, 3.5vw, 42px);
+  line-height: 1.15;
+  margin: 9px 0 14px;
+  text-transform: uppercase;
+  letter-spacing: -.8px;
+  text-shadow: 0 0 18px #f9bb2c1a;
+}
+.construction-content p {
+  color: #f1dfb4;
+  font-size: 13px;
+  max-width: 650px;
+}
+.construction-caption { margin-top: 18px; color: #e1b858; font-size: 9px; }
+.construction-actions {
+  border: 0;
+  padding: 0;
+  margin: 18px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+.construction-actions legend { color: var(--muted); font-size: 11px; margin-bottom: 10px; }
+.construction-actions .secondary { cursor: not-allowed; }
+@keyframes folio-startup-glow {
+  0%, 100% { box-shadow: 0 0 5px var(--success); }
+  50% { box-shadow: 0 0 12px var(--success); }
+}
+@media (max-width: 700px) {
+  .construction-sector { padding: 22px 16px; }
+  .construction-content { flex-direction: column; align-items: flex-start; gap: 18px; padding: 24px 18px; }
+  .construction-symbol { width: 70px; height: 70px; flex-basis: auto; }
+  .construction-code { font-size: 9px; letter-spacing: 1px; }
+  .construction-actions .secondary { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero .eyebrow > span { animation: none; }
+}

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="client-build" content="{{ build }}">
+  <meta name="color-scheme" content="light dark">
+  <title>Folio - Editor PDF</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='extended.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='acrobat_editor.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='palette.css', v=build) }}">
+</head>
+<body class="folio-editor-page">
+  <div class="acro-standalone-container" id="acrobat-container">
+    <!-- TopBar / Barra Superior estilo Acrobat DC -->
+    <header class="acro-topbar">
+      <div class="acro-topbar-left">
+        <a class="brand" href="/" title="Volver al menú principal"><span class="brand-icon">F</span>folio<span class="brand-dot">.</span></a>
+        <span class="folio-editor-title">Folio - Editor PDF</span>
+        <div class="acro-divider"></div>
+        <button type="button" id="acro-tool-edit" class="acro-tool-btn active" title="Editar texto y párrafos existentes (TouchUpEditPDFTool)">✎ Editar texto</button>
+        <button type="button" id="acro-tool-add" class="acro-tool-btn" title="Hacer clic en la página para insertar un nuevo bloque de texto (TouchUpAddTextbox)">+ Agregar texto</button>
+        <button type="button" id="acro-tool-outlines" class="acro-tool-btn active" title="Mostrar contornos de cuadros delimitadores de párrafos (TouchUpOutline)">▦ Contornos</button>
+        <button type="button" id="acro-tool-find" class="acro-tool-btn" title="Buscar y reemplazar texto en el documento (TouchUpFindReplace)">⌕ Buscar</button>
+        <button type="button" id="acro-tool-delete" class="acro-tool-btn" title="Eliminar el bloque de texto seleccionado">🗑 Eliminar</button>
+      </div>
+
+      <div class="acro-topbar-center">
+        <div class="acro-page-controls">
+          <button type="button" id="acro-prev-page" class="acro-tool-btn" aria-label="Página anterior" disabled>◀</button>
+          <span>Pág.</span>
+          <input type="number" id="acro-page-num" class="acro-page-input" min="1" value="1" aria-label="Número de página">
+          <span>de <span id="acro-page-total">1</span></span>
+          <button type="button" id="acro-next-page" class="acro-tool-btn" aria-label="Página siguiente" disabled>▶</button>
+        </div>
+        <div class="acro-divider"></div>
+        <div class="acro-zoom-controls">
+          <select id="acro-zoom-select" class="acro-zoom-select" aria-label="Nivel de zoom">
+            <option value="0.75">75%</option>
+            <option value="1.0" selected>100%</option>
+            <option value="1.25">125%</option>
+            <option value="1.5">150%</option>
+            <option value="fit-width">Ajustar ancho</option>
+            <option value="fit-page">Ajustar página</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="acro-topbar-right">
+        <button type="button" id="acro-btn-return" class="acro-tool-btn" hidden>← Otras modificaciones</button>
+        <label class="acro-tool-btn" title="Abrir otro documento PDF">
+          📂 Abrir PDF
+          <input type="file" id="acro-standalone-file" accept=".pdf" hidden>
+        </label>
+        <button type="button" id="acro-btn-save" class="primary" disabled>Guardar PDF editado →</button>
+      </div>
+    </header>
+
+    <!-- Área de Trabajo Principal (Lienzo interactivo + Panel RHP de Formato) -->
+    <div class="acro-workspace">
+      <!-- Mensaje de Carga / Dropzone inicial si no hay archivo -->
+      <div id="acro-drop-prompt" class="acro-drop-prompt" hidden>
+        <h2>Editor de Texto PDF</h2>
+        <p>Reconocimiento y edición directa de texto, párrafos, tipografía y diseño al estilo Adobe Acrobat DC.</p>
+        <label class="primary acro-open-label">
+          Seleccionar archivo PDF
+          <input type="file" id="acro-prompt-file" accept=".pdf" hidden>
+        </label>
+        <p class="acro-drop-hint">O arrastra tu archivo PDF directamente aquí</p>
+      </div>
+
+      <!-- Barra Flotante de Buscar y Reemplazar -->
+      <div id="acro-find-bar" class="acro-find-bar" hidden>
+        <input type="text" id="acro-find-text" placeholder="Buscar texto en la página…">
+        <input type="text" id="acro-replace-text" placeholder="Reemplazar con…">
+        <button type="button" id="acro-find-next" class="secondary">Buscar siguiente</button>
+        <button type="button" id="acro-replace-one" class="secondary">Reemplazar</button>
+        <button type="button" id="acro-replace-all" class="secondary">Reemplazar todos</button>
+        <button type="button" id="acro-find-close" class="icon-button" aria-label="Cerrar búsqueda">✕</button>
+      </div>
+
+      <!-- Lienzo de Visualización del Documento -->
+      <main id="acro-viewport" class="acro-viewport">
+        <div id="acro-page-wrapper" class="acro-page-wrapper">
+          <img id="acro-page-img" class="acro-page-img" alt="Página del documento PDF">
+          <div id="acro-overlay" class="acro-blocks-overlay acro-show-outlines"></div>
+        </div>
+      </main>
+
+      <!-- Panel Lateral Derecho (RHP - Formato idéntico a Adobe Acrobat Pro DC) -->
+      <aside class="acro-rhp" aria-label="Panel de formato de texto de Acrobat">
+        <div class="acro-rhp-section">
+          <div class="acro-rhp-title">FORMATO</div>
+
+          <!-- Fuente (TouchUpFontName) -->
+          <div class="acro-form-group">
+            <label for="acro-font-name">Fuente</label>
+            <select id="acro-font-name" class="acro-select">
+              <option value="Arial">Arial</option>
+              <option value="Calibri">Calibri</option>
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Helvetica">Helvetica</option>
+              <option value="Courier New">Courier New</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Verdana">Verdana</option>
+              <option value="Tahoma">Tahoma</option>
+              <option value="Segoe UI">Segoe UI</option>
+              <option value="Trebuchet MS">Trebuchet MS</option>
+            </select>
+          </div>
+
+          <!-- Tamaño y Color (TouchUpFontSize & TouchUpFillColor) -->
+          <div class="acro-form-group">
+            <div class="acro-row">
+              <div class="acro-flex">
+                <label for="acro-font-size">Tamaño</label>
+                <div class="acro-number-control">
+                  <button type="button" id="acro-size-dec" class="acro-num-btn" aria-label="Reducir tamaño">▼</button>
+                  <input type="number" id="acro-font-size" value="12" min="6" max="72">
+                  <button type="button" id="acro-size-inc" class="acro-num-btn" aria-label="Aumentar tamaño">▲</button>
+                </div>
+              </div>
+              <div>
+                <label>Color</label>
+                <div class="acro-color-wrap">
+                  <div id="acro-color-swatch" class="acro-color-swatch">
+                    <input type="color" id="acro-font-color" value="#000000" aria-label="Elegir color de texto">
+                  </div>
+                  <div class="acro-swatches">
+                    <button type="button" class="acro-mini-swatch" data-color="#000000" title="Negro"></button>
+                    <button type="button" class="acro-mini-swatch" data-color="#333333" title="Gris oscuro"></button>
+                    <button type="button" class="acro-mini-swatch" data-color="#1473e6" title="Azul Adobe"></button>
+                    <button type="button" class="acro-mini-swatch" data-color="#d32f2f" title="Rojo"></button>
+                    <button type="button" class="acro-mini-swatch" data-color="#2e7d32" title="Verde"></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Estilos de Texto (TouchUpBold, Italic, Underline, etc.) -->
+          <div class="acro-form-group">
+            <label>Estilo de texto</label>
+            <div class="acro-btn-group">
+              <button type="button" id="acro-btn-bold" class="acro-format-btn" title="Negrita (Ctrl+B)"><b>B</b></button>
+              <button type="button" id="acro-btn-italic" class="acro-format-btn" title="Cursiva (Ctrl+I)"><i>I</i></button>
+              <button type="button" id="acro-btn-underline" class="acro-format-btn" title="Subrayado (Ctrl+U)"><u>U</u></button>
+              <button type="button" id="acro-btn-strike" class="acro-format-btn" title="Tachado"><s>S</s></button>
+              <button type="button" id="acro-btn-super" class="acro-format-btn" title="Superíndice">X²</button>
+              <button type="button" id="acro-btn-sub" class="acro-format-btn" title="Subíndice">X₂</button>
+            </div>
+          </div>
+
+          <!-- Alineación de Párrafo (TouchUpLeftAlign, Center, Right, Justify) -->
+          <div class="acro-form-group">
+            <label>Alineación</label>
+            <div class="acro-btn-group">
+              <button type="button" id="acro-align-left" class="acro-format-btn active" data-align="left" title="Alinear a la izquierda">≡</button>
+              <button type="button" id="acro-align-center" class="acro-format-btn" data-align="center" title="Centrar">≡</button>
+              <button type="button" id="acro-align-right" class="acro-format-btn" data-align="right" title="Alinear a la derecha">≡</button>
+              <button type="button" id="acro-align-justify" class="acro-format-btn" data-align="justify" title="Justificar">≡</button>
+            </div>
+          </div>
+
+          <!-- Interlineado (TouchUpLineSpacing) -->
+          <div class="acro-form-group">
+            <div class="acro-row">
+              <div class="acro-flex">
+                <label for="acro-line-spacing">Interlineado</label>
+                <select id="acro-line-spacing" class="acro-select">
+                  <option value="1.0">1.0 sencillo</option>
+                  <option value="1.15" selected>1.15 estándar</option>
+                  <option value="1.25">1.25</option>
+                  <option value="1.5">1.5 líneas</option>
+                  <option value="2.0">2.0 doble</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sección de Posición y Geometría del Bloque -->
+        <div class="acro-rhp-section">
+          <div class="acro-rhp-title">POSICIÓN Y GEOMETRÍA</div>
+          <div class="acro-form-group">
+            <label>Rotación del bloque</label>
+            <div class="acro-btn-group">
+              <button type="button" id="acro-rotate-ccw" class="acro-format-btn" title="Girar 90° contra reloj">↶ 90°</button>
+              <button type="button" id="acro-rotate-cw" class="acro-format-btn" title="Girar 90° horario">↷ 90°</button>
+            </div>
+          </div>
+          <div class="acro-form-group">
+            <label>Coordenadas (Puntos)</label>
+            <div class="acro-row acro-position-row">
+              <span class="acro-position-label">X:</span>
+              <input type="number" id="acro-pos-x" class="acro-select acro-flex" readonly>
+              <span class="acro-position-label">Y:</span>
+              <input type="number" id="acro-pos-y" class="acro-select acro-flex" readonly>
+            </div>
+            <div class="acro-row">
+              <span class="acro-position-label">W:</span>
+              <input type="number" id="acro-pos-w" class="acro-select acro-flex" readonly>
+              <span class="acro-position-label">H:</span>
+              <input type="number" id="acro-pos-h" class="acro-select acro-flex" readonly>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Barra Inferior de Estado -->
+    <footer class="acro-footer">
+      <div class="acro-status">
+        <span id="acro-status-dot" class="acro-status-dot"></span>
+        <span id="acro-status-notice">Listo. Selecciona cualquier bloque de texto para editarlo.</span>
+      </div>
+      <div>
+        <small class="hint">Texto sin rellenos de fondo. Fuentes compatibles; revisa el PDF guardado. No edita texto dentro de imágenes.</small>
+      </div>
+    </footer>
+  </div>
+
+  <script src="{{ url_for('static', filename='acrobat_editor.js', v=build) }}"></script>
+</body>
+</html>

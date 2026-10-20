@@ -1,0 +1,611 @@
+/* ==========================================================================
+   Folio · Interfaz Especializada de Edición de Texto estilo Adobe Acrobat Pro DC
+   ========================================================================== */
+
+.folio-editor-page {
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.acro-standalone-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.acro-drop-prompt {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--surface);
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  max-width: 480px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+  z-index: 200;
+}
+
+.acro-drop-prompt h2 { margin-top: 0; font-size: 1.4rem; }
+.acro-drop-prompt p { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+.acro-drop-prompt .acro-drop-hint { margin-top: 14px; font-size: 0.8rem; }
+.acro-topbar .brand { margin-right: 8px; text-decoration: none; }
+#acro-btn-save { padding: 6px 14px; }
+.acro-open-label { display: inline-block; padding: 10px 20px; cursor: pointer; }
+.acro-flex { flex: 1; }
+.acro-position-row { margin-bottom: 6px; }
+.acro-position-label { font-size: 0.75rem; color: var(--muted); width: 18px; }
+#acro-color-swatch { background-color: #000000; }
+.acro-mini-swatch[data-color="#000000"] { background: #000000; }
+.acro-mini-swatch[data-color="#333333"] { background: #333333; }
+.acro-mini-swatch[data-color="#1473e6"] { background: #1473e6; }
+.acro-mini-swatch[data-color="#d32f2f"] { background: #d32f2f; }
+.acro-mini-swatch[data-color="#2e7d32"] { background: #2e7d32; }
+.acro-statusbar .hint { margin: 0; }
+
+.acro-dialog {
+  width: 98vw;
+  max-width: 1600px;
+  height: 94vh;
+  max-height: 960px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 0;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.acro-dialog::backdrop {
+  background: rgba(10, 15, 25, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+/* Header / TopBar estilo Acrobat DC */
+.acro-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  flex-wrap: wrap;
+  user-select: none;
+}
+
+.acro-topbar-left, .acro-topbar-center, .acro-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folio-editor-title {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+  letter-spacing: -0.2px;
+}
+
+.acro-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.acro-tool-btn:hover {
+  background: rgba(125, 125, 125, 0.15);
+  border-color: var(--border);
+}
+
+.acro-tool-btn.active {
+  background: #1473e6; /* Azul de selección de Adobe */
+  color: #ffffff;
+  border-color: #1473e6;
+  font-weight: 600;
+}
+
+.acro-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.acro-page-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.acro-page-input {
+  width: 44px;
+  padding: 3px 6px;
+  text-align: center;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.acro-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.acro-zoom-select {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+/* Área de Trabajo Principal (Viewport + RHP) */
+.acro-workspace {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Barra Flotante de Buscar y Reemplazar */
+.acro-find-bar {
+  position: absolute;
+  top: 10px;
+  left: 20px;
+  right: 340px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 100;
+  flex-wrap: wrap;
+}
+
+.acro-find-bar input[type="text"] {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  min-width: 160px;
+}
+
+.acro-find-bar label {
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+/* Lienzo de Documento / Visor de Página */
+.acro-viewport {
+  flex: 1;
+  background: #323639; /* Fondo gris oscuro característico de visores de PDF */
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px;
+  position: relative;
+}
+
+.acro-page-wrapper {
+  position: relative;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  background: #ffffff;
+  user-select: none;
+  transition: transform 0.1s ease;
+}
+
+.acro-page-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.acro-blocks-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: auto;
+}
+
+/* Bloques de Texto Estilo Folio Editor */
+.acro-block {
+  position: absolute;
+  box-sizing: border-box;
+  cursor: text;
+  border: 1px dashed transparent;
+  transition: border-color 0.15s ease;
+  z-index: 10;
+  background: transparent;
+}
+
+/* Modo contornos visibles (TouchUpOutline) */
+.acro-show-outlines .acro-block {
+  border-color: rgba(20, 115, 230, 0.45);
+}
+
+.acro-block:hover {
+  border-color: #1473e6;
+  background: rgba(20, 115, 230, 0.04);
+}
+
+/* Por defecto (bloque sin seleccionar ni modificar):
+   El texto de la textarea es transparente para que el usuario vea directamente
+   la imagen vectorial nítida del PDF sin duplicaciones ni texto doble superpuesto.
+   El textarea recibe los eventos del cursor de forma nativa para editar directo al hacer clic. */
+.acro-block:not(.modified):not(.is-new) .acro-block-editor {
+  color: transparent !important;
+  background: transparent !important;
+  caret-color: #1473e6;
+  user-select: text;
+}
+
+/* El fondo procede del PDF; los controles de edicion no pintan sobre el documento. */
+.acro-block.selected,
+.acro-block.modified,
+.acro-block.is-new {
+  background: transparent;
+  box-shadow: none;
+  z-index: 50;
+}
+
+.acro-block.selected {
+  border: 1.5px solid #1473e6 !important;
+  box-shadow: none;
+}
+
+.acro-block.selected .acro-block-editor,
+.acro-block.modified .acro-block-editor,
+.acro-block.is-new .acro-block-editor {
+  color: inherit;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* La capa inferior conserva el fondo real en la posicion del texto eliminado. */
+.acro-block.deleted {
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed rgba(229, 37, 42, 0.5) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.acro-block.deleted .acro-block-editor {
+  display: none !important;
+}
+
+.acro-deleted-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #e5252a;
+  background: rgba(229, 37, 42, 0.08);
+  border: 1px solid rgba(229, 37, 42, 0.25);
+  padding: 2px 8px;
+  border-radius: 4px;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.acro-deleted-badge:hover {
+  background: rgba(229, 37, 42, 0.18);
+  border-color: #e5252a;
+}
+
+/* Máscara para la posición original de un bloque cuando ha sido desplazado */
+.acro-orig-mask {
+  position: absolute;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.acro-block-editor {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  line-height: 1.15;
+  overflow: hidden;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.acro-block-toolbar {
+  position: absolute;
+  top: -26px;
+  left: -1px;
+  background: #1473e6;
+  color: white;
+  border-radius: 4px 4px 0 0;
+  padding: 2px 6px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: move;
+  user-select: none;
+}
+
+.acro-block.selected .acro-block-toolbar {
+  display: flex;
+}
+
+.acro-block-toolbar button {
+  background: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.acro-block-toolbar button:hover {
+  color: #ffcccc;
+}
+
+/* Puntos de Control / Manijas de Redimensionamiento (Resize Handles) */
+.acro-handle {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: #ffffff;
+  border: 1.5px solid #1473e6;
+  border-radius: 1px;
+  display: none;
+  z-index: 60;
+}
+
+.acro-block.selected .acro-handle {
+  display: block;
+}
+
+.acro-handle.nw { top: -4px; left: -4px; cursor: nw-resize; }
+.acro-handle.n  { top: -4px; left: 50%; transform: translateX(-50%); cursor: n-resize; }
+.acro-handle.ne { top: -4px; right: -4px; cursor: ne-resize; }
+.acro-handle.e  { top: 50%; right: -4px; transform: translateY(-50%); cursor: e-resize; }
+.acro-handle.se { bottom: -4px; right: -4px; cursor: se-resize; }
+.acro-handle.s  { bottom: -4px; left: 50%; transform: translateX(-50%); cursor: s-resize; }
+.acro-handle.sw { bottom: -4px; left: -4px; cursor: sw-resize; }
+.acro-handle.w  { top: 50%; left: -4px; transform: translateY(-50%); cursor: w-resize; }
+
+/* Panel Lateral Derecho (RHP - Formato de Texto Estilo Acrobat DC) */
+.acro-rhp {
+  width: 310px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  user-select: none;
+}
+
+.acro-rhp-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.acro-rhp-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.acro-form-group {
+  margin-bottom: 12px;
+}
+
+.acro-form-group label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.acro-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.acro-select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.acro-number-control {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.acro-number-control input {
+  width: 52px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: center;
+  font-size: 0.85rem;
+  padding: 5px 2px;
+}
+
+.acro-num-btn {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.acro-num-btn:hover {
+  background: rgba(125, 125, 125, 0.15);
+}
+
+/* Color Picker */
+.acro-color-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.acro-color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.acro-color-swatch input[type="color"] {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  width: 50px;
+  height: 50px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.acro-swatches {
+  display: flex;
+  gap: 4px;
+}
+
+.acro-mini-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Grupos de Botones de Estilo */
+.acro-btn-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.acro-format-btn {
+  flex: 1;
+  padding: 6px 4px;
+  background: var(--bg);
+  color: var(--text);
+  border: none;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  transition: all 0.15s ease;
+}
+
+.acro-format-btn:last-child {
+  border-right: none;
+}
+
+.acro-format-btn:hover {
+  background: rgba(125, 125, 125, 0.1);
+}
+
+.acro-format-btn.active {
+  background: #1473e6;
+  color: #ffffff;
+}
+
+/* Barra Inferior del Diálogo */
+.acro-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.acro-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.acro-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1473e6;
+}
+
+.acro-status-dot.dirty {
+  background: #e68a00;
+}

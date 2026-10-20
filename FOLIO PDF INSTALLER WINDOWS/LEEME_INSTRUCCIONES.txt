@@ -1,0 +1,27 @@
+FOLIO PDF - REFERENCIAS HISTORICAS DE DISTRIBUCION
+
+Esta carpeta no contiene un instalador ni un ejecutable de la version actual.
+El enlace historico de descarga se conserva como referencia: su contenido,
+integridad, licencias y correspondencia con el codigo actual no se verificaron
+durante la preparacion del 19 de octubre de 2026. No usarlo para anunciar una
+release actual ni como origen del nuevo payload sin una revision independiente.
+
+La anterior lista de EXE, BAT y payload describia una distribucion externa;
+esos archivos no estan presentes en esta carpeta. Tampoco certifica Python
+3.14 ni compatibilidad con cualquier Windows.
+
+PROXIMA DISTRIBUCION PREPARADA, TODAVIA NO GENERADA
+
+- Folio.exe con dependencias en carpeta (PyInstaller onedir).
+- Setup.exe offline por usuario (Inno Setup 6).
+- CPython 3.13 Windows x64; version propuesta 3.1.0.
+- Modelos OCR espanol e ingles incluidos; LibreOffice por separado.
+- Sin cambios automaticos de firewall ni servicio Windows.
+
+Consultar desde la raiz del proyecto:
+  docs\DISTRIBUCION_OFFLINE.md
+  docs\HISTORIAL_IMPLEMENTACION.md
+  deploy\release.example.json
+  deploy\build-executable.ps1
+
+No se generaron ejecutables ni instaladores en esta preparacion.

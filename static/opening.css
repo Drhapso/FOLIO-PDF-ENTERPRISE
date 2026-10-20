@@ -1,0 +1,201 @@
+html:has(#folio-opening[open]) { overflow: hidden; }
+#folio-opening {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  height: 100dvh;
+  max-height: none;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  color: #f5f1fa;
+  background: radial-gradient(ellipse at 50% 30%, #6259aa33, transparent 65%);
+  box-shadow: none;
+  overflow: hidden;
+}
+#folio-opening[open] {
+  display: grid;
+  place-items: center;
+  animation: opening-emerge 4.5s ease-in-out both;
+}
+#folio-opening::backdrop {
+  background: #14101899;
+  backdrop-filter: blur(16px) saturate(.65);
+  -webkit-backdrop-filter: blur(16px) saturate(.65);
+}
+.opening-stage { position: relative; width: 100%; height: 100%; text-align: center; overflow: hidden; isolation: isolate; }
+.opening-dawn {
+  position: absolute;
+  width: min(70vw, 750px);
+  aspect-ratio: 1;
+  left: 50%;
+  top: 48%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #f9bb2c70, #c6bef62b 28%, #6259aa18 50%, transparent 68%);
+  transform: translate(-50%, -50%);
+  animation: opening-dawn 4s ease-out both;
+}
+.opening-rays {
+  position: absolute;
+  inset: -60%;
+  background: conic-gradient(from 20deg at 50% 50%, transparent 0deg, #c6bef618 12deg,
+    transparent 27deg 145deg, #f9bb2c12 160deg, transparent 175deg 310deg,
+    #c6bef610 330deg, transparent 350deg);
+  filter: blur(12px);
+  animation: opening-rays 4.5s ease-out both;
+}
+.opening-streams { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.opening-stream {
+  stroke-width: 2;
+  stroke-dasharray: .16 .84;
+  stroke-dashoffset: .18;
+  opacity: 0;
+  filter: drop-shadow(0 0 6px #f9bb2c90);
+  animation: opening-stream 2.5s .1s cubic-bezier(.2,.6,.35,1) both;
+}
+.opening-stream-two { animation-delay: .35s; stroke-width: 1.4; }
+.opening-stream-three { animation-delay: .6s; stroke-width: 2.4; }
+.opening-motes { position: absolute; inset: 0; perspective: 600px; }
+.opening-motes i {
+  position: absolute;
+  left: 18%;
+  top: 70%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #f9bb2c;
+  box-shadow: 0 0 14px #f9bb2c80;
+  animation: opening-mote 3s .2s ease-out both;
+}
+.opening-motes i:nth-child(2) { left: 80%; top: 64%; animation-delay: .4s; }
+.opening-motes i:nth-child(3) { left: 38%; top: 24%; animation-delay: .3s; background: #c6bef6; }
+.opening-motes i:nth-child(4) { left: 90%; top: 38%; animation-delay: .1s; }
+.opening-motes i:nth-child(5) { left: 10%; top: 28%; animation-delay: .65s; background: #c6bef6; }
+.opening-motes i:nth-child(6) { left: 63%; top: 19%; animation-delay: .8s; }
+.opening-motes i:nth-child(7) { left: 30%; top: 83%; animation-delay: .5s; }
+.opening-motes i:nth-child(8) { left: 72%; top: 78%; animation-delay: .7s; background: #a4db59; }
+.opening-landscape {
+  position: absolute;
+  width: max(85%, 620px);
+  height: 70%;
+  bottom: -8%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.opening-folds-back {
+  transform-origin: center;
+  animation: opening-depth 3.8s ease-out both;
+}
+.opening-folds-front {
+  transform-origin: 365px 300px;
+  animation: opening-approach 3.8s cubic-bezier(.16,.65,.3,1) both;
+}
+.opening-travel {
+  transform-origin: center;
+  animation: opening-particles 2.7s .25s ease-out both;
+}
+.opening-mist {
+  position: absolute;
+  inset: 30% -25% -25%;
+  background: radial-gradient(ellipse at 30% 70%, #c6bef62b, transparent 55%),
+    radial-gradient(ellipse at 70% 80%, #a4db591a, transparent 50%);
+  filter: blur(24px);
+  animation: opening-mist 4s ease-out both;
+  pointer-events: none;
+}
+.opening-mist-near {
+  inset: 55% -30% -30%;
+  background: radial-gradient(ellipse at 70% 60%, #ead0f242, transparent 60%);
+  animation-direction: reverse;
+}
+.opening-brand {
+  position: absolute;
+  inset: 29% 16px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  animation: opening-brand 1.4s .85s ease-out both;
+}
+.opening-brand img {
+  width: clamp(58px, 10vw, 105px);
+  height: auto;
+  filter: drop-shadow(0 8px 18px #00000040);
+}
+.opening-word {
+  font-size: clamp(68px, 12vw, 124px);
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: -5px;
+  text-shadow: 0 5px 24px #141018, 0 0 55px #c6bef65c;
+}
+.opening-word span { color: #a4db59; }
+.opening-tagline {
+  position: absolute;
+  inset: auto 20px 23%;
+  font-size: 11px;
+  letter-spacing: 3px;
+  line-height: 1.8;
+  color: #f5f1fa;
+  text-shadow: 0 2px 8px #000;
+  animation: opening-brand 1s 2s ease-out both;
+}
+@keyframes opening-emerge {
+  0% { opacity: 0; }
+  12%, 88% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes opening-dawn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(.5); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1.4); }
+}
+@keyframes opening-rays {
+  from { opacity: 0; transform: rotate(-14deg); }
+  to { opacity: 1; transform: rotate(16deg); }
+}
+@keyframes opening-stream {
+  0% { opacity: 0; stroke-dashoffset: .18; }
+  20%, 65% { opacity: .8; }
+  100% { opacity: 0; stroke-dashoffset: -1; }
+}
+@keyframes opening-mote {
+  0% { opacity: 0; transform: translate3d(-50px, 70px, 180px); }
+  25%, 60% { opacity: .8; }
+  100% { opacity: 0; transform: translate3d(40px, -65px, -170px); }
+}
+@keyframes opening-depth {
+  from { transform: translateY(18px) scale(1.08); opacity: .4; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes opening-approach {
+  from { transform: translateY(110px) scale(1.65); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes opening-particles {
+  0% { transform: translate(-120px, 55px) scale(1.5); opacity: 0; }
+  30% { opacity: .8; }
+  85% { opacity: .6; }
+  100% { transform: translate(90px, -30px) scale(.7); opacity: 0; }
+}
+@keyframes opening-mist {
+  from { transform: translateX(-70px) scale(1.2); opacity: .2; }
+  to { transform: translateX(70px) scale(1); opacity: .8; }
+}
+@keyframes opening-brand {
+  from { opacity: 0; transform: translateY(20px) scale(.85); filter: blur(8px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+@media (max-height: 450px) {
+  .opening-brand { top: 10%; }
+  .opening-brand img { width: 42px; }
+  .opening-word { font-size: 50px; }
+  .opening-tagline { bottom: 21%; font-size: 9px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #folio-opening *, #folio-opening[open] { animation: none; }
+}

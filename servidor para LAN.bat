@@ -1,0 +1,1 @@
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\run-lan.ps1

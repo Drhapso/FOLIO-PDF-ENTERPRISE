@@ -1,0 +1,58 @@
+1. Análisis y Procesamiento de la Estructura (COS Layer y DOM)
+
+PDF no es un formato de flujo continuo como un procesador de texto, sino un lenguaje de descripción de página estático. Acrobat Pro descompone el archivo en diferentes capas:
+
+    Arquitectura de Objetos COS (Carousel Object System): En el nivel más bajo, Acrobat procesa el PDF como un árbol de objetos jerárquicos (diccionarios, flujos de datos o streams, arreglos, cadenas, enteros y booleanos) indexados mediante una tabla de referencia cruzada (XRef Table).
+
+    PDF DOM (Document Object Model): El motor interpreta los diccionarios de páginas (/Page), recursos (/Resources), fuentes (/Fonts) y formularios (AcroForm o XFA) para construir una representación en memoria manipulable.
+
+    Inspección de preimpresión (Preflight Engine): Basado en la tecnología de callas software, Acrobat analiza sintácticamente el archivo para comprobar conformidad con normas ISO (PDF/A para archivo, PDF/X para artes gráficas, PDF/E para ingeniería) y detecta inconsistencias en espacios de color, fuentes no incrustadas o resoluciones insuficientes.
+
+2. Modificación y Edición de Contenido
+
+La edición de texto y vectores en Acrobat Pro recompone flujos de contenido complejos:
+
+    Reconstrucción de párrafos (Flow Reconstruction): El texto en un PDF original suele estar almacenado como comandos aislados de posicionamiento absoluto (operadores Tj o TJ). Acrobat Pro agrupa heurísticamente estos fragmentos dispersos analizando distancias interlineales y entre caracteres (kerning) para crear cajas de texto editables dinámicas.
+
+    Manipulación de fuentes: Si la fuente original está incrustada como un subconjunto (subsetting), Acrobat permite editar únicamente con los glifos disponibles o recurre a la coincidencia y sustitución de fuentes del sistema operativo.
+
+    Motor gráfico vectorial: Interpreta y modifica trazados Bézier, máscaras de recorte y transparencias mediante el modelo de imagen de Adobe, permitiendo recoloración y transformaciones afines directas sobre los operadores de dibujo (cm, re, m, l, c).
+
+3. Compresión y Optimización de Archivos
+
+Acrobat Pro utiliza el optimizador de PDF (PDF Optimizer) para reducir el tamaño aplicando compresión adaptativa según el tipo de datos:
+
+    Compresión de texto y metadatos: Emplea algoritmos sin pérdida como Flate (basado en compresión zlib/Deflate).
+
+    Compresión de imágenes en mapa de bits:
+
+        Color y escala de grises: Algoritmos JPEG (con pérdida), JPEG 2000 (ondículas/wavelets con o sin pérdida) o ZIP/Flate.
+
+        Monocromáticas (blanco y negro puro): JBIG2 (aritmético o Huffman, ideal para documentos escaneados) y CCITT Group 4 (estándar de fax).
+
+    Compresión estructural: Utiliza Object Streams (introducidos en PDF 1.5) para empaquetar múltiples objetos y metadatos dentro de un único flujo comprimido con Flate, además de consolidar fuentes duplicadas y descartar datos no visuales o referencias obsoletas de la tabla XRef.
+
+4. Digitalización y Reconocimiento Óptico (OCR)
+
+La conversión de documentos físicos a texto digital se procesa mediante una integración de motores de escaneo y OCR:
+
+    Normalización y preprocesamiento de imagen:
+
+        Enderezado automático (deskew).
+
+        Limpieza de artefactos y eliminación de bordes o sombras.
+
+        Segmentación de página (distingue zonas de texto, tablas e ilustraciones).
+
+    Motor OCR de Adobe (ClearScan / Editable Text and Images):
+
+        Searchable Image (Imagen editable con texto subyacente): Mantiene la imagen del escaneo intacta en primer plano y coloca una capa de texto transparente indexada exactamente debajo de cada palabra reconocida.
+
+        ClearScan (Editable Text and Images): Sustituye los caracteres pixelados por fuentes sintéticas vectoriales personalizadas que imitan el tipo de letra del original, lo que reduce drásticamente el tamaño del archivo y produce texto vectorial nítido sin perder la fidelidad visual del documento original.
+
+
+Tanto CCITT Group 4 como JBIG2 son algoritmos diseñados para imágenes binarias (bitonales: 1 bit por píxel, blanco o negro puro), habituales en escaneos de texto. Sin embargo, su arquitectura y eficiencia matemática pertenecen a generaciones tecnológicas distintas.1. CCITT Group 4 (ITU-T T.6)Diseñado en 1984 para transmisiones de fax digital, CCITT Group 4 es un estándar estrictamente sin pérdida (lossless) basado en la codificación de líneas de barrido continuas.Codificación bidimensional relativa (Modified READ - MMR): En lugar de registrar píxeles individuales, codifica la distancia entre transiciones de color (de negro a blanco o viceversa). Para comprimir una línea actual (coding line), toma como referencia la línea inmediatamente superior (reference line).Modos de codificación:Modo Vertical: Si el cambio de color en la línea actual está desplazado a no más de 3 píxeles respecto al cambio de la línea anterior, codifica únicamente el desplazamiento ($-3$ a $+3$).Modo Horizontal: Si no hay correlación cercana con la línea de arriba, codifica la longitud de la secuencia (run-length) usando códigos Huffman predefinidos.Modo Pase: Si una transición de la línea de referencia queda superada sin coincidencia en la línea actual.Limitación estructural: Procesa la imagen estrictamente como una cuadrícula de píxeles sin noción semántica de formas, repetición de letras o diagramas.2. JBIG2 (ISO/IEC 14492)Estandarizado en el año 2000 e integrado en PDF 1.4, JBIG2 descompone la página en componentes independientes estructurados en capas y diccionarios:Segmentación de regiones:Región de texto (Text Region): Identifica componentes conectados (glifos/letras).Región de medios tonos (Halftone Region): Modela patrones de sombreado o tramado.Región genérica (Generic Region): Mapas de bits arbitrarios (firmas, sellos, líneas vectoriales rasterizadas).Diccionario de símbolos y coincidencia de patrones (Pattern Matching):Extrae cada carácter repetido en la página (por ejemplo, la letra "e").Almacena una única representación de referencia del glifo en un diccionario compartido.En el flujo principal de la página, solo guarda la coordenada $(X, Y)$ y el identificador del símbolo en el diccionario.Modos de compresión:Lossless (Sin pérdida): Almacena el glifo base y un mapa de corrección (refinement coding) con las diferencias exactas de píxeles para cada instancia.Lossy (Con pérdida controlada): Si un glifo nuevo coincide con uno existente dentro de un umbral de tolerancia euclidiana o de correlación cruzada, lo reemplaza por el símbolo del diccionario sin guardar mapa de diferencias.Motor de entropía aritmético (MQ Coder): Aplica un codificador aritmético adaptativo basado en contexto para predecir probabilidades bit a bit, superando por amplio margen a las tablas estáticas Huffman de CCITT.Comparativa Técnica DirectaParámetroCCITT Group 4JBIG2Año del estándar19842000Naturaleza del algoritmo2D Run-length (MMR)Segmentación por regiones + Diccionario de símbolosCodificación de entropíaTablas Huffman fijasCodificador aritmético adaptativo (MQ) o HuffmanSoporte de pérdidaSolo losslessLossless y lossyComprensión contextualNinguna (trata la página como líneas de píxeles)Alta (agrupa glifos idénticos en diccionarios)Eficiencia de compresiónEstándar base (1x)2x a 5x más pequeño que CCITT en lossless; hasta 10x en lossyCarga computacionalMuy baja (decodificación casi instantánea)Moderada/Alta (búsqueda de patrones y emparejamiento)El riesgo de sustitución en JBIG2 LossyEl emparejamiento de patrones en modo lossy presenta un riesgo documental documentado (notorio en fallos de escáneres multifunción en 2013): si el umbral de similitud es demasiado permisivo, el algoritmo puede emparejar y sustituir números visualmente parecidos (por ejemplo, reemplazar un "6" por un "8" o un "3" por un "8").Por esta razón, en flujos de trabajo forenses, legales o de preservación a largo plazo como PDF/A, el uso de JBIG2 está regulado o restringido estrictamente al modo sin pérdida (lossless)
+
+Al fijar la compresión en Lossless, el codificador de Acrobat genera un mapa de refinamiento (refinement bitmap) bit a bit para cada carácter. Incluso si agrupa glifos morfológicamente idénticos para reducir redundancia, calcula la diferencia booleana exacta (XOR) frente a la referencia original. Si un píxel difiere (la diferencia visual entre un $3$, un $6$ y un $8$), ese diferencial se almacena y recompone obligatoriamente al renderizar la página, eliminando el riesgo de sustitución errónea.
+
+

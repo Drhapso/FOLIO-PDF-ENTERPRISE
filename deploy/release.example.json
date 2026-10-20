@@ -1,0 +1,10 @@
+{
+  "version": "3.1.0",
+  "python_version": "3.13",
+  "architecture": "AMD64",
+  "installer_compiler": "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe",
+  "ocr_sha256": {
+    "spa": "6F2E04D02774A18F01BED44B1111F2CD7F3BA7AC9DC4373CD3F898A40EA6B464",
+    "eng": "7D4322BD2A7749724879683FC3912CB542F19906C83BCC1A52132556427170B2"
+  }
+}
