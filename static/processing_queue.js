@@ -9,6 +9,29 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
   notice.className = "processing-notice";
   notice.setAttribute("role", "status");
   notice.setAttribute("aria-live", "polite");
+  const animation = document.createElement("video");
+  animation.className = "processing-animation";
+  animation.muted = true;
+  animation.loop = true;
+  animation.playsInline = true;
+  animation.preload = "metadata";
+  animation.setAttribute("aria-hidden", "true");
+  animation.setAttribute("tabindex", "-1");
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const syncMotion = () => {
+    animation.autoplay = !reducedMotion.matches;
+    if (reducedMotion.matches) animation.pause();
+    else animation.play().catch(() => {
+      console.info("Folio: el navegador no permitió reproducir la animación; el estado sigue disponible.");
+    });
+  };
+  animation.addEventListener("error", () => {
+    animation.hidden = true;
+    console.warn("Folio: no se pudo cargar la animación de procesamiento.");
+  }, {once: true});
+  animation.src = `/static/loadinggif.mp4?v=${encodeURIComponent(build)}`;
+  const content = document.createElement("div");
+  content.className = "processing-notice-content";
   const title = document.createElement("strong");
   title.textContent = "Preparando procesamiento";
   const message = document.createElement("p");
@@ -19,9 +42,12 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
   cancel.className = "secondary";
   cancel.textContent = "Cancelar espera";
   cancel.hidden = true;
-  notice.append(title, message, guidance, cancel);
+  content.append(title, message, guidance, cancel);
+  notice.append(animation, content);
   const host = document.querySelector("dialog[open]") || document.body;
   host.append(notice);
+  reducedMotion.addEventListener("change", syncMotion);
+  syncMotion();
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, {once: true});
@@ -126,6 +152,10 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
     clearTimeout(timer);
     controller.abort();
     signal?.removeEventListener("abort", abort);
+    reducedMotion.removeEventListener("change", syncMotion);
+    animation.pause();
+    animation.removeAttribute("src");
+    animation.load();
     notice.remove();
   }
 };

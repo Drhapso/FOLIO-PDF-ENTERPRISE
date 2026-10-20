@@ -1,5 +1,18 @@
 # Cambios
 
+## 2026-10-20 - Instalador offline 3.1.0
+
+- Generado `dist/Folio-PDF-Offline-3.1.0-win-x64.zip`: Folio.exe PyInstaller
+  onedir con todas las librerias, VC++ runtime y modelos OCR, instalador
+  `INSTALAR.bat/.ps1` por usuario con verificacion SHA256, actualizacion que
+  conserva configuracion e instancia, lanzador local/LAN, desinstalador,
+  `LEEME.txt` y `COMPLEMENTOS_ADICIONALES.txt`.
+- Nuevos `deploy/build-offline-package.ps1` y `deploy/offline/`; corregidas
+  comillas de `deploy/build-executable.ps1` para Windows PowerShell 5.1.
+- Validado sin Python en PATH: instalacion, calibracion, OCR, conversiones,
+  actualizacion, integridad alterada, desinstalacion y acceso LAN.
+  Produccion y `CLIENT_BUILD` sin cambios.
+
 ## 2026-10-20 - Cola LAN, edicion multiple y rendimiento
 
 - Publicado build `2026-10-20-queue-lan-1`. Respaldada version anterior,
@@ -270,3 +283,10 @@
   HTTP 200, salud 200, sin carpetas job pendientes. No certifica rendimiento
   para PDFs escaneados ni identifica retrospectivamente el error historico,
   cuyo registro anterior no guardaba codigos de Windows.
+## Animacion de procesamiento - 2026-10-20
+
+- Recurso `loadinggif.mp4` integrado en el aviso inferior derecho de herramientas
+  y editor: reproduccion silenciosa en bucle con bordes difuminados.
+- Se mantiene visible durante envio, cola, procesamiento y recepcion de resultados.
+- Respeta movimiento reducido, se adapta a pantallas pequenas y libera el video
+  al terminar o fallar. No requiere reiniciar el servidor.

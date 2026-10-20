@@ -232,14 +232,19 @@ No conecta, copia ni modifica las bases de FALCON o Help Desk.
 - [Configuracion y operacion LAN](docs/CONFIGURACION_PROYECTO_BLANCO.md).
 - [Cambios por build](CHANGELOG.md).
 
-La proxima version de distribucion propuesta es **3.1.0**, Windows x64 y
-CPython 3.13. Se prepararon parametros en `deploy/release.example.json`,
-`deploy/build-executable.ps1`, la receta PyInstaller `deploy/folio.spec` y el
-instalador Inno Setup `deploy/installer.iss`. **No se generaron binarios en
-esta entrega.** El script solo construye con `-Build`; sin ese parametro
-prevalida. Revisar requisitos y licencias antes de ejecutarlo.
-LibreOffice se instala por separado en el destino; no esta incluido en Setup.
-No se hizo commit, push ni publicacion automatica.
+### Instalador offline 3.1.0 (Windows 10/11 x64)
+
+Generado `dist/Folio-PDF-Offline-3.1.0-win-x64.zip` (120 MB, SHA256 en el
+`.sha256.txt` adjunto): Folio.exe autocontenido con CPython 3.13, todas las
+librerias, VC++ runtime y modelos OCR; no requiere Python ni Internet.
+Descomprimir y ejecutar `INSTALAR.bat` (sin administrador): instala en
+`%LOCALAPPDATA%\Folio-PDF`, verifica integridad y crea accesos "Folio PDF"
+(local) y "Folio PDF (compartir en LAN)". Complementos opcionales
+(LibreOffice para Office a PDF, firewall LAN, WIA) en
+`COMPLEMENTOS_ADICIONALES.txt` dentro del ZIP. Receta, regeneracion y
+validacion en [DISTRIBUCION_OFFLINE](docs/DISTRIBUCION_OFFLINE.md).
+Binarios sin firma; revisar licencias (PyMuPDF AGPL) antes de distribuir
+fuera de la entidad.
 
 ## Inicio desde codigo fuente
 
@@ -608,6 +613,13 @@ salida de red del procesador en el entorno de produccion. No ejecutar como SYSTE
 Para documentos no confiables se recomienda una maquina/VM dedicada.
 
 ## Recuperacion operativa
+
+Durante el envio, la espera, el procesamiento y la descarga, el aviso inferior
+derecho muestra el recurso `loadinggif.mp4` junto al estado. La animacion se
+reproduce sin sonido, en bucle y con bordes difuminados; se detiene y libera al
+finalizar o cancelar. Respeta la preferencia de movimiento reducido. El recurso
+publicado se sirve desde `static/loadinggif.mp4`; si se reemplaza el original,
+actualizar tambien esta copia. Un fallo del video no interrumpe el procesamiento.
 
 Los tres servicios (Folio PDF, HelpDesk y Falcon) disponen de eventos rotativos,
 scripts de reinicio manual y supervisor con reintentos limitados ante fallos de

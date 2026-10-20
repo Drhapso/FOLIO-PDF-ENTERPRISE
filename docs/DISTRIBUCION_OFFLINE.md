@@ -1,8 +1,55 @@
 # Preparacion de ejecutable e instalador offline
 
-## Estado de esta entrega
+## Paquete offline generado: ZIP autocontenido 3.1.0 (2026-10-20)
 
-Se prepara una receta Windows x64, **sin generar Folio.exe ni Setup.exe**.
+Se genero y valido `dist\Folio-PDF-Offline-3.1.0-win-x64.zip` (120 MB,
+SHA256 `8CE63D712ED3C0AB3C2827A77CA7BB77E947CE295A9AE07C53FC0AA1B6C4EDCA`,
+tambien en el `.sha256.txt` adjunto). Sustituye a Setup.exe/Inno Setup, que no
+esta instalado en el constructor; `installer.iss` queda como alternativa.
+
+Contenido: `Folio\` (Folio.exe PyInstaller onedir con CPython 3.13, todas las
+librerias de `requirements.txt`, VC++ runtime, plantillas, recursos y modelos
+OCR spa/eng), `app\` (lanzador, desinstalador, `herramientas\configure-firewall.ps1`),
+`INSTALAR.bat`/`INSTALAR.ps1`, `LEEME.txt`, `COMPLEMENTOS_ADICIONALES.txt`
+(LibreOffice, firewall, WIA, modelos OCR, solucion de problemas, licencias)
+y `PAQUETE-INFO.txt`. Listas `SHA256SUMS.txt` y `app\APP-SHA256SUMS.txt`.
+
+Instalacion en el destino: descomprimir y ejecutar `INSTALAR.bat` (sin
+administrador). Copia a `%LOCALAPPDATA%\Folio-PDF`, verifica hashes, calibra
+y crea accesos "Folio PDF", "Folio PDF (compartir en LAN)" y "Desinstalar
+Folio PDF". Opciones de `INSTALAR.ps1`: `-InstallDir`, `-NoShortcuts`,
+`-SkipCalibration`. Actualizar = ejecutar el paquete nuevo con Folio cerrado;
+conserva `config\site_config.json` e `instance\`.
+
+Regenerar (borrar antes la salida de la misma version, los scripts no sobrescriben):
+
+```powershell
+py -3.13 -m venv .venv-build
+.venv-build\Scripts\python -m pip install -r requirements-build.txt
+Copy-Item deploy\release.example.json deploy\release.local.json
+.\deploy\build-executable.ps1 -ParametersFile deploy\release.local.json -Python .venv-build\Scripts\python.exe -Build -LicensesReviewed
+.\deploy\build-offline-package.ps1 -ParametersFile deploy\release.local.json
+```
+
+Tras construir, borrar `.venv-build`, `build` y `dist\release-<v>`: el espejo
+publica el arbol del proyecto en el servidor y solo debe quedar el ZIP.
+Se corrigio `build-executable.ps1`: Windows PowerShell 5.1 elimina comillas
+dobles incrustadas en `python -c`; ahora usa comillas simples dentro del codigo.
+
+Validacion del paquete (PATH sin Python, ruta temporal con nombres cortos 8.3):
+pruebas fuente y `Folio.exe --calibrate` con OCR aprobados; instalacion limpia
+en 10 s (1940 archivos verificados); arranque del lanzador 3,7 s y reutilizacion
+de instancia 0,3 s; `/health`, compresion, OCR (texto reconocido), PDF a DOCX y
+Office a PDF (39 s la primera vez, LibreOffice local) correctos; actualizacion
+rechazada con Folio abierto y correcta cerrado conservando datos; paquete
+alterado rechazado; desinstalacion con `-KeepData`; modo LAN accesible por IP.
+Pendiente: VM limpia sin LibreOffice, segundo equipo fisico y revision de
+licencias antes de distribuir fuera de la entidad (PyMuPDF AGPL). Binarios sin
+firma: SmartScreen o antivirus pueden advertir.
+
+## Estado de la receta original (19 de octubre)
+
+Se preparo una receta Windows x64, sin generar Folio.exe ni Setup.exe.
 Version propuesta: `3.1.0`; es un parametro de empaquetado, no una publicacion.
 El build web sigue identificado por `CLIENT_BUILD` en `server.py`.
 La receta debe certificarse creando y probando los binarios en una siguiente

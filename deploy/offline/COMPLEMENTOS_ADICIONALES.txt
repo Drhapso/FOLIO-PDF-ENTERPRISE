@@ -1,0 +1,116 @@
+FOLIO PDF - COMPLEMENTOS ADICIONALES (OPCIONALES)
+=================================================
+
+El paquete offline YA INCLUYE todo lo necesario para el funcionamiento local:
+  - Python 3.13 x64 embebido en Folio.exe (no instale Python).
+  - Librerias: Flask, Waitress, PyMuPDF/MuPDF 1.28.2, pikepdf 10.17 (qpdf),
+    Pillow 12.3 + pillow-heif (HEIC/HEIF), OpenCV headless 4.14, NumPy,
+    python-docx, openpyxl, python-pptx, pyHanko (firmas), cryptography/OpenSSL.
+    Lista exacta de versiones: BUILD-DEPENDENCIES.txt en la carpeta instalada.
+  - Motor OCR integrado (Tesseract dentro de MuPDF) con modelos espanol (spa)
+    e ingles (eng). NO hace falta instalar Tesseract-OCR por separado.
+  - Runtime Visual C++ 2015-2022 (VCRUNTIME140, MSVCP140) incluido en la carpeta.
+  - Interfaz web local (sin CDN ni acceso a Internet).
+
+Solo descargue los complementos de esta lista si necesita la funcion indicada.
+Descarguelos en un equipo con Internet, copielos por USB/red y verifique la
+firma digital o el SHA256 publicado por el fabricante antes de instalar.
+
+
+REQUISITOS DEL EQUIPO
+---------------------
+  Sistema:        Windows 10 u 11 de 64 bits (x64). No ARM64 ni 32 bits.
+  Memoria RAM:    8 GB minimo; 16 GB recomendado para PDF de 500 MB a 1 GB.
+  Disco:          400 MB para el programa + espacio temporal de al menos
+                  3 veces el tamano de los archivos procesados (1 GB -> 3 GB).
+  Navegador:      Microsoft Edge (incluido en Windows), Chrome o Firefox
+                  actualizados. Internet Explorer NO es compatible.
+  Permisos:       No requiere administrador (se instala en %LOCALAPPDATA%).
+  Limites:        1024 MB por archivo y por conjunto de archivos en una misma
+                  operacion; salida maxima 2048 MB; cola de procesamiento activa.
+
+
+1) LIBREOFFICE  ->  Word / Excel / PowerPoint a PDF
+---------------------------------------------------
+  Necesario para:  "Office a PDF" (DOCX, DOC, XLSX, XLS, PPTX, PPT, ODT...).
+                   Sin el, la interfaz muestra "MOTOR PENDIENTE" en esa funcion.
+                   El resto de herramientas funciona sin LibreOffice.
+  Descarga:        https://www.libreoffice.org/download/download-libreoffice/
+                   Elija "Windows x86_64 (Windows 10/11)" -> archivo .msi
+                   (version estable vigente). Para instalar sin Internet use el
+                   MSI completo, no el instalador en linea.
+  Licencia:        MPL-2.0 (gratuito).
+  Instalacion:     doble clic al .msi, o silenciosa (como administrador):
+                     msiexec /i LibreOffice_<version>_Win_x86-64.msi /qn
+  Deteccion:       Folio lo detecta automaticamente en:
+                     C:\Program Files\LibreOffice\program\soffice.com
+                   o si "soffice" esta en el PATH.
+  Ruta distinta:   cree el archivo  config\site_config.json  dentro de la
+                   carpeta instalada con este contenido (barras dobles):
+                     { "libreoffice_path": "D:\\Apps\\LibreOffice\\program\\soffice.com" }
+                   y reinicie Folio. Alternativa portable: LibreOffice Portable
+                   (https://www.libreoffice.org/download/portable-versions/),
+                   indicando la ruta a su soffice.com.
+
+
+2) REGLA DE FIREWALL  ->  compartir Folio con otros equipos de la LAN
+---------------------------------------------------------------------
+  Necesario solo si usa el acceso "Folio PDF (compartir en LAN)".
+  En modo local (acceso "Folio PDF") no se abre ningun puerto de red.
+  No se descarga nada: use la herramienta incluida, como ADMINISTRADOR,
+  indicando la subred autorizada (ejemplo):
+    powershell -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\Folio-PDF\herramientas\configure-firewall.ps1" -AuthorizedSubnet 192.168.1.0/24 -Port 8090 -Apply
+  Sin -Apply solo muestra un diagnostico. Si el puerto 8090 estaba ocupado,
+  el lanzador usa 8091-8099: indique el puerto que muestre el aviso.
+
+
+3) CONTROLADORES DE ESCANER (WIA)  ->  complemento "Folio Desktop"
+------------------------------------------------------------------
+  Necesario solo para escanear desde  desktop\Folio-Desktop.ps1.
+  Descargue el controlador WIA del fabricante del escaner (HP, Epson, Canon,
+  Brother, Fujitsu...) desde su sitio oficial de soporte.
+  Para "imprimir a PDF" basta la impresora "Microsoft Print to PDF" de Windows
+  (Configuracion > Impresoras > Agregar, si no aparece).
+
+
+4) MODELOS OCR (solo si se borraron o danaron)
+----------------------------------------------
+  Ya incluidos en  models\spa.traineddata  y  models\eng.traineddata.
+  Idiomas soportados por Folio: spa, eng o spa+eng (config "ocr_language").
+  Reposicion (tessdata_fast, revision fijada, licencia Apache-2.0):
+    https://github.com/tesseract-ocr/tessdata_fast/raw/65727574dfcd264acbb0c3e07860e4e9e9b22185/spa.traineddata
+      SHA256 6F2E04D02774A18F01BED44B1111F2CD7F3BA7AC9DC4373CD3F898A40EA6B464
+    https://github.com/tesseract-ocr/tessdata_fast/raw/65727574dfcd264acbb0c3e07860e4e9e9b22185/eng.traineddata
+      SHA256 7D4322BD2A7749724879683FC3912CB542F19906C83BCC1A52132556427170B2
+  Copielos en la carpeta models de la instalacion.
+
+
+5) SOLO EN CASO DE ERROR
+------------------------
+  "Falta VCRUNTIME140.dll / MSVCP140.dll" o error 0xc000007b:
+    Microsoft Visual C++ Redistributable 2015-2022 x64 (gratuito):
+    https://aka.ms/vs/17/release/vc_redist.x64.exe
+  La politica de la empresa bloquea scripts de PowerShell:
+    Ejecute directamente  Folio.exe --host 127.0.0.1  desde la carpeta
+    instalada y abra http://127.0.0.1:8090/ en el navegador.
+  El antivirus/SmartScreen bloquea Folio.exe (no esta firmado digitalmente):
+    Solicite a TI autorizar la carpeta %LOCALAPPDATA%\Folio-PDF o el hash
+    de Folio.exe publicado en SHA256SUMS.txt.
+
+
+NO ES NECESARIO INSTALAR
+------------------------
+  Python, pip, Tesseract-OCR, Ghostscript, Adobe Acrobat, .NET adicional,
+  Java ni conexion a Internet. Los documentos nunca salen del equipo.
+
+
+LICENCIAS DE TERCEROS
+---------------------
+  PyMuPDF/MuPDF: AGPL-3.0 o licencia comercial de Artifex. La redistribucion
+  fuera de la organizacion requiere cumplir la AGPL (ofrecer el codigo fuente)
+  o adquirir licencia comercial. pikepdf/qpdf: MPL-2.0 / Apache-2.0.
+  Pillow: MIT-CMU. pillow-heif/libheif: BSD / LGPL; libde265: LGPL;
+  x265: GPL-2.0. OpenCV: Apache-2.0. pyHanko: MIT. cryptography/OpenSSL:
+  Apache-2.0/BSD. Flask/Werkzeug/Jinja2: BSD-3. Waitress: ZPL-2.1.
+  Python: PSF. Modelos tessdata: Apache-2.0. Revise los avisos de cada
+  paquete (carpetas *.dist-info) antes de distribuir fuera de la entidad.

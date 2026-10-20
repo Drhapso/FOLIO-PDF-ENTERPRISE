@@ -1,0 +1,39 @@
+FOLIO PDF - INSTALADOR OFFLINE PARA WINDOWS x64
+===============================================
+
+INSTALAR (sin Internet y sin permisos de administrador)
+  1. Extraiga TODO el ZIP en una carpeta (clic derecho > Extraer todo).
+     No ejecute el instalador desde dentro del ZIP.
+  2. Doble clic en  INSTALAR.bat
+     - Verifica la integridad (SHA256) de todos los archivos.
+     - Copia Folio a  %LOCALAPPDATA%\Folio-PDF
+     - Calibra los motores PDF/OCR para el hardware de este equipo.
+     - Crea accesos directos en el Escritorio y en Inicio > Folio PDF.
+  3. Abra el acceso directo "Folio PDF". El navegador se abre en
+     http://127.0.0.1:8090/  (si el puerto esta ocupado usa 8091-8099).
+
+  Carpeta distinta:  INSTALAR.bat -InstallDir "D:\Apps\Folio-PDF"
+  Sin accesos:       INSTALAR.bat -NoShortcuts
+
+USO
+  - "Folio PDF": solo este equipo (127.0.0.1). No abre puertos de red.
+  - "Folio PDF (compartir en LAN)": otros equipos entran por la IP de este
+    equipo; requiere la regla de firewall (ver COMPLEMENTOS_ADICIONALES.txt).
+  - El servidor corre en la ventana minimizada "Folio". Cerrarla detiene Folio.
+
+ACTUALIZAR
+  Ejecute INSTALAR.bat de la nueva version con Folio cerrado. Se conservan
+  config\site_config.json y la carpeta instance (configuracion y datos).
+
+DESINSTALAR
+  Inicio > Folio PDF > "Desinstalar Folio PDF" (pregunta si conservar datos).
+
+COMPLEMENTOS
+  Lea COMPLEMENTOS_ADICIONALES.txt: LibreOffice (Office a PDF), firewall LAN,
+  controladores de escaner y soluciones a errores frecuentes.
+
+CONTENIDO DEL PAQUETE
+  INSTALAR.bat / INSTALAR.ps1      Instalador.
+  Folio\                           Programa (Folio.exe + librerias + modelos OCR).
+  app\                             Lanzador, desinstalador y herramientas.
+  PAQUETE-INFO.txt                 Version, build y huellas SHA256.
