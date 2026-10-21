@@ -45,6 +45,7 @@ window.saveFileForEditor = saveFileForEditor;
 window.retrieveFileForEditor = retrieveFileForEditor;
 
 (function() {
+  const regionLabels = { highlight: "Resaltado", rectangle: "Rectángulo", note: "Nota", redact: "Censura irreversible" };
   const savedTheme = localStorage.getItem("folio-theme");
   if (savedTheme === "dark" || savedTheme === "light") document.documentElement.dataset.theme = savedTheme;
 
@@ -57,7 +58,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     pageWidth: 612,
     pageHeight: 792,
     zoom: 1.0,
-    activeTool: "edit", // "edit" o "add"
+    activeTool: "edit",
     showOutlines: true,
     pageBlocks: [],     // Bloques originales de la página actual
     background: null,
@@ -88,6 +89,9 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     dom.pageWrapper = document.getElementById("acro-page-wrapper");
     dom.pageImg = document.getElementById("acro-page-img");
     dom.overlay = document.getElementById("acro-overlay");
+    dom.regionTool = document.getElementById("acro-region-tool");
+    dom.noteText = document.getElementById("acro-note-text");
+    dom.regionList = document.getElementById("acro-region-list");
     dom.pageCurrent = document.getElementById("acro-page-num");
     dom.pageTotal = document.getElementById("acro-page-total");
     dom.btnPrev = document.getElementById("acro-prev-page");
@@ -208,6 +212,49 @@ window.retrieveFileForEditor = retrieveFileForEditor;
 
     dom.btnToolEdit.addEventListener("click", () => setTool("edit"));
     dom.btnToolAdd.addEventListener("click", () => setTool("add"));
+    dom.regionTool.addEventListener("change", () => setTool(dom.regionTool.value || "edit"));
+    document.getElementById("acro-region-add").addEventListener("click", () => {
+      const [x, y, w, h] = ["x", "y", "w", "h"].map(key => Number(document.getElementById("acro-region-" + key).value) / 100);
+      addRegion([x * state.pageWidth, y * state.pageHeight, (x + w) * state.pageWidth, (y + h) * state.pageHeight]);
+    });
+    let regionStart = null;
+    const regionPoint = event => {
+      const rect = dom.overlay.getBoundingClientRect();
+      return [
+        Math.max(0, Math.min(state.pageWidth, (event.clientX - rect.left) / state.currentScale)),
+        Math.max(0, Math.min(state.pageHeight, (event.clientY - rect.top) / state.currentScale)),
+      ];
+    };
+    const regionBox = event => {
+      const end = regionPoint(event);
+      return [Math.min(regionStart[0], end[0]), Math.min(regionStart[1], end[1]),
+        Math.max(regionStart[0], end[0]), Math.max(regionStart[1], end[1])];
+    };
+    dom.overlay.addEventListener("pointerdown", event => {
+      if (!regionLabels[state.activeTool] || !state.file || state.processing || event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      deselectBlock();
+      regionStart = regionPoint(event);
+      dom.overlay.setPointerCapture(event.pointerId);
+    }, true);
+    dom.overlay.addEventListener("pointermove", event => {
+      if (!regionStart) return;
+      dom.overlay.querySelector(".acro-region-draft")?.remove();
+      renderRegion({ action: state.activeTool, bbox: regionBox(event) }, true);
+    });
+    dom.overlay.addEventListener("pointerup", event => {
+      if (!regionStart) return;
+      const bbox = regionBox(event);
+      regionStart = null;
+      dom.overlay.releasePointerCapture(event.pointerId);
+      dom.overlay.querySelector(".acro-region-draft")?.remove();
+      addRegion(bbox);
+    });
+    dom.overlay.addEventListener("pointercancel", () => {
+      regionStart = null;
+      dom.overlay.querySelector(".acro-region-draft")?.remove();
+    });
 
     dom.btnToolOutlines.addEventListener("click", () => {
       state.showOutlines = !state.showOutlines;
@@ -357,10 +404,13 @@ window.retrieveFileForEditor = retrieveFileForEditor;
   }
 
   function setTool(toolName) {
+    if (regionLabels[toolName]) deselectBlock();
     state.activeTool = toolName;
     dom.btnToolEdit.classList.toggle("active", toolName === "edit");
     dom.btnToolAdd.classList.toggle("active", toolName === "add");
-    dom.overlay.style.cursor = toolName === "add" ? "crosshair" : "default";
+    dom.regionTool.value = regionLabels[toolName] ? toolName : "";
+    dom.overlay.classList.toggle("acro-region-mode", Boolean(regionLabels[toolName]));
+    dom.overlay.style.cursor = toolName === "add" || regionLabels[toolName] ? "crosshair" : "default";
   }
 
   function applyZoom() {
@@ -388,7 +438,8 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     dom.overlay.classList.add("acro-show-outlines");
     if (dom.btnSave) dom.btnSave.disabled = false;
     if (dom.dropPrompt) dom.dropPrompt.hidden = true;
-    setTool("edit");
+    const requestedTool = new URLSearchParams(window.location.search).get("tool");
+    setTool(regionLabels[requestedTool] ? requestedTool : "edit");
     updateStatus();
 
     if (dom.dialog && !dom.dialog.open) dom.dialog.showModal();
@@ -454,9 +505,9 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     state.allPageBlocks.set(pageNum, state.pageBlocks);
     renderPageBlocks();
 
-    setStatusNotice(state.pageBlocks.length
+    setStatusNotice(data.scan_notice || (state.pageBlocks.length
       ? `Página ${pageNum}: ${state.pageBlocks.length} fragmentos editables. Fuentes compatibles; revisa la vista final al guardar.`
-      : `Página ${pageNum}: sin texto horizontal editable. El texto de una imagen no se puede reemplazar con esta herramienta.`);
+      : `Página ${pageNum}: sin texto horizontal editable.`));
   }
 
   function renderPageBlocks() {
@@ -464,6 +515,18 @@ window.retrieveFileForEditor = retrieveFileForEditor;
 
     // 1. Bloques originales
     state.pageBlocks.forEach(block => {
+      if (block.editable === false) {
+        const blocked = document.createElement("div");
+        blocked.className = "acro-scan-blocked";
+        blocked.title = block.reason;
+        updateElementGeometry(blocked, block.bbox);
+        blocked.addEventListener("click", event => {
+          event.stopPropagation();
+          setStatusNotice(block.reason, true);
+        });
+        dom.overlay.appendChild(blocked);
+        return;
+      }
       const key = `${state.currentPage}_${block.id}`;
       createOrigMaskElement(block.bbox, block.id);
       if (state.deletedBlocks.has(key)) {
@@ -488,8 +551,62 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     // 2. Bloques nuevos agregados en esta página
     const addedList = state.addedBlocks.get(state.currentPage) || [];
     addedList.forEach(block => {
-      createBlockElement(block.id, block.bbox, block.text, block.font, block.size, block.color, block.bold, block.italic, block.align, true, true);
+      if (regionLabels[block.action]) renderRegion(block);
+      else createBlockElement(block.id, block.bbox, block.text, block.font, block.size, block.color, block.bold, block.italic, block.align, true, true);
     });
+    renderRegionList();
+  }
+
+  function addRegion(bbox) {
+    if (!state.file || state.processing || !regionLabels[state.activeTool]) {
+      setStatusNotice("Abre un PDF y elige una herramienta de zona.", true);
+      return;
+    }
+    const [x0, y0, x1, y1] = bbox;
+    if (!bbox.every(Number.isFinite) || x0 < 0 || y0 < 0 || x1 > state.pageWidth || y1 > state.pageHeight || x1 - x0 < 1 || y1 - y0 < 1) {
+      setStatusNotice("La zona debe tener al menos un punto de ancho y alto y quedar dentro de la página.", true);
+      return;
+    }
+    const text = dom.noteText.value.trim();
+    if (state.activeTool === "note" && !text) {
+      setStatusNotice("Escribe el contenido de la nota antes de seleccionar la zona.", true);
+      return;
+    }
+    if (!state.addedBlocks.has(state.currentPage)) state.addedBlocks.set(state.currentPage, []);
+    state.addedBlocks.get(state.currentPage).push({
+      id: "region_" + Date.now() + "_" + getAddedCount(), action: state.activeTool, page: state.currentPage, bbox, text,
+    });
+    renderPageBlocks();
+    updateStatus();
+  }
+
+  function renderRegion(region, draft = false) {
+    const el = document.createElement("div");
+    el.className = `acro-region acro-region-${region.action}` + (draft ? " acro-region-draft" : "");
+    updateRegionGeometry(el, region.bbox);
+    dom.overlay.appendChild(el);
+  }
+
+  function updateRegionGeometry(el, bbox) {
+    updateElementGeometry(el, bbox);
+    el.style.width = ((bbox[2] - bbox[0]) * state.currentScale) + "px";
+    el.style.height = ((bbox[3] - bbox[1]) * state.currentScale) + "px";
+  }
+
+  function renderRegionList() {
+    dom.regionList.replaceChildren();
+    for (const region of state.addedBlocks.get(state.currentPage) || []) {
+      if (!regionLabels[region.action]) continue;
+      const li = document.createElement("li");
+      const label = document.createElement("span");
+      label.textContent = regionLabels[region.action] + (region.action === "note" ? ": " + region.text : "");
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Quitar";
+      remove.addEventListener("click", () => deleteBlock(region.id, true));
+      li.append(label, remove);
+      dom.regionList.appendChild(li);
+    }
   }
 
   function createOrigMaskElement(bbox, id) {
@@ -644,6 +761,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
         updateElementGeometry(el, bbox);
       }
     });
+    dom.overlay.querySelectorAll(".acro-region, .acro-scan-blocked").forEach(el => updateRegionGeometry(el, JSON.parse(el.dataset.bbox)));
   }
 
   function selectBlock(id, isNew, el) {
@@ -734,6 +852,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
         action: "modify",
         page: state.currentPage,
         orig_bbox: orig ? orig.bbox : null,
+        source: orig?.source,
         bbox: orig ? orig.bbox : null,
         text: orig ? orig.text : "",
         font: orig ? orig.font : "Arial",
@@ -997,6 +1116,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
           action: "delete",
           page: p,
           orig_bbox: orig.bbox,
+          source: orig.source,
         });
       }
     });
@@ -1010,6 +1130,10 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       alert("No hay modificaciones pendientes para guardar.");
       return;
     }
+    if (payloadChanges.some(change => change.action === "redact")
+        && !confirm("La censura eliminará contenido de las zonas seleccionadas y los adjuntos del PDF. No se puede deshacer en el archivo guardado. ¿Continuar?")) return;
+    if (payloadChanges.some(change => change.source === "scan")
+        && !confirm("Se reconstruirá la imagen solo en las palabras escaneadas seleccionadas. El OCR y la reconstrucción pueden tener errores. Revisa la vista previa y el PDF guardado. ¿Continuar?")) return;
 
     dom.btnSave.disabled = true;
     state.processing = true;

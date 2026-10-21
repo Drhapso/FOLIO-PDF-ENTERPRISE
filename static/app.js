@@ -15,7 +15,7 @@ const tools = [
   {id:"images_to_pdf",name:"Imágenes a PDF",icon:"▧",category:"convert",desc:"Reúne fotos e imágenes, incluidas HEIC/HEIF, en un PDF.",multiple:true,accept:".png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif"},
   {id:"pdf_to_images",name:"PDF a imágenes",icon:"▣",category:"convert",desc:"Exporta tus páginas como imágenes PNG en un ZIP."},
   {id:"extract_text",name:"Extraer texto",icon:"T",category:"convert",desc:"Llévate el contenido de tu PDF a un archivo de texto."},
-  {id:"edit",name:"Editar PDF",icon:"✎",category:"edit",desc:"Reconoce y edita todo el texto, fuentes, párrafos y diseño del archivo en una pestaña independiente al estilo Adobe Acrobat DC.",standaloneTab:true},
+  {id:"edit",name:"Editor Acrobat · Editar PDF",icon:"✎",category:"edit",desc:"Reemplaza texto, cambia su formato, anota y censura. Escaneos: reconstrucción local de palabras sobre fondos simples; las zonas complejas se bloquean.",standaloneTab:true},
   {id:"watermark",name:"Marca de agua",icon:"◈",category:"edit",desc:"Añade una marca de texto sobre las páginas que elijas."},
   {id:"protect",name:"Proteger PDF",icon:"⌑",category:"edit",desc:"Controla su apertura con una contraseña y cifrado AES-256."},
   {id:"unlock",name:"Desbloquear PDF",icon:"⌕",category:"edit",desc:"Retira la contraseña de un PDF que te pertenece.",warning:"Necesitas conocer la contraseña actual. Esta herramienta no recupera ni adivina contraseñas."},
@@ -29,8 +29,8 @@ const tools = [
   {id:"overlay",name:"Superponer PDF",icon:"▱",category:"edit",desc:"Aplica un membrete o plantilla sobre un documento.",multiple:true,warning:"Primero el documento, luego la plantilla PDF. La plantilla debe tener una página o igual cantidad de páginas que el documento."},
   {id:"compare",name:"Comparar PDF",icon:"≠",category:"organize",desc:"Informe, diferencias de texto y mapas visuales en un ZIP.",multiple:true,warning:"Selecciona exactamente dos PDF. Compara apariencia a 96 DPI y texto extraído; no certifica equivalencia ni firmas."},
   {id:"stamp",name:"Firma visual e imágenes",icon:"✍",category:"edit",desc:"Dibuja tu firma o inserta una imagen de firma, sello o logo.",multiple:true,accept:".pdf,.png,.jpg,.jpeg",warning:"Primero el PDF y después una imagen PNG/JPEG. Es una firma visual, no firma digital con certificado. Las coordenadas son porcentajes; quite antes cualquier rotación."},
-  {id:"annotate",operation:"edit",name:"Anotar PDF",icon:"✎",category:"edit",desc:"Resalta zonas, dibuja rectángulos y agrega notas.",warning:"Carga la vista previa y dibuja una caja. Notas y resaltados se guardan como anotaciones PDF."},
-  {id:"redact",operation:"edit",name:"Censurar PDF",icon:"■",category:"edit",desc:"Elimina contenido de zonas seleccionadas con tachado real.",warning:"Revisa todas las páginas, anotaciones y datos sensibles antes de compartir. No es un saneamiento forense automático."},
+  {id:"annotate",name:"Anotar PDF",icon:"✎",category:"edit",desc:"Resalta zonas, dibuja rectángulos y agrega notas en el editor Acrobat.",standaloneTab:true},
+  {id:"redact",name:"Censurar PDF",icon:"■",category:"edit",desc:"Elimina contenido de zonas seleccionadas con censura real en el editor Acrobat.",standaloneTab:true,warning:"Revisa todas las páginas, anotaciones y datos sensibles antes de compartir. No es un saneamiento forense automático."},
   {id:"remove_metadata",name:"Eliminar metadatos",icon:"ⓘ",category:"edit",desc:"Limpia autor, título y metadatos Info/XMP del documento.",warning:"No elimina adjuntos, comentarios, texto ni datos personales dentro del contenido."},
   {id:"grayscale",name:"Escala de grises",icon:"◐",category:"optimize",desc:"Crea una copia monocromática rasterizada.",warning:"Pierde texto seleccionable, estructura accesible, enlaces y campos interactivos."},
   {id:"rasterize",name:"Rasterizar PDF",icon:"▦",category:"convert",desc:"Convierte las páginas en imágenes dentro de un nuevo PDF.",warning:"Pierde texto seleccionable, estructura accesible, enlaces y campos interactivos."},
@@ -153,12 +153,17 @@ function renderSessionTools() {
   }
 }
 function openTextEditorSession(file) {
+  const params=new URLSearchParams();
+  params.set("tool",current?.id==="redact" ? "redact" : current?.id==="annotate" ? "highlight" : "edit");
+  if(sessionActive) params.set("session","1");
+  if($("workspace").classList.contains("multi-edit-workspace")) params.set("multi","1");
+  const target="/editor?"+params;
+  if(!file) { window.location.href=target; return; }
   if(!window.saveFileForEditor) {
     throw new Error("No se pudo preparar el PDF para el editor.");
   }
   window.saveFileForEditor(file).then(()=>{
-    window.location.href=$("workspace").classList.contains("multi-edit-workspace")
-      ? "/editor?session=1&multi=1" : "/editor?session=1";
+    window.location.href=target;
   }).catch(error=>setStatus("No se pudo abrir el editor: "+error.message,true));
 }
 document.addEventListener("DOMContentLoaded",async()=>{
@@ -174,6 +179,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
     openTool(editTool,{keepSessionFile:true});
   } else {
     openTool(editTool);
+    sessionActive=true;
   }
   addFiles([file]);
 });
@@ -236,12 +242,7 @@ function openTool(tool,{keepSessionFile=false}={}) {
   if(tool.id==="fill_form") field("fields","Campos y valores (JSON)",{type:"textarea",value:'{"nombre_del_campo": "valor"}',hint:"Los valores son textos; para casillas usa Off o su estado activo."});
   if(["grayscale","rasterize"].includes(tool.id)) field("dpi","Resolución (DPI)",{type:"number",value:"144",min:72,max:300});
   if(tool.id==="pdf_to_images") field("image_format","Formato",{choices:[["png","PNG"],["jpg","JPEG"],["tiff","TIFF por página"]],value:"png"});
-  $("editor").hidden=!(tool.operation==="edit" || tool.id==="crop");
-  document.querySelector(".editor-controls").hidden=tool.id==="crop";
-  document.querySelector("#editor > .hint").textContent=tool.id==="crop"?
-    "Carga la vista y dibuja la zona que deseas conservar. Sus porcentajes se aplicarán a las páginas seleccionadas. El contenido oculto no se elimina; revisa el recorte en páginas de distinto tamaño.":
-    "Carga la vista y dibuja una caja sobre la página. El tachado elimina contenido; resaltados y notas son anotaciones. Revisa todo el documento antes de compartir.";
-  $("edit-kind").value=tool.id==="redact"?"redact":tool.id==="annotate"?"highlight":"text";
+  $("editor").hidden=tool.id!=="crop";
   $("signature-editor").hidden=tool.id!=="stamp";
   clearSignature();
   if(tool.id==="edit" || tool.standaloneTab) {
@@ -249,15 +250,14 @@ function openTool(tool,{keepSessionFile=false}={}) {
     tabBtn.type="button";
     tabBtn.className="primary";
     tabBtn.style.cssText="width:100%; margin:8px 0 14px 0; padding:12px; font-weight:600; text-align:center; cursor:pointer;";
-    tabBtn.textContent="Abrir editor en pestaña aparte ↗";
+    tabBtn.textContent="Abrir editor Acrobat →";
     tabBtn.addEventListener("click", () => {
       try {
-        if(sessionActive && files[0]) openTextEditorSession(files[0]);
-        else { closeWorkspace(); window.open("/editor", "_blank"); }
+        openTextEditorSession(files[0]);
       } catch(error) { setStatus(error.message,true); }
     });
     $("options").append(tabBtn);
-    $("process").textContent="Abrir en pestaña de edición →";
+    $("process").textContent="Abrir editor Acrobat →";
   } else {
     $("process").innerHTML='Procesar documento <span aria-hidden="true">→</span>';
   }
@@ -304,13 +304,7 @@ function addFiles(incoming) {
   if((current?.id === "edit" || current?.standaloneTab || current?.id === "edit_text_pro")
     && !SESSION_TOOL_IDS.has(current?.id) && files.length > 0) {
     const target = files[0];
-    closeWorkspace();
-    const newTab = window.open("/editor", "_blank");
-    if(window.saveFileForEditor) {
-      window.saveFileForEditor(target).then(() => {
-        if(newTab) newTab.focus();
-      });
-    }
+    openTextEditorSession(target);
     return;
   }
   if(singleSessionFile && files.length===1 && files[0].name.toLowerCase().endsWith(".pdf")) {
@@ -351,7 +345,6 @@ function options() {
   if(current.id==="fill_form") {
     try { result.fields=JSON.parse(result.fields); } catch { throw new Error("Los campos deben ser un objeto JSON válido."); }
   }
-  if(current.id==="edit" || current.operation==="edit") result.edits=edits;
   return result;
 }
 function limitLabel(mb) {
@@ -409,7 +402,7 @@ function setBusy(value) {
   }
   renderSessionTools();
   if(value) $("process").textContent="Procesando…";
-  else if(current?.id==="edit" || current?.standaloneTab) $("process").textContent="Abrir en pestaña de edición →";
+  else if(current?.id==="edit" || current?.standaloneTab) $("process").textContent="Abrir editor Acrobat →";
   else $("process").innerHTML='Procesar documento <span aria-hidden="true">→</span>';
 }
 $("process-form").addEventListener("submit",async event=>{
@@ -418,29 +411,11 @@ $("process-form").addEventListener("submit",async event=>{
   if(!sessionActive) clearResult();
   try{
     if(current.id==="edit" || current.standaloneTab) {
-        if(sessionActive && files[0]) {
-          openTextEditorSession(files[0]);
-          return;
-        }
-        if(files.length > 0) {
-        const target = files[0];
-        closeWorkspace();
-        const newTab = window.open("/editor", "_blank");
-        if(window.saveFileForEditor) {
-          window.saveFileForEditor(target).then(() => {
-            if(newTab) newTab.focus();
-          });
-        }
-        return;
-      } else {
-        closeWorkspace();
-        window.open("/editor", "_blank");
-        return;
-      }
+      openTextEditorSession(files[0]);
+      return;
     }
     validateFiles();
     if(current.id==="merge" && files.length<2) throw new Error("Selecciona al menos dos PDF.");
-    if(current.operation==="edit" && !edits.length) throw new Error("Añade al menos una edición en la vista previa.");
     if(["overlay","compare","stamp"].includes(current.id) && files.length!==2) throw new Error("Selecciona exactamente dos archivos en el orden indicado.");
     const payload=options();
     setBusy(true); setStatus("Enviando al servidor. El aviso mostrará la espera o el procesamiento…");
@@ -497,24 +472,18 @@ function drawPreview(draft=null) {
     ctx.strokeStyle=edit.kind==="redact"?"#333":"#6259aa";ctx.lineWidth=2;
     ctx.fillRect(x*canvas.width,y*canvas.height,w*canvas.width,h*canvas.height);
     ctx.strokeRect(x*canvas.width,y*canvas.height,w*canvas.width,h*canvas.height);
-    if(edit.kind==="text"){ctx.fillStyle="#121812";ctx.font=`${(edit.size||14)*1.25}px sans-serif`;ctx.textAlign="left";ctx.fillText(edit.text || "",x*canvas.width+3,y*canvas.height+(edit.size||14)*1.4,w*canvas.width-6);}
   }
   $("page-label").textContent=`Página ${pageNumber} de ${pageCount}`;
 }
 function point(event) {const rect=$("preview").getBoundingClientRect();return{x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};}
-function makeEdit(box) {return {...box,kind:$("edit-kind").value,page:pageNumber,text:$("edit-text").value,size:Number($("edit-size").value)};}
+function makeEdit(box) {return {...box,kind:"highlight",page:pageNumber};}
 function appendEdit(box) {
   if(busy || !previewImage || previewFile!==files[0]) {setStatus("Carga la vista previa primero.",true);return;}
   const edit=makeEdit(box);
-  if(current.id==="crop") {
-    if(!Object.values(box).every(Number.isFinite) || box.w<=0 || box.h<=0 || box.x<0 || box.y<0 || box.x+box.w>1.001 || box.y+box.h>1.001){setStatus("La caja debe quedar dentro de la página.",true);return;}
-    for(const [key,value] of Object.entries({x:box.x,y:box.y,width:box.w,height:box.h})) $("option-"+key).value=(value*100).toFixed(2);
-    edits=[{...edit,kind:"highlight"}];clearResult();drawPreview();setStatus("Zona de recorte elegida. Procesa para aplicarla a la selección de páginas.");return;
-  }
-  if(["text","note"].includes(edit.kind) && !edit.text.trim()) {setStatus("Escribe el texto antes de dibujar una caja.",true);return;}
+  if(current.id!=="crop") return;
   if(!Object.values(box).every(Number.isFinite) || box.w<=0 || box.h<=0 || box.x<0 || box.y<0 || box.x+box.w>1.001 || box.y+box.h>1.001){setStatus("La caja debe quedar dentro de la página.",true);return;}
-  if(edits.length>=100){setStatus("Máximo 100 ediciones por documento.",true);return;}
-  edits.push(edit);clearResult();renderEdits();drawPreview();setStatus("Edición añadida. Procesa el documento para aplicarla.");
+  for(const [key,value] of Object.entries({x:box.x,y:box.y,width:box.w,height:box.h})) $("option-"+key).value=(value*100).toFixed(2);
+  edits=[edit];clearResult();renderEdits();drawPreview();setStatus("Zona de recorte elegida. Procesa para aplicarla a la selección de páginas.");
 }
 $("preview").addEventListener("pointerdown",event=>{if(!previewImage || busy)return;pointerStart=point(event);$("preview").setPointerCapture(event.pointerId);});
 $("preview").addEventListener("pointermove",event=>{if(!pointerStart)return;const end=point(event);drawPreview(makeEdit({x:Math.min(pointerStart.x,end.x),y:Math.min(pointerStart.y,end.y),w:Math.abs(end.x-pointerStart.x),h:Math.abs(end.y-pointerStart.y)}));});
@@ -525,8 +494,7 @@ function renderEdits() {
   $("edit-list").replaceChildren();
   edits.forEach((edit,index)=>{
     const li=document.createElement("li"),span=document.createElement("span"),remove=document.createElement("button");
-    const labels={redact:"tachado irreversible",highlight:"resaltado",rectangle:"rectángulo",note:"nota: "+edit.text,text:"texto: "+edit.text};
-    span.className="file-name";span.textContent=`Pág. ${edit.page}: ${labels[edit.kind]}`;
+    span.className="file-name";span.textContent=`Pág. ${edit.page}: zona de recorte`;
     remove.type="button";remove.textContent="Quitar";remove.addEventListener("click",()=>{if(busy)return;edits.splice(index,1);clearResult();renderEdits();drawPreview();});
     li.append(span,remove);$("edit-list").append(li);
   });

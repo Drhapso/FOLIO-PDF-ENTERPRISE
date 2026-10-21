@@ -149,10 +149,9 @@
       </label>
       <ol id="file-list" class="file-list"></ol>
       <div id="options" class="options"></div>
-      <section id="editor" class="editor" hidden aria-label="Editor visual">
+      <section id="editor" class="editor" hidden aria-label="Vista de recorte">
         <div class="preview-toolbar"><button type="button" id="previous" class="secondary" aria-label="Pagina anterior">←</button><span id="page-label">Página 1</span><button type="button" id="next" class="secondary" aria-label="Pagina siguiente">→</button><button type="button" id="load-preview" class="secondary">Cargar vista previa</button></div>
-        <div class="editor-controls"><label>Acción<select id="edit-kind"><option value="text">Añadir texto</option><option value="redact">Tachado irreversible</option><option value="highlight">Resaltado</option><option value="rectangle">Rectángulo</option><option value="note">Nota</option></select></label><label>Texto<input id="edit-text" maxlength="1000" placeholder="Texto o contenido de nota"></label><label>Tamaño<input id="edit-size" type="number" min="6" max="72" value="14"></label></div>
-        <p class="hint">Carga la vista y dibuja una caja sobre la página. El tachado elimina el contenido de esa zona; no es un rectángulo superpuesto. No sustituye una revisión de datos sensibles de todo el documento.</p>
+        <p class="hint">Carga la vista y dibuja la zona que deseas conservar. Sus porcentajes se aplicarán a las páginas seleccionadas. El contenido oculto no se elimina; revisa el recorte en páginas de distinto tamaño. Para editar, anotar o censurar utiliza el editor Acrobat.</p>
         <div class="canvas-wrap"><canvas id="preview" width="600" height="200" aria-label="Vista de pagina; arrastra para definir una edicion"></canvas></div>
         <details class="accessible-editor"><summary>Definir caja con teclado (porcentajes de la página)</summary><div class="coordinate-fields"><label>Izquierda %<input id="box-x" type="number" min="0" max="99" value="10"></label><label>Arriba %<input id="box-y" type="number" min="0" max="99" value="10"></label><label>Ancho %<input id="box-w" type="number" min="1" max="100" value="60"></label><label>Alto %<input id="box-h" type="number" min="1" max="100" value="15"></label></div><button id="add-box" type="button" class="secondary">Añadir caja</button></details>
         <ol id="edit-list" class="file-list"></ol>

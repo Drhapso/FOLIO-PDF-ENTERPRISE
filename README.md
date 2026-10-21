@@ -84,6 +84,63 @@ se conservan. No retiene documentos entre peticiones ni implementa un motor
 local en el navegador. Se validaron equivalencia de vista, ediciones sucesivas,
 eliminacion real y limpieza; no garantiza una mejora para todos los PDF.
 
+### Editor Acrobat unico
+
+**Editar PDF**, **Anotar PDF** y **Censurar PDF**, incluidos sus accesos desde
+Edicion multiple, abren el mismo editor `/editor`. El PDF se transfiere antes
+de navegar y el resultado guardado sigue disponible para otras modificaciones.
+El panel permite resaltar, dibujar rectangulos, agregar notas y censurar zonas,
+con arrastre o coordenadas de teclado. Las zonas pendientes se pueden quitar;
+la censura requiere confirmacion al guardar.
+
+El texto existente se reemplaza eliminando primero su contenido PDF, sin
+rectangulos blancos y conservando imagenes y trazos del fondo. Las anotaciones
+siguen siendo anotaciones PDF; la censura elimina el contenido de su zona y
+retira metadatos y adjuntos. Revisar siempre el resultado: no es un saneamiento
+forense de todo el documento.
+
+`edit_text_pro` es el motor comun. La ruta `edit` se conserva como alias:
+acepta `changes` o el formato anterior `edits`, nunca ambos. Las cajas antiguas
+de texto reemplazan los fragmentos nativos contenidos completamente; una
+seleccion parcial se rechaza para no borrar texto vecino ni superponerlo.
+Una caja sin texto nativo agrega texto nuevo. `modify` y `delete` requieren
+`orig_bbox` coincidente con el fragmento inspeccionado. Los dos alias permiten
+la misma respuesta multipart con `editor_preview`.
+
+No se reconstruyen parrafos automaticamente; las fuentes se sustituyen por
+familias PDF compatibles.
+Agregar texto es una accion explicita distinta de reemplazar texto existente.
+Marcas de agua, firmas visuales, formularios y operaciones de paginas conservan
+sus herramientas especializadas: no son rutas alternativas de reemplazo de texto.
+
+### Escaneos: reconstruccion local conservadora
+
+Al inspeccionar para editar, el motor detecta paginas sin texto visible o con
+una imagen de pagina completa y ejecuta OCR local a 200 DPI (`spa+eng` segun
+la configuracion). Tambien detecta texto OCR invisible: no se considera que
+eliminar esa capa elimine las letras fotografiadas. Se necesitan los modelos
+en `models`; si faltan se informa del error, sin simular una edicion correcta.
+
+Las palabras OCR se comprueban sobre un recorte a 216 DPI. Solo se habilitan
+zonas pequenas con tinta aislada sobre fondo simple. Se rechazan limites con
+tinta, posibles lineas, sellos/graficos, fondos no uniformes y reconstrucciones
+con restos detectados. Las cajas bloqueadas tienen contorno ambar y muestran
+el motivo al pulsarlas. Estas comprobaciones son heuristicas, no una garantia
+de reconocimiento perfecto.
+
+La vista previa usa un recorte reconstruido con inpainting local. Al guardar
+se repiten OCR, validacion y reconstruccion desde el PDF original: no se confia
+en una mascara enviada por el navegador. Se eliminan los pixeles de la zona
+original con redaccion de imagen y se inserta el recorte limpio, antes del texto
+nuevo. Solo se cambia la palabra seleccionada; no se convierte toda la pagina
+ni se coloca un rectangulo blanco sobre el original. El OCR y las fuentes
+compatibles pueden diferir del original: se solicita confirmacion y revision
+visual. Agregar texto sigue siendo una accion explicita, no un reemplazo.
+
+El reemplazo global se rechaza en paginas con fragmentos escaneados para exigir
+revision individual. La API antigua `edits` tambien pasa por esta validacion.
+No es una limpieza forense ni un sustituto completo del motor de Acrobat.
+
 ### Tu centro documental. En tu equipo o en tu red. Sin subir archivos a una nube.
 
 **46 accesos a herramientas PDF · Compresion estructural sin perdida · OCR local ·

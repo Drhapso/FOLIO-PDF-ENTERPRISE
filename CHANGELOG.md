@@ -1,5 +1,39 @@
 # Cambios
 
+## 2026-10-21 - Editor unico y reconstruccion local de escaneos
+
+- Unificados Editar PDF, Anotar PDF y Censurar PDF en el editor estilo Acrobat,
+  incluidos los accesos y el retorno desde Edicion multiple.
+- Eliminado el motor heredado de texto superpuesto. `edit` y `edit_text_pro`
+  usan el mismo motor, con compatibilidad validada para `edits` y `changes`.
+- Integradas notas, resaltados, rectangulos y censura con arrastre o teclado;
+  confirmacion para censura y cambios de pixeles en palabras escaneadas.
+- Detectados escaneos y capas OCR invisibles. OCR local a 200 DPI y
+  reconstruccion conservadora de palabras a 216 DPI: elimina pixeles originales
+  antes de insertar texto nuevo, sin convertir toda la pagina.
+- Bloqueadas zonas con tinta en limites, fondos complejos, posibles lineas o
+  graficos y reconstrucciones con restos. Reemplazo global rechazado cuando
+  existen fragmentos escaneados. No equivale al motor propietario de Adobe ni
+  garantiza reconocimiento o reconstruccion perfectos.
+- Vista previa y guardado reconstruyen desde el mismo documento; validacion
+  del servidor independiente de la mascara del navegador. Modulo `scan_editor`
+  incluido en la receta del ejecutable; no se genero un instalador nuevo.
+- Build web `2026-10-21-scan-local-1` para invalidar recursos anteriores.
+- Diagnostico local: 35 pruebas enfocadas aprobadas, incluidos escaneo puro,
+  OCR invisible, pagina mixta, eliminacion de tinta y conservacion del exterior.
+  Avisos ResourceWarning de temporales durante pruebas, sin fallos de prueba.
+- Muestra real: 552 palabras OCR, 325 habilitadas y 227 bloqueadas. Sustitucion
+  de una palabra comprobada visualmente, cero pixeles cambiados fuera de la zona
+  de control y original intacto por SHA-256. Muestras y resultados privados
+  excluidos de la sincronizacion Git.
+- Desplegado en produccion con respaldo y SHA-256 de fuentes; reiniciada solo
+  Folio-PDF-LAN tras comprobar ausencia de trabajos y transferencias temporales.
+  Salud directa y proxy con build nuevo; configuracion privada sin cambios.
+- Prueba HTTP real: OCR, reemplazo y respuesta multipart PDF/vista aprobados;
+  limpieza `complete`, cero pixeles cambiados fuera de la zona de control y
+  sin tinta oscura residual tras quitar el texto de reemplazo en memoria.
+  Detalle operativo y recuperacion en `docs/DESPLIEGUE_2026-10-21.md`.
+
 ## 2026-10-20 - Cambio de marca a EVA PDF Enterprise
 
 - Marca visible renombrada de Folio a EVA PDF Enterprise: titulos, logotipo

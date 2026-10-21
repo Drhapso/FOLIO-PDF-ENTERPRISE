@@ -51,6 +51,7 @@ class AcrobatEditorTests(unittest.TestCase):
                 "files": [(io.BytesIO(data), name) for data, name in uploads],
             },
         )
+        self.addCleanup(response.close)
         self.assertEqual(response.status_code, expected)
         return response
 
@@ -304,6 +305,185 @@ class AcrobatEditorTests(unittest.TestCase):
             self.assertNotIn("Encabezado Original", doc[0].get_text())
         change["text"] = "TEXTO DEMASIADO LARGO " * 30
         self.call("edit_text_pro", {"changes": [change]}, expected=422)
+
+    def test_both_edit_routes_replace_without_ghost_text_on_real_background(self):
+        source, background = self.background_sample()
+        data = self.call("inspect", uploads=[(source, "color.pdf")]).json
+        target = next(block for block in data["blocks"] if block["text"] == "TEXTO ORIGINAL")
+        change = {"action": "modify", "page": 1, "orig_bbox": target["bbox"],
+                  "bbox": target["bbox"], "text": "NUEVO", "size": 16, "bold": True}
+        with pdf.open(stream=background, filetype="pdf") as expected:
+            expected[0].insert_text((200, 80), "VECINO", fontsize=16)
+            expected[0].insert_text((50, 80), "NUEVO", fontsize=16, fontname="hebo")
+            expected_pixels = expected[0].get_pixmap().samples
+        for operation in ("edit", "edit_text_pro"):
+            with self.subTest(operation=operation):
+                result = self.call(operation, {"changes": [change]}, uploads=[(source, "color.pdf")])
+                with pdf.open(stream=result.data, filetype="pdf") as actual:
+                    self.assertEqual(actual[0].get_pixmap().samples, expected_pixels)
+                    self.assertNotIn("ORIGINAL", actual[0].get_text())
+                    self.assertIn("VECINO", actual[0].get_text())
+
+    def test_legacy_text_boxes_replace_instead_of_overlay(self):
+        target = self.call("inspect").json["blocks"][0]
+        x0, y0, x1, y1 = target["bbox"]
+        edit = {"kind": "text", "page": 1, "x": (x0 - 1) / 612, "y": (y0 - 1) / 792,
+                "w": (x1 - x0 + 2) / 612, "h": (y1 - y0 + 10) / 792, "text": "NUEVO", "size": 12}
+        for operation in ("edit", "edit_text_pro"):
+            with self.subTest(operation=operation):
+                result = self.call(operation, {"edits": [edit]})
+                with pdf.open(stream=result.data, filetype="pdf") as doc:
+                    self.assertNotIn("Encabezado Original", doc[0].get_text())
+                    self.assertIn("NUEVO", doc[0].get_text())
+                    self.assertIn("Parrafo", doc[0].get_text())
+        edit["w"] /= 2
+        self.call("edit", {"edits": [edit]}, expected=422)
+
+    def test_unified_annotations_and_redaction(self):
+        target = self.call("inspect").json["blocks"][0]
+        for operation in ("edit", "edit_text_pro"):
+            with self.subTest(operation=operation):
+                result = self.call(operation, {"changes": [
+                    {"action": "highlight", "page": 1, "bbox": [40, 110, 400, 140]},
+                    {"action": "rectangle", "page": 1, "bbox": [40, 160, 400, 190]},
+                    {"action": "note", "page": 1, "bbox": [450, 300, 500, 350], "text": "NOTA"},
+                    {"action": "redact", "page": 1, "bbox": target["bbox"]},
+                ]})
+                with pdf.open(stream=result.data, filetype="pdf") as doc:
+                    self.assertNotIn("Encabezado Original", doc[0].get_text())
+                    self.assertIn("Parrafo", doc[0].get_text())
+                    self.assertEqual(len(list(doc[0].annots())), 3)
+                    self.assertEqual(doc[0].get_pixmap().pixel(55, 75), (0, 0, 0))
+
+    def test_redaction_removes_text_inserted_in_same_request(self):
+        for operation in ("edit", "edit_text_pro"):
+            result = self.call(operation, {"changes": [
+                {"action": "redact", "page": 1, "bbox": [40, 300, 400, 360]},
+                {"action": "add", "page": 1, "bbox": [50, 310, 350, 350], "text": "SENSIBLE"},
+            ]})
+            with pdf.open(stream=result.data, filetype="pdf") as doc:
+                self.assertNotIn("SENSIBLE", doc[0].get_text())
+
+    def test_unified_redaction_removes_images_metadata_and_attachments(self):
+        source, _ = self.background_sample()
+        with pdf.open(stream=source, filetype="pdf") as doc:
+            doc.set_metadata({"author": "SENSIBLE"})
+            doc.embfile_add("original.txt", b"SENSIBLE")
+            source = doc.tobytes()
+        for operation in ("edit", "edit_text_pro"):
+            result = self.call(operation, {"changes": [
+                {"action": "redact", "page": 1, "bbox": [40, 40, 190, 110]},
+            ]}, uploads=[(source, "color.pdf")])
+            with pdf.open(stream=result.data, filetype="pdf") as doc:
+                self.assertNotIn("ORIGINAL", doc[0].get_text())
+                self.assertIn("VECINO", doc[0].get_text())
+                self.assertEqual(doc[0].get_pixmap().pixel(60, 60), (0, 0, 0))
+                self.assertEqual(doc.embfile_count(), 0)
+                self.assertFalse(doc.metadata["author"])
+                self.assertFalse(doc.get_xml_metadata())
+
+    def test_invalid_changes_cannot_fall_back_to_overlay(self):
+        for operation in ("edit", "edit_text_pro"):
+            for change in (
+                {"action": "modify", "bbox": [50, 50, 200, 100], "text": "NUEVO"},
+                {"action": "add", "page": 20, "bbox": [50, 50, 200, 100], "text": "NUEVO"},
+                {"action": "note", "bbox": [50, 50, 200, 100], "text": ""},
+                {"action": "redact", "bbox": [-1, 50, 200, 100]},
+                {"action": "unknown", "bbox": [50, 50, 200, 100]},
+            ):
+                with self.subTest(operation=operation, change=change):
+                    self.call(operation, {"changes": [change]}, expected=422)
+            self.call(operation, {"changes": [], "edits": []}, expected=422)
+
+    def test_legacy_route_supports_editor_bundle(self):
+        result = self.call("edit", {"changes": [
+            {"action": "add", "page": 1, "bbox": [50, 300, 300, 350], "text": "UNIFICADO"},
+        ], "editor_preview": True})
+        self.assertTrue(result.content_type.startswith("multipart/form-data; boundary="))
+        message = BytesParser(policy=policy.default).parsebytes(
+            ("Content-Type: " + result.content_type + "\r\n\r\n").encode("ascii") + result.data)
+        parts = {part.get_param("name", header="content-disposition"): part.get_payload(decode=True)
+                 for part in message.iter_parts()}
+        with pdf.open(stream=parts["document"], filetype="pdf") as doc:
+            self.assertIn("UNIFICADO", doc[0].get_text())
+        self.assertTrue(any(block["text"] == "UNIFICADO" for block in json.loads(parts["preview"])["blocks"]))
+
+    def test_single_editor_controls_and_legacy_controls_removed(self):
+        page = self.client.get("/editor")
+        self.assertEqual(page.status_code, 200)
+        for control in (b"acro-region-tool", b"acro-note-text", b"acro-region-add", b"acro-region-list"):
+            self.assertIn(control, page.data)
+        index = self.client.get("/")
+        self.assertNotIn(b'id="edit-kind"', index.data)
+        self.assertNotIn(b'id="edit-text"', index.data)
+
+    def scanned_sample(self, hidden_ocr=False):
+        with pdf.open() as native:
+            page = native.new_page(width=400, height=200)
+            page.insert_text((40, 70), "ORIGINAL", fontsize=18)
+            page.insert_text((230, 140), "VECINO", fontsize=18)
+            image = page.get_pixmap(dpi=216).tobytes("png")
+        with pdf.open() as scanned:
+            page = scanned.new_page(width=400, height=200)
+            page.insert_image(page.rect, stream=image)
+            if hidden_ocr:
+                page.insert_text((40, 70), "ORIGINAL", fontsize=18, render_mode=3)
+            return scanned.tobytes()
+
+    def test_scan_replacement_removes_original_pixels_and_preserves_outside(self):
+        import numpy as np
+        for hidden, mixed in ((False, False), (True, False), (True, True)):
+            with self.subTest(hidden_ocr=hidden, native_text=mixed):
+                source = self.scanned_sample(hidden)
+                if mixed:
+                    with pdf.open(stream=source, filetype="pdf") as doc:
+                        doc[0].insert_text((220, 50), "NATIVE", fontsize=12)
+                        source = doc.tobytes()
+                data = self.call("inspect", {"text_background": True},
+                                 uploads=[(source, "scan.pdf")]).json
+                target = next(block for block in data["blocks"] if block["text"] == "ORIGINAL")
+                self.assertTrue(target["editable"])
+                result = self.call("edit_text_pro", {"changes": [{
+                    "action": "modify", "page": 1, "orig_bbox": target["bbox"],
+                    "bbox": target["bbox"], "text": "NEW", "size": 12,
+                }]}, uploads=[(source, "scan.pdf")])
+                with pdf.open(stream=source, filetype="pdf") as before, pdf.open(stream=result.data, filetype="pdf") as after:
+                    self.assertIn("NEW", after[0].get_text())
+                    self.assertNotIn("ORIGINAL", after[0].get_text())
+                    if mixed:
+                        self.assertIn("NATIVE", after[0].get_text())
+                    a = before[0].get_pixmap(dpi=216)
+                    b = after[0].get_pixmap(dpi=216)
+                    old = np.frombuffer(a.samples, dtype=np.uint8).reshape(a.height, a.width, 3)
+                    new = np.frombuffer(b.samples, dtype=np.uint8).reshape(b.height, b.width, 3)
+                    outside = np.ones((a.height, a.width), dtype=bool)
+                    rect = (pdf.Rect(target["bbox"]) + (-2, -2, 2, 2)) * 3
+                    outside[int(rect.y0):int(rect.y1) + 1, int(rect.x0):int(rect.x1) + 1] = False
+                    self.assertTrue(np.array_equal(old[outside], new[outside]))
+                    page = after[0]
+                    page.add_redact_annot(pdf.Rect(target["bbox"]), fill=False, cross_out=False)
+                    page.apply_redactions(images=0, graphics=0, text=pdf.PDF_REDACT_TEXT_REMOVE)
+                    clean = page.get_pixmap(dpi=216, clip=pdf.Rect(target["bbox"]))
+                    pixels = np.frombuffer(clean.samples, dtype=np.uint8)
+                    self.assertGreater(float(np.mean(pixels)), 250)
+                    self.assertLess(np.count_nonzero(pixels < 220) / pixels.size, 0.01)
+
+    def test_scan_complex_region_rejected_without_modifying_source(self):
+        from scan_editor import clean_scan_patch
+        from pdf_engine import ProcessingError
+        with pdf.open() as doc:
+            page = doc.new_page(width=300, height=150)
+            page.insert_text((50, 80), "ORIGINAL", fontsize=16)
+            page.draw_line((40, 70), (160, 70), width=1)
+            before = page.get_pixmap().samples
+            with self.assertRaises(ProcessingError):
+                clean_scan_patch(page, [40, 55, 160, 90], self.app.extensions["pdf_settings"])
+            self.assertEqual(before, page.get_pixmap().samples)
+
+    def test_scan_global_replace_rejected(self):
+        self.call("edit_text_pro", {"changes": [{
+            "action": "replace_all", "find": "ORIGINAL", "replace": "NEW",
+        }]}, uploads=[(self.scanned_sample(), "scan.pdf")], expected=422)
 
 
 if __name__ == "__main__":

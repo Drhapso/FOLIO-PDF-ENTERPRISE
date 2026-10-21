@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="client-build" content="{{ build }}">
   <meta name="color-scheme" content="light dark">
-  <title>EVA PDF Enterprise - Editor PDF</title>
+  <title>EVA PDF Enterprise - Editor Acrobat</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg', v=build) }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='extended.css', v=build) }}">
@@ -19,7 +19,7 @@
     <header class="acro-topbar">
       <div class="acro-topbar-left">
         <a class="brand" href="/" title="Volver al menú principal"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
-        <span class="folio-editor-title">EVA PDF Enterprise - Editor PDF</span>
+        <span class="folio-editor-title">Editor Acrobat</span>
         <div class="acro-divider"></div>
         <button type="button" id="acro-tool-edit" class="acro-tool-btn active" title="Editar texto y párrafos existentes (TouchUpEditPDFTool)">✎ Editar texto</button>
         <button type="button" id="acro-tool-add" class="acro-tool-btn" title="Hacer clic en la página para insertar un nuevo bloque de texto (TouchUpAddTextbox)">+ Agregar texto</button>
@@ -63,8 +63,8 @@
     <div class="acro-workspace">
       <!-- Mensaje de Carga / Dropzone inicial si no hay archivo -->
       <div id="acro-drop-prompt" class="acro-drop-prompt" hidden>
-        <h2>Editor de Texto PDF</h2>
-        <p>Reconocimiento y edición directa de texto, párrafos, tipografía y diseño al estilo Adobe Acrobat DC.</p>
+        <h2>Editor Acrobat de PDF</h2>
+        <p>Reemplaza texto, ajusta su formato, agrega notas, resalta y censura. En escaneos se reconstruyen palabras aisladas sobre fondos simples; las zonas complejas se bloquean.</p>
         <label class="primary acro-open-label">
           Seleccionar archivo PDF
           <input type="file" id="acro-prompt-file" accept=".pdf" hidden>
@@ -92,6 +92,35 @@
 
       <!-- Panel Lateral Derecho (RHP - Formato idéntico a Adobe Acrobat Pro DC) -->
       <aside class="acro-rhp" aria-label="Panel de formato de texto de Acrobat">
+        <section class="acro-rhp-section" aria-label="Anotaciones y censura">
+          <div class="acro-rhp-title">ANOTAR Y CENSURAR</div>
+          <div class="acro-form-group">
+            <label for="acro-region-tool">Herramienta de zona</label>
+            <select id="acro-region-tool" class="acro-select">
+              <option value="">Editar texto</option>
+              <option value="highlight">Resaltar</option>
+              <option value="rectangle">Rectángulo</option>
+              <option value="note">Nota</option>
+              <option value="redact">Censura irreversible</option>
+            </select>
+          </div>
+          <div class="acro-form-group">
+            <label for="acro-note-text">Contenido de la nota</label>
+            <textarea id="acro-note-text" class="acro-select" maxlength="1000" rows="2"></textarea>
+          </div>
+          <p class="hint">Elige una herramienta y arrastra sobre la página. Las zonas son pendientes hasta guardar. La censura elimina texto, imágenes y trazos de la zona; revisa el resultado antes de compartir.</p>
+          <details>
+            <summary>Definir zona con teclado (%)</summary>
+            <div class="acro-form-group">
+              <label for="acro-region-x">Izquierda %</label><input id="acro-region-x" class="acro-select" type="number" min="0" max="99" value="10">
+              <label for="acro-region-y">Arriba %</label><input id="acro-region-y" class="acro-select" type="number" min="0" max="99" value="10">
+              <label for="acro-region-w">Ancho %</label><input id="acro-region-w" class="acro-select" type="number" min="1" max="100" value="60">
+              <label for="acro-region-h">Alto %</label><input id="acro-region-h" class="acro-select" type="number" min="1" max="100" value="15">
+            </div>
+            <button id="acro-region-add" type="button" class="secondary">Añadir zona</button>
+          </details>
+          <ol id="acro-region-list" class="acro-region-list" aria-label="Zonas pendientes en esta página"></ol>
+        </section>
         <div class="acro-rhp-section">
           <div class="acro-rhp-title">FORMATO</div>
 
@@ -218,7 +247,7 @@
         <span id="acro-status-notice">Listo. Selecciona cualquier bloque de texto para editarlo.</span>
       </div>
       <div>
-        <small class="hint">Texto sin rellenos de fondo. Fuentes compatibles; revisa el PDF guardado. No edita texto dentro de imágenes.</small>
+        <small class="hint">Escaneos: OCR y reconstrucción local conservadora. Zonas complejas bloqueadas. Revisa la vista previa y el PDF guardado.</small>
       </div>
     </footer>
   </div>

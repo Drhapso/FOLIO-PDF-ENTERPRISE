@@ -12,6 +12,7 @@ build/
 dist/
 wheelhouse/
 deploy/release.local.json
+MUESTRAS/
 *.exe
 *.msi
 *.zip

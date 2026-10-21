@@ -137,6 +137,7 @@ def save(document: pdf.Document, path: Path, **kwargs):
 
 def inspect_document(doc: pdf.Document, options: dict, config: dict) -> dict:
     from acrobat_tools import extract_page_blocks, text_background
+    from scan_editor import editable_blocks
 
     number = integer(options.get("page", 1), 1, len(doc), "Pagina")
     page = doc[number - 1]
@@ -151,10 +152,15 @@ def inspect_document(doc: pdf.Document, options: dict, config: dict) -> dict:
         "image": base64.b64encode(
             pix.tobytes("png") if editable_background else pix.tobytes("jpeg", jpg_quality=80)
         ).decode("ascii"),
-        "blocks": extract_page_blocks(page),
+        "blocks": editable_blocks(page, config) if editable_background else extract_page_blocks(page),
     }
     if editable_background:
-        payload["background"] = text_background(doc, number - 1, dpi, config)
+        payload["background"] = text_background(doc, number - 1, dpi, config, payload["blocks"])
+        payload["scan_notice"] = (
+            "Escaneo: reconstruccion local conservadora. OCR automatico; revise el texto. "
+            "Las zonas complejas estan bloqueadas y no se modificaran."
+            if any(block.get("source") == "scan" for block in payload["blocks"]) else ""
+        )
         payload["image_mime"] = "image/png"
     return payload
 
@@ -379,15 +385,6 @@ def process(operation: str, sources: list[Path], options: dict, folder: Path, co
                 notice = "OCR automatico: revise nombres, cifras y fechas; no garantiza transcripcion exacta."
                 if mode != "none":
                     notice += " Enderezado hasta 5 grados; limpieza opcional en blanco y negro. Revise sellos y trazos tenues."
-            elif operation == "edit":
-                apply_edits(doc, options, config)
-                # El guardado no incremental descarta objetos sin referencia tras las redacciones.
-                doc.set_metadata({})
-                doc.del_xml_metadata()
-                for index in range(doc.embfile_count() - 1, -1, -1):
-                    doc.embfile_del(index)
-                save(doc, output)
-                notice = "Se aplicaron las ediciones. Revise todo el documento antes de compartirlo."
             elif operation == "watermark":
                 text = options.get("text", "").strip()
                 if not text or len(text) > 100:
@@ -534,45 +531,3 @@ def excel_text(value) -> str:
 def check_size(path: Path, config: dict):
     if path.stat().st_size > config["max_output_mb"] * 1024 * 1024:
         raise ProcessingError("El resultado excede el limite de salida. Procese menos paginas.", 413)
-
-
-def apply_edits(doc: pdf.Document, options: dict, config: dict):
-    edits = options.get("edits", [])
-    if not isinstance(edits, list) or not 1 <= len(edits) <= 100:
-        raise ProcessingError("Agregue entre 1 y 100 ediciones.")
-    for edit in edits:
-        if not isinstance(edit, dict) or edit.get("kind") not in ("text", "redact", "highlight", "rectangle", "note"):
-            raise ProcessingError("Edicion desconocida.")
-        number = integer(edit.get("page"), 1, len(doc), "Pagina")
-        page = doc[number - 1]
-        if page.rotation:
-            raise ProcessingError("Para editar, quite primero la rotacion de esa pagina con Rotar PDF.")
-        values = [edit.get(key) for key in ("x", "y", "w", "h")]
-        if any(type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1 for value in values):
-            raise ProcessingError("Coordenadas de edicion no validas.")
-        x, y, w, h = values
-        if w <= 0 or h <= 0 or x + w > 1.001 or y + h > 1.001:
-            raise ProcessingError("La edicion debe estar dentro de la pagina.")
-        rect = pdf.Rect(x * page.rect.width, y * page.rect.height,
-                        min(1, x + w) * page.rect.width, min(1, y + h) * page.rect.height)
-        if edit["kind"] == "redact":
-            page.add_redact_annot(rect, fill=(0, 0, 0))
-            page.apply_redactions(images=2, graphics=1, text=0)
-        elif edit["kind"] == "highlight":
-            page.add_highlight_annot(rect)
-        elif edit["kind"] == "rectangle":
-            annot = page.add_rect_annot(rect)
-            annot.set_colors(stroke=(0.8, 0.1, 0.1))
-            annot.update()
-        elif edit["kind"] == "note":
-            text = edit.get("text")
-            if not isinstance(text, str) or not text.strip() or len(text) > 1000:
-                raise ProcessingError("Texto de nota no valido.")
-            page.add_text_annot(rect.top_left, text)
-        else:
-            text = edit.get("text")
-            if not isinstance(text, str) or not text.strip() or len(text) > 1000:
-                raise ProcessingError("Texto de edicion no valido.")
-            size = integer(edit.get("size", 14), 6, 72, "Tamano de texto")
-            if page.insert_textbox(rect, text, fontsize=size, color=(0, 0, 0), overlay=True) < 0:
-                raise ProcessingError("El texto no cabe. Dibuje una caja mayor o reduzca el tamano.")

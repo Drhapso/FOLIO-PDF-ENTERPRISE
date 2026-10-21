@@ -10,9 +10,10 @@ from pathlib import Path
 
 import pymupdf as pdf
 
-from pdf_engine import ProcessingError, check_size, open_pdf, save
+from pdf_engine import ProcessingError, check_size, integer, open_pdf, save
 
-ACROBAT_OPERATIONS = {"edit_text_pro"}
+ACROBAT_OPERATIONS = {"edit", "edit_text_pro"}
+REGION_ACTIONS = {"highlight", "rectangle", "note", "redact"}
 
 # Fuentes estándar de Windows y mapeo de fuentes comunes
 WINDOWS_FONTS_DIR = Path("C:/Windows/Fonts")
@@ -110,14 +111,34 @@ def extract_page_blocks(page: pdf.Page) -> list[dict]:
     return blocks
 
 
-def text_background(doc: pdf.Document, page_number: int, dpi: int, config: dict) -> str:
+def text_background(doc: pdf.Document, page_number: int, dpi: int, config: dict, blocks: list | None = None) -> str:
     """Renderiza el fondo real sin texto, conservando imagenes y trazos vectoriales."""
     import base64
     from pdf_engine import render
+    from scan_editor import clean_scan_patch
 
     with pdf.open() as preview:
         preview.insert_pdf(doc, from_page=page_number, to_page=page_number)
         page = preview[0]
+        if blocks is not None:
+            patches = []
+            for block in blocks:
+                if block.get("source") != "scan":
+                    continue
+                try:
+                    patch = clean_scan_patch(doc[page_number], block["bbox"], config)
+                except ProcessingError as error:
+                    block["editable"] = False
+                    block["reason"] = str(error)
+                    continue
+                block["editable"] = True
+                patches.append((block["bbox"], patch))
+            for bbox, patch in patches:
+                page.add_redact_annot(pdf.Rect(bbox), fill=False, cross_out=False)
+            if patches:
+                page.apply_redactions(images=2, graphics=0, text=pdf.PDF_REDACT_TEXT_REMOVE)
+                for bbox, patch in patches:
+                    page.insert_image(pdf.Rect(bbox), stream=patch)
         for block in extract_page_blocks(page):
             page.add_redact_annot(pdf.Rect(block["bbox"]), fill=False, cross_out=False)
         page.apply_redactions(images=0, graphics=0, text=pdf.PDF_REDACT_TEXT_REMOVE)
@@ -175,9 +196,54 @@ def get_alignment_code(align_str: str) -> int:
     return pdf.TEXT_ALIGN_LEFT
 
 
+def change_rect(values, page: pdf.Page) -> pdf.Rect:
+    if (not isinstance(values, (list, tuple)) or len(values) != 4
+            or any(type(v) not in (int, float) or not math.isfinite(v) for v in values)):
+        raise ProcessingError("Coordenadas de edicion no validas.")
+    rect = pdf.Rect(values)
+    if rect.is_empty or not page.rect.contains(rect):
+        raise ProcessingError("La edicion debe estar dentro de la pagina.")
+    return rect
+
+
+def legacy_changes(doc: pdf.Document, edits, config: dict) -> list[dict]:
+    """Adapta las cajas antiguas al unico motor; reemplaza el texto nativo seleccionado."""
+    if not isinstance(edits, list) or not 1 <= len(edits) <= 100:
+        raise ProcessingError("Agregue entre 1 y 100 ediciones.")
+    changes = []
+    for edit in edits:
+        if not isinstance(edit, dict) or edit.get("kind") not in REGION_ACTIONS | {"text"}:
+            raise ProcessingError("Edicion desconocida.")
+        number = integer(edit.get("page"), 1, len(doc), "Pagina")
+        page = doc[number - 1]
+        values = [edit.get(key) for key in ("x", "y", "w", "h")]
+        if any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1 for v in values):
+            raise ProcessingError("Coordenadas de edicion no validas.")
+        x, y, w, h = values
+        if w <= 0 or h <= 0 or x + w > 1.001 or y + h > 1.001:
+            raise ProcessingError("La edicion debe estar dentro de la pagina.")
+        rect = change_rect([x * page.rect.width, y * page.rect.height,
+                            min(1, x + w) * page.rect.width, min(1, y + h) * page.rect.height], page)
+        change = {"action": edit["kind"], "page": number, "bbox": list(rect), "text": edit.get("text")}
+        if edit["kind"] == "text":
+            text = edit.get("text")
+            if not isinstance(text, str) or not text.strip() or len(text) > 1000:
+                raise ProcessingError("Texto de edicion no valido.")
+            from scan_editor import editable_blocks
+            for block in editable_blocks(page, config):
+                block_rect = pdf.Rect(block["bbox"])
+                if rect.intersects(block_rect):
+                    if not rect.contains(block_rect):
+                        raise ProcessingError("Seleccione el fragmento completo en el editor Acrobat para reemplazarlo.")
+                    changes.append({"action": "delete", "page": number, "orig_bbox": block["bbox"]})
+            change.update(action="add", size=integer(edit.get("size", 14), 6, 72, "Tamano de texto"))
+        changes.append(change)
+    return changes
+
+
 def process_acrobat(operation: str, sources: list[Path], options: dict, folder: Path, config: dict) -> dict:
     """Aplica ediciones directas de texto estilo Adobe Acrobat Pro DC sobre el documento PDF."""
-    if operation != "edit_text_pro":
+    if operation not in ACROBAT_OPERATIONS:
         raise ProcessingError("Herramienta Acrobat no valida.", 404)
     if len(sources) != 1:
         raise ProcessingError("Seleccione exactamente un archivo PDF para editar.")
@@ -194,6 +260,31 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
     live_preview = None
 
     with open_pdf(source, password, config["max_pages"]) as doc:
+        if "edits" in options:
+            if "changes" in options:
+                raise ProcessingError("Envie changes o edits, no ambos.")
+            changes = legacy_changes(doc, options["edits"], config)
+        if not changes:
+            raise ProcessingError("Agregue al menos una modificacion.")
+        if len(changes) > 500:
+            raise ProcessingError("Maximo 500 modificaciones por sesion.", 400)
+        for change in changes:
+            if not isinstance(change, dict) or change.get("action", "modify") not in REGION_ACTIONS | {"modify", "delete", "add", "replace_all"}:
+                raise ProcessingError("Edicion desconocida.")
+            if change.get("action") == "replace_all":
+                continue
+            number = integer(change.get("page", 1), 1, len(doc), "Pagina")
+            page = doc[number - 1]
+            if page.rotation:
+                raise ProcessingError("Para editar, quite primero la rotacion de esa pagina con Rotar PDF.")
+            if change.get("action", "modify") in ("modify", "delete"):
+                change_rect(change.get("orig_bbox"), page)
+            if change.get("action") != "delete":
+                change_rect(change.get("bbox") or change.get("orig_bbox"), page)
+            if change.get("action") == "note":
+                text = change.get("text")
+                if not isinstance(text, str) or not text.strip() or len(text) > 1000:
+                    raise ProcessingError("Texto de nota no valido.")
         # 1. Accion: Reemplazar todas las ocurrencias (Find & Replace)
         for change in changes:
             if not isinstance(change, dict):
@@ -214,8 +305,13 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
                 for page_num in selected_pages:
                     if 0 <= page_num < len(doc):
                         page = doc[page_num]
+                        from scan_editor import editable_blocks
+                        if any(block.get("source") == "scan" for block in editable_blocks(page, config)):
+                            raise ProcessingError("En escaneos, reemplace palabras individualmente con vista previa; no se admite reemplazo global.")
                         matches = page.search_for(find_str)
                         if matches:
+                            if page.rotation:
+                                raise ProcessingError("Para editar, quite primero la rotacion de esa pagina con Rotar PDF.")
                             for match_rect in matches:
                                 page.add_redact_annot(match_rect, fill=False, cross_out=False)
                             page.apply_redactions(images=0, graphics=0, text=pdf.PDF_REDACT_TEXT_REMOVE)
@@ -240,7 +336,16 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
         # 3. Procesar cada pagina: redaccion limpia previa de todos los bloques originales y luego insercion
         for page_num, p_changes in page_changes.items():
             page = doc[page_num]
-            originals = extract_page_blocks(page)
+            from scan_editor import clean_scan_patch, editable_blocks
+            originals = editable_blocks(page, config)
+            patches = []
+            for change in p_changes:
+                if change.get("action", "modify") not in ("modify", "delete"):
+                    continue
+                original = next((block for block in originals if all(
+                    abs(a - b) < 0.05 for a, b in zip(change["orig_bbox"], block["bbox"]))), None)
+                if original and original.get("source") == "scan":
+                    patches.append((original["bbox"], clean_scan_patch(page, original["bbox"], config)))
 
             # Paso A: Redactar TODOS los bloques a modificar o eliminar en esta pagina
             for change in p_changes:
@@ -252,10 +357,18 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
                         if not any(all(abs(a - b) < 0.05 for a, b in zip(orig_bbox, block["bbox"]))
                                    for block in originals):
                             raise ProcessingError("El texto seleccionado ya no coincide con el PDF. Recargue la pagina.")
-                        page.add_redact_annot(orig_rect, fill=False, cross_out=False)
+                        if not any(all(abs(a - b) < 0.05 for a, b in zip(orig_bbox, bbox))
+                                   for bbox, _ in patches):
+                            page.add_redact_annot(orig_rect, fill=False, cross_out=False)
 
             # Aplicar todas las redacciones de la pagina de una sola vez
             page.apply_redactions(images=0, graphics=0, text=pdf.PDF_REDACT_TEXT_REMOVE)
+            for bbox, patch in patches:
+                page.add_redact_annot(pdf.Rect(bbox), fill=False, cross_out=False)
+            if patches:
+                page.apply_redactions(images=2, graphics=0, text=pdf.PDF_REDACT_TEXT_REMOVE)
+            for bbox, patch in patches:
+                page.insert_image(pdf.Rect(bbox), stream=patch)
 
             # Paso B: Insertar textos modificados y cuadros nuevos (evita cualquier superposicion)
             for change in p_changes:
@@ -312,6 +425,30 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
                                 width=max(0.75, font_size / 16)
                             )
 
+        # Censurar despues de insertar texto evita reintroducir contenido en zonas censuradas.
+        for page_num, p_changes in page_changes.items():
+            page = doc[page_num]
+            redactions = [change for change in p_changes if change.get("action") == "redact"]
+            for change in redactions:
+                page.add_redact_annot(pdf.Rect(change["bbox"]), fill=(0, 0, 0))
+            if redactions:
+                page.apply_redactions(images=2, graphics=1, text=pdf.PDF_REDACT_TEXT_REMOVE)
+            for change in p_changes:
+                action = change.get("action")
+                rect = pdf.Rect(change["bbox"]) if action in REGION_ACTIONS else None
+                if action == "highlight":
+                    page.add_highlight_annot(rect)
+                elif action == "rectangle":
+                    annot = page.add_rect_annot(rect)
+                    annot.set_colors(stroke=(0.8, 0.1, 0.1))
+                    annot.update()
+                elif action == "note":
+                    page.add_text_annot(rect.top_left, change["text"])
+        if operation == "edit" or any(change.get("action") == "redact" for change in changes):
+            doc.set_metadata({})
+            doc.del_xml_metadata()
+            for index in range(doc.embfile_count() - 1, -1, -1):
+                doc.embfile_del(index)
         save(doc, output)
         if (options.get("editor_preview") is True
                 and options.get("experimental_preview") is True
@@ -324,9 +461,10 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
 
     check_size(output, config)
     count = len(changes)
-    notice = (f"Edicion de texto: {count} cambios, sin rellenos de fondo. "
+    notice = (f"Editor Acrobat: {count} cambios; reemplazo de texto sin rellenos de fondo. "
               "Las fuentes se sustituyen por Helvetica, Times o Courier compatibles; revise el resultado. "
-              "No reconstruye parrafos ni edita texto dentro de imagenes.")
+              "Escaneos: reconstruccion local conservadora, no reconstruye parrafos. "
+              "La censura elimina contenido; revise el documento antes de compartir.")
     if options.get("editor_preview") is True:
         from pdf_engine import process
 

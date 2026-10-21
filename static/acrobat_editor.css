@@ -245,6 +245,38 @@
   pointer-events: auto;
 }
 
+.acro-region-mode {
+  touch-action: none;
+}
+
+.acro-scan-blocked {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dotted #c77500;
+  cursor: not-allowed;
+  z-index: 10;
+}
+
+.acro-region-mode .acro-block {
+  pointer-events: none;
+}
+
+.acro-region {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 70;
+  border: 1px dashed #1473e6;
+  background: rgba(20, 115, 230, 0.12);
+}
+
+.acro-region-highlight { background: rgba(255, 220, 0, 0.35); }
+.acro-region-rectangle { border: 2px solid #cc1a1a; background: transparent; }
+.acro-region-redact { background: #000; border-color: #e5252a; }
+.acro-region-list { padding-left: 18px; font-size: 0.8rem; overflow-wrap: anywhere; }
+.acro-region-list li { margin-top: 8px; }
+.acro-region-list button { margin-left: 6px; }
+
 /* Bloques de Texto Estilo EVA PDF Enterprise */
 .acro-block {
   position: absolute;

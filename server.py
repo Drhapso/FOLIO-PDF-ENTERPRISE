@@ -25,7 +25,7 @@ from settings import ROOT, load_settings
 from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
 from recovery_events import install_recovery, report_failure, request_recovery
 
-CLIENT_BUILD = "2026-10-20-eva-brand-1"
+CLIENT_BUILD = "2026-10-21-scan-local-1"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
@@ -362,7 +362,7 @@ def create_app(root: Path = ROOT) -> Flask:
             )
             response.headers["X-PDF-Cleanup"] = "complete"
         response.headers["X-PDF-Notice"] = result["notice"]
-        if operation == "edit_text_pro" and result.get("editor_boundary"):
+        if operation in ("edit", "edit_text_pro") and result.get("editor_boundary"):
             response.headers["Content-Type"] = f'multipart/form-data; boundary={result["editor_boundary"]}'
         return response
 
