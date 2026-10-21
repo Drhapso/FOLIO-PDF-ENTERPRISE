@@ -8,6 +8,21 @@
 > los scripts `reiniciar-folio.ps1`, la regla de firewall `Folio-PDF-LAN-<puerto>`
 > e identificadores internos (`folio-theme`, `#folio-opening`, `folioProcess`).
 
+## Nombres de exportacion
+
+Todas las descargas de la aplicacion web usan el nombre fijo `EVA00.pdf`,
+`EVA00.txt`, etc., conservando la extension del formato exportado.
+El editor usa el nombre asignado por el servidor, no el nombre del original.
+Los ZIP se descargan como `EVA00.zip`; sus archivos usan `EVA00_01.pdf`,
+`EVA00_02.pdf`, etc., con un indice local que comienza en 01 en cada ZIP.
+Las carpetas de orden de los lotes se conservan. No se renombran los recursos internos
+de DOCX, XLSX, PPTX o EPUB, para no alterar sus formatos.
+
+No se asignan identificadores globales ni se consulta o actualiza el contador
+anterior `instance/export-counter.sqlite3`; su archivo existente se conserva
+sin modificaciones. El navegador puede agregar `(1)`, `(2)`, etc., cuando ya
+existe una descarga con el mismo nombre en el equipo.
+
 ## Cola de produccion y limites efectivos (2026-10-20)
 
 El perfil de produccion `config/production_queue.json`, instalado como
@@ -382,9 +397,9 @@ una copia del documento en el servidor entre solicitudes.
 | Comprimir | Estructural sin perdida o rasterizacion JPEG con perdida. Si no reduce el peso devuelve el original con aviso explicito. |
 | OCR | Rasteriza y agrega texto buscable en espanol/ingles. Enderezado opcional hasta 5 grados y limpieza en blanco y negro; no corrige giros de 90/180 grados. La limpieza puede perder sellos o trazos tenues. |
 | Office a PDF | DOCX, XLSX, PPTX, ODT, ODS y ODP con LibreOffice local. Rechaza vinculos externos, macros y objetos incrustados detectados. No admite formatos binarios antiguos. |
-| PDF a Word | Texto por lineas; paginas sin texto como imagen. No reconstruye parrafos/diseno como Acrobat. |
-| PDF a Excel | Tablas detectadas; en ausencia de tablas, texto por linea. Sin texto extraible la hoja puede quedar vacia; usar OCR. Neutraliza formulas procedentes de texto. |
-| PDF a PowerPoint | Paginas como imagenes ajustadas a diapositivas, no objetos editables. |
+| PDF a Word | Texto editable con fuente, tamano, color, negrita y cursiva; tablas detectadas con anchos, combinaciones y rellenos simples; texto y tablas en su posicion original (marcos y tablas flotantes) sobre un fondo sin el texto reconstruido que conserva logos, firmas, marcas y bordes. Misma paginacion; disposicion fija sin reflujo. |
+| PDF a Excel | Tablas editables con combinaciones, estilos por celda, rellenos simples, anchos y alturas; conserva tambien texto fuera de tablas. Hoja Original por pagina con referencia visual completa. Neutraliza formulas procedentes del PDF; no inventa formulas ni tipos numericos. |
+| PDF a PowerPoint | Texto horizontal y tablas como objetos editables sobre fondo raster sin el texto reconstruido. Conserva imagenes, trazos y texto girado en el fondo; escala y centra paginas de distinto tamano. |
 | Imagenes a PDF | PNG, JPEG, TIFF de un fotograma, WebP, BMP y HEIC/HEIF de un fotograma. |
 | PDF a imagenes | PNG por pagina dentro de un ZIP. |
 | Extraer texto | TXT UTF-8; si no hay texto solicita ejecutar OCR. |
@@ -392,6 +407,33 @@ una copia del documento en el servidor entre solicitudes.
 | Marca de agua | Texto superpuesto en paginas seleccionadas. |
 | Proteger | Clave de apertura AES-256; minimo 8 caracteres, maximo 40 bytes UTF-8. |
 | Desbloquear | Retira cifrado con la clave conocida. No rompe ni recupera claves. |
+
+### Fidelidad de conversion a Office
+
+El modulo `office_export` reconstruye el contenido con las bibliotecas locales
+existentes, sin servicios externos ni nuevas dependencias. Los archivos siguen
+descargandose como `EVA00` con su extension y los lotes mantienen el orden.
+
+Las tablas se detectan geometricamente: bordes, combinaciones, rellenos y estilos
+se aproximan; las tablas sin lineas o de estructura compleja pueden no detectarse.
+En Excel se usa el estilo del primer fragmento de cada celda y se conserva el
+contenido como texto, no como formulas ejecutables. Las hojas Original permiten
+consultar imagenes, graficos y cualquier contenido no representable en celdas.
+Word coloca cada linea en un marco anclado a la pagina segun su linea base y
+las tablas como tablas flotantes, sobre un fondo raster de la pagina sin el
+texto reconstruido; conserva la paginacion y ajusta el espaciado por palabra.
+Textos nuevos largos no reacomodan el resto de la pagina. Para detectar tablas
+solo se usan trazos rectos: curvas y diagonales de firmas o marcas de agua no
+crean filas ni columnas. Fuentes sin metricas conocidas pueden desplazarse.
+PowerPoint conserva graficos e imagenes en el fondo, no como objetos editables.
+
+Las paginas escaneadas, sin texto visible o con rotacion de pagina se conservan
+como imagen y se informa en el resultado; no se promete editabilidad de esas
+paginas. Un OCR previo puede recuperar texto, pero no reconstruye por si solo
+el formato ni garantiza su exactitud. Fuentes PDF no instaladas pueden sustituirse
+al abrir Office. No se reconstruyen formulas matematicas, SmartArt, macros,
+enlaces ni formularios como objetos equivalentes. Revisar siempre el resultado;
+no equivale a la conversion propietaria de Acrobat ni garantiza identidad visual.
 
 ### Herramientas ampliadas
 

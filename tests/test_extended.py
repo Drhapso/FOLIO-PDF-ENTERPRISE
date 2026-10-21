@@ -88,13 +88,16 @@ class ExtendedTests(unittest.TestCase):
     def test_compare_appearance_and_text(self):
         result = self.call("compare", uploads=[(self.original, "a.pdf"), (sample_pdf(1), "b.pdf")])
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            self.assertIn("informe.pdf", archive.namelist())
-            self.assertIn("PRUEBA 2", archive.read("pagina-002-texto.diff").decode())
-            with Image.open(io.BytesIO(archive.read("pagina-002-diferencias.png"))) as image:
+            self.assertEqual(len([name for name in archive.namelist() if name.endswith(".pdf")]), 1)
+            diffs = [name for name in archive.namelist() if name.endswith(".diff")]
+            images = [name for name in archive.namelist() if name.endswith(".png")]
+            self.assertIn("PRUEBA 2", archive.read(diffs[1]).decode())
+            with Image.open(io.BytesIO(archive.read(images[1]))) as image:
                 self.assertIsNotNone(image.getbbox())
         result = self.call("compare", uploads=[(self.original, "a.pdf"), (self.original, "b.pdf")])
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            with Image.open(io.BytesIO(archive.read("pagina-001-diferencias.png"))) as image:
+            image_name = next(name for name in archive.namelist() if name.endswith(".png"))
+            with Image.open(io.BytesIO(archive.read(image_name))) as image:
                 self.assertIsNone(image.getbbox())
 
     def test_metadata(self):
@@ -301,8 +304,9 @@ class ExtendedTests(unittest.TestCase):
     def test_svg_export(self):
         result = self.call("pdf_to_svg", {"pages": "2"})
         with zipfile.ZipFile(io.BytesIO(result.data)) as archive:
-            self.assertEqual(archive.namelist(), ["pagina-002.svg"])
-            self.assertIn(b"<svg", archive.read("pagina-002.svg"))
+            self.assertEqual(len(archive.namelist()), 1)
+            self.assertTrue(archive.namelist()[0].endswith(".svg"))
+            self.assertIn(b"<svg", archive.read(archive.namelist()[0]))
 
 
 if __name__ == "__main__":

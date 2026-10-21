@@ -55,7 +55,8 @@ class AdvancedTests(unittest.TestCase):
             self.assertAlmostEqual(doc[0].rect.width, 595)
         batch = self.call("pdf_to_epub", uploads=[(self.original, "a.pdf"), (sample_pdf(1), "b.pdf")])
         with zipfile.ZipFile(io.BytesIO(batch.data)) as archive:
-            self.assertEqual(archive.namelist(), ["01-libro.epub", "02-libro.epub"])
+            self.assertEqual(len(archive.namelist()), 2)
+            self.assertTrue(all(name.endswith(".epub") for name in archive.namelist()))
 
     def test_epub_validation(self):
         self.call("epub_to_pdf", uploads=[(b"not a zip", "bad.epub")], expected=422)

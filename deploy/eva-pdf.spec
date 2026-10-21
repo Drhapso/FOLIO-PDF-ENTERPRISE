@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_all
 root = Path(SPECPATH).parent
 datas = []
 binaries = []
-hiddenimports = ["worker", "server", "performance", "advanced_tools", "extended_tools", "acrobat_tools", "scan_editor"]
+hiddenimports = ["worker", "server", "performance", "advanced_tools", "extended_tools", "acrobat_tools", "scan_editor", "export_names", "office_export"]
 for package in (
     "flask", "waitress", "pymupdf", "PIL", "docx", "openpyxl", "pptx",
     "pikepdf", "cv2", "pillow_heif", "pyhanko", "pyhanko_certvalidator",

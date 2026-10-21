@@ -12,6 +12,7 @@ import pymupdf
 from PIL import Image, UnidentifiedImageError
 
 from pdf_engine import ProcessingError, process
+from export_names import prepare_export
 from settings import ROOT
 
 
@@ -34,9 +35,20 @@ def main():
         else:
             result = process(job["operation"], [folder / name for name in job["files"]],
                              job["options"], folder, config, ROOT)
+            if job["operation"] != "inspect":
+                from pdf_engine import check_size
+                try:
+                    prepare_export(folder, result)
+                except (OSError, ValueError) as error:
+                    raise ProcessingError(
+                        "No se pudo preparar el nombre de exportacion. Contacte al administrador.", 503
+                    ) from error
+                check_size(folder / result["file"], config)
         payload = {"ok": True, **result}
     except ProcessingError as error:
         payload = {"ok": False, "error": str(error), "status": error.status}
+        if error.__cause__ is not None and error.status >= 500:
+            payload["category"] = type(error.__cause__).__name__
     except subprocess.TimeoutExpired:
         payload = {"ok": False, "error": "La conversion excedio el tiempo limite.", "status": 408}
     except (pymupdf.FileDataError, pymupdf.EmptyFileError, UnidentifiedImageError,

@@ -25,7 +25,7 @@ from settings import ROOT, load_settings
 from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
 from recovery_events import install_recovery, report_failure, request_recovery
 
-CLIENT_BUILD = "2026-10-21-scan-local-1"
+CLIENT_BUILD = "2026-10-21-word-positional-1"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
@@ -353,12 +353,12 @@ def create_app(root: Path = ROOT) -> Flask:
                 return jsonify(error="No se pudo entregar el resultado."), 500
             response = app.response_class(body, mimetype=mimetype, direct_passthrough=True)
             response.headers["Content-Length"] = str(delivery.stat().st_size)
-            response.headers.set("Content-Disposition", "attachment", filename=result["file"])
+            response.headers.set("Content-Disposition", "attachment", filename=result["download_name"])
             response.headers["X-PDF-Cleanup"] = "on-delivery"
         else:
             response = send_file(
                 io.BytesIO(data), mimetype=mimetype,
-                as_attachment=True, download_name=result["file"], conditional=False, etag=False,
+                as_attachment=True, download_name=result["download_name"], conditional=False, etag=False,
             )
             response.headers["X-PDF-Cleanup"] = "complete"
         response.headers["X-PDF-Notice"] = result["notice"]

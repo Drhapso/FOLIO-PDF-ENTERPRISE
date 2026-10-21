@@ -409,64 +409,10 @@ def process(operation: str, sources: list[Path], options: dict, folder: Path, co
                 if not options.get("password"):
                     raise ProcessingError("Debe introducir la clave actual.")
                 save(doc, output, encryption=pdf.PDF_ENCRYPT_NONE)
-            elif operation == "pdf_to_docx":
-                from docx import Document
-                from docx.shared import Inches
+            elif operation in ("pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx"):
+                from office_export import export_office
 
-                result = Document()
-                for index, number in enumerate(selected):
-                    if index:
-                        result.add_page_break()
-                    text = doc[number].get_text(sort=True)
-                    if text.strip():
-                        for line in text.splitlines():
-                            result.add_paragraph(clean_text(line))
-                    else:
-                        result.add_picture(io.BytesIO(render(doc[number], 144, config).tobytes("png")), width=Inches(6))
-                output = folder / "documento.docx"
-                result.save(output)
-                notice = "Word: texto extraido sin reconstruccion exacta de diseno; paginas sin texto como imagen."
-            elif operation == "pdf_to_xlsx":
-                from openpyxl import Workbook
-
-                workbook = Workbook()
-                workbook.remove(workbook.active)
-                for number in selected:
-                    sheet = workbook.create_sheet(f"Pagina {number + 1}")
-                    tables = doc[number].find_tables().tables
-                    rows = []
-                    for table in tables:
-                        rows.extend(table.extract())
-                        rows.append([])
-                    if not tables:
-                        rows = [[line] for line in doc[number].get_text(sort=True).splitlines()]
-                    for row in rows:
-                        sheet.append([excel_text(cell) for cell in row])
-                output = folder / "tablas.xlsx"
-                workbook.save(output)
-                notice = "Excel: tablas detectadas automaticamente; si no hay tablas se extrae texto por linea."
-            elif operation == "pdf_to_pptx":
-                from pptx import Presentation
-                from pptx.util import Inches
-
-                presentation = Presentation()
-                first = doc[selected[0]].rect
-                presentation.slide_width = Inches(10)
-                presentation.slide_height = Inches(max(1, min(56, 10 * first.height / first.width)))
-                for number in selected:
-                    page = doc[number]
-                    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
-                    height = int(presentation.slide_height)
-                    width = int(presentation.slide_width)
-                    ratio = min(width / page.rect.width, height / page.rect.height)
-                    w, h = int(page.rect.width * ratio), int(page.rect.height * ratio)
-                    slide.shapes.add_picture(
-                        io.BytesIO(render(page, 144, config).tobytes("png")),
-                        (width - w) // 2, (height - h) // 2, width=w, height=h,
-                    )
-                output = folder / "presentacion.pptx"
-                presentation.save(output)
-                notice = "PowerPoint: cada pagina se conserva como imagen, no como objetos editables."
+                output, notice = export_office(operation, doc, selected, folder, config)
     check_size(output, config)
     return {"file": output.name, "notice": notice}
 

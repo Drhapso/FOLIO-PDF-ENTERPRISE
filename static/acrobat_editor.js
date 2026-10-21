@@ -1171,8 +1171,11 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
-      const baseName = state.file.name.replace(/\.[^/.]+$/, "");
-      a.download = `${baseName}_editado_acrobat.pdf`;
+      if (blob.name !== "EVA00.pdf") {
+        URL.revokeObjectURL(downloadUrl);
+        throw new Error("El servidor no devolvió el nombre de exportación esperado. Recarga la página.");
+      }
+      a.download = blob.name;
       document.body.appendChild(a);
       a.click();
       a.remove();

@@ -1,5 +1,71 @@
 # Cambios
 
+## 2026-10-21 - PDF a Word con disposicion posicional fiel
+
+- Problema real: un PDF de 2 paginas generaba un Word de 4 paginas con tablas y
+  texto rasterizados por agrupacion de graficos y flujo vertical de parrafos.
+- Word ahora usa un fondo raster sin el texto reconstruido (logos, firmas,
+  marcas y bordes), lineas en marcos anclados por linea base y tablas nativas
+  flotantes; runs por palabra con espaciado ajustado y tamanos redondeados.
+- Deteccion de tablas solo con trazos rectos: curvas/diagonales de firmas y
+  marcas de agua ya no crean filas o columnas (afecta tambien Excel/PowerPoint).
+- Muestra real: 2 -> 2 paginas, 3 tablas, 0 palabras faltantes o anadidas;
+  desviacion por caracter mediana 0,12-0,21 pt, p95 0,32 pt.
+- Limites: disposicion fija sin reflujo; el fondo no es editable.
+- Build web `2026-10-21-word-positional-1`; 59 pruebas aprobadas.
+
+## 2026-10-21 - Conversion editable a Office con reconstruccion de formato
+
+- Word: estilos de texto, tablas nativas, celdas combinadas, rellenos simples,
+  imagenes/graficos y dimensiones de pagina; flujo aproximado por posicion.
+- Excel: tablas formateadas y texto exterior sin descartarlo, combinaciones,
+  estilos y hoja Original por pagina para referencia completa. Texto del PDF
+  neutralizado contra formulas; no se infieren calculos ni valores numericos.
+- PowerPoint: texto horizontal y tablas editables sobre fondo sin el texto
+  reconstruido, manteniendo graficos e imagenes sin editabilidad.
+- Paginas escaneadas/sin texto visible o giradas conservadas como imagen, con
+  aviso. Limitaciones de maquetacion y fuentes explicitas en interfaz y README.
+- Modulo `office_export` con bibliotecas existentes, incluido en empaquetado;
+  build web `2026-10-21-office-layout-1`. No se genero instalador offline.
+- Validacion local: 27 pruebas aprobadas, incluyendo API, estilos, rellenos,
+  tablas combinadas, imagenes, OCR invisible, rotacion, orden de paginas,
+  lotes y nombres EVA00. Word y PowerPoint abiertos y renderizados con
+  LibreOffice; muestra de una pagina conserva texto una sola vez e imagenes.
+- Activado en produccion mediante reinicio oficial de EVA PDF, sin cambiar
+  configuracion privada. Pruebas HTTP reales DOCX/XLSX/PPTX y lote Word aprobadas:
+  estructuras editables, estilos, tablas, referencia visual Excel y nombres
+  EVA00; original de prueba intacto. Salud directa y proxy con build nuevo.
+
+## 2026-10-21 - Nombre fijo de exportacion EVA00
+
+- Sustituido el consecutivo global por `EVA00` y la extension de salida:
+  `EVA00.pdf`, `EVA00.docx`, `EVA00.zip`, etc.
+- Dentro de cada ZIP: `EVA00_01`, `EVA00_02`, etc., conservando extensiones,
+  orden y carpetas de lote. El indice es local al archivo ZIP.
+- Contador anterior conservado sin leerlo ni modificarlo. Editor y descargas
+  por streaming usan el mismo nombre fijo; build `2026-10-21-export-fixed-1`.
+- Validacion: 39 pruebas enfocadas aprobadas y exportaciones HTTP reales de PDF,
+  TXT, ZIP y editor verificadas en produccion. Servicio directo y proxy saludables
+  tras reinicio exclusivo de EVA PDF; configuracion privada sin cambios.
+
+## 2026-10-21 - Consecutivo global de exportacion EVA
+
+- Todas las descargas web usan el prefijo `EVA00 ` y un consecutivo de al menos
+  seis digitos, conservando la extension. Incluye archivos dentro de ZIP,
+  lotes, respuesta multipart del editor y descargas grandes por streaming.
+- Contador SQLite persistente y transaccional compartido por los motores de la
+  instalacion, sin guardar documentos ni datos de usuarios. Vistas previas
+  excluidas; errores del contador devuelven HTTP 503 y se registran por categoria.
+- Editor actualizado para respetar el nombre del servidor; build web
+  `2026-10-21-export-sequence-1`. Sin instalador offline nuevo.
+- Pruebas de concurrencia entre procesos, persistencia tras reinicio,
+  limites de longitud, ZIP, multipart, streaming y fallo de base de datos.
+- Validacion: 106 pruebas aprobadas. Activado con el reinicio oficial exclusivo
+  de EVA PDF, configuracion privada intacta y salud directa/proxy con build nuevo.
+  Prueba HTTP de PDF, TXT, ZIP y editor aprobada con identificadores distintos.
+  Navegador: guardado real del editor con nombre `EVA00 000008.pdf` verificado.
+  Las pruebas de produccion consumen numeros reales; no se reinicia el contador.
+
 ## 2026-10-21 - Editor unico y reconstruccion local de escaneos
 
 - Unificados Editar PDF, Anotar PDF y Censurar PDF en el editor estilo Acrobat,

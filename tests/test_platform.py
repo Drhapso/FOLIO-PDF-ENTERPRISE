@@ -64,6 +64,12 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(response.status_code, expected, response.get_json() if response.is_json else response.data[:200])
         if expected == 200 and operation != "inspect":
             self.assertEqual(response.headers["X-PDF-Cleanup"], "complete")
+            self.assertRegex(response.headers["Content-Disposition"],
+                             r'filename="?EVA00\.[a-z0-9]+"?$')
+            if response.mimetype == "application/zip":
+                with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+                    for name in archive.namelist():
+                        self.assertRegex(Path(name).name, r"^EVA00_\d{2,}\.[a-z0-9]+$")
         self.assertEqual(response.headers["Cache-Control"], "no-store, private, max-age=0")
         return response
 
@@ -116,10 +122,10 @@ class PlatformTests(unittest.TestCase):
         response = self.call("split", {"groups": "3;1-2"})
         with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
             self.assertEqual(len(archive.namelist()), 2)
-            with pdf.open(stream=archive.read("parte-001.pdf"), filetype="pdf") as doc:
+            with pdf.open(stream=archive.read(archive.namelist()[0]), filetype="pdf") as doc:
                 self.assertEqual(len(doc), 1)
                 self.assertIn("PRUEBA 3", doc[0].get_text())
-            with pdf.open(stream=archive.read("parte-002.pdf"), filetype="pdf") as doc:
+            with pdf.open(stream=archive.read(archive.namelist()[1]), filetype="pdf") as doc:
                 self.assertEqual(len(doc), 2)
 
     def test_organize(self):
@@ -177,8 +183,9 @@ class PlatformTests(unittest.TestCase):
     def test_pdf_to_images(self):
         response = self.call("pdf_to_images", {"pages": "2", "dpi": "72"})
         with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
-            self.assertEqual(archive.namelist(), ["pagina-002.png"])
-            with Image.open(io.BytesIO(archive.read("pagina-002.png"))) as image:
+            self.assertEqual(len(archive.namelist()), 1)
+            self.assertTrue(archive.namelist()[0].endswith(".png"))
+            with Image.open(io.BytesIO(archive.read(archive.namelist()[0]))) as image:
                 self.assertEqual(image.width, 595)
 
     def test_extract_text(self):
@@ -241,7 +248,7 @@ class PlatformTests(unittest.TestCase):
         response = self.call("pdf_to_xlsx", {"pages": "1"})
         workbook = load_workbook(io.BytesIO(response.data))
         try:
-            self.assertEqual(workbook.sheetnames, ["Pagina 1"])
+            self.assertEqual(workbook.sheetnames, ["Pagina 1", "Original 1"])
             self.assertTrue(any("SECRETO" in str(cell.value) for row in workbook.active for cell in row))
         finally:
             workbook.close()
@@ -250,7 +257,9 @@ class PlatformTests(unittest.TestCase):
         response = self.call("pdf_to_pptx", {"pages": "2,1"})
         presentation = Presentation(io.BytesIO(response.data))
         self.assertEqual(len(presentation.slides), 2)
-        self.assertEqual(len(presentation.slides[0].shapes), 1)
+        self.assertGreater(len(presentation.slides[0].shapes), 1)
+        self.assertTrue(any(shape.has_text_frame and "PRUEBA 2" in shape.text
+                            for shape in presentation.slides[0].shapes))
 
     def test_office_formats_to_pdf(self):
         if not capabilities(self.config, ROOT)["office"]:
@@ -405,17 +414,18 @@ class PlatformTests(unittest.TestCase):
         compressed = self.call("compress", uploads=many)
         with zipfile.ZipFile(io.BytesIO(compressed.data)) as archive:
             names = archive.namelist()
-            self.assertEqual(names, [f"{index:02}-resultado.pdf" for index in range(1, 13)])
-            with pdf.open(stream=archive.read("03-resultado.pdf"), filetype="pdf") as doc:
+            self.assertEqual(len(names), 12)
+            self.assertTrue(all(name.endswith(".pdf") for name in names))
+            with pdf.open(stream=archive.read(names[2]), filetype="pdf") as doc:
                 self.assertEqual(len(doc), 3)
         self.assertIn("12 archivos", compressed.headers["X-PDF-Notice"])
         split = self.call("split", uploads=many[:3])
         with zipfile.ZipFile(io.BytesIO(split.data)) as archive:
-            self.assertEqual(archive.namelist(), ["01/parte-001.pdf", "02/parte-001.pdf", "02/parte-002.pdf",
-                                                  "03/parte-001.pdf", "03/parte-002.pdf", "03/parte-003.pdf"])
+            self.assertEqual([Path(name).parent.name for name in archive.namelist()],
+                             ["01", "02", "02", "03", "03", "03"])
         text = self.call("extract_text", uploads=many[:2])
         with zipfile.ZipFile(io.BytesIO(text.data)) as archive:
-            self.assertIn("SECRETO", archive.read("02-texto.txt").decode())
+            self.assertIn("SECRETO", archive.read(archive.namelist()[1]).decode())
         for operation in ("pdf_to_docx", "compress", "split"):
             with self.subTest(operation=operation):
                 broken = self.call(operation, uploads=[many[0], (b"not a PDF", "bad.pdf")], expected=422)
