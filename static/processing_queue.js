@@ -17,11 +17,9 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
   animation.preload = "metadata";
   animation.setAttribute("aria-hidden", "true");
   animation.setAttribute("tabindex", "-1");
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const syncMotion = () => {
-    animation.autoplay = !reducedMotion.matches;
-    if (reducedMotion.matches) animation.pause();
-    else animation.play().catch(() => {
+    animation.autoplay = true;
+    animation.play().catch(() => {
       console.info("EVA PDF Enterprise: el navegador no permitió reproducir la animación; el estado sigue disponible.");
     });
   };
@@ -46,7 +44,6 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
   notice.append(animation, content);
   const host = document.querySelector("dialog[open]") || document.body;
   host.append(notice);
-  reducedMotion.addEventListener("change", syncMotion);
   syncMotion();
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -152,7 +149,6 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
     clearTimeout(timer);
     controller.abort();
     signal?.removeEventListener("abort", abort);
-    reducedMotion.removeEventListener("change", syncMotion);
     animation.pause();
     animation.removeAttribute("src");
     animation.load();

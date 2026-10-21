@@ -1,0 +1,468 @@
+================================================================================
+ENUNCIADO E INSTRUCCION PERMANENTE DEL USUARIO
+================================================================================
+todos los cambios que se hagan aqui, registralos en un archivo txt llamado "Cambios de antigravity" para que en otro equipo , Github copilot chat pueda leerlos y entender que cambio y como implementarlo. guarda esto en tu memoria para cada edicion o modificacion hecha a este proyecto en adelante. deja este mismo enunciado completo en el archivo txt, guardalo en el formato necesario para que github copilot chat lo pueda entender sin problemas
+
+================================================================================
+GUIA DE LECTURA E IMPLEMENTACION PARA GITHUB COPILOT CHAT (OTRO EQUIPO)
+================================================================================
+# Instrucciones para GitHub Copilot Chat:
+Cuando el usuario en otro equipo te adjunte o referencie este archivo (`#file:Cambios de antigravity.txt`) y te pida replicar o aplicar los cambios:
+1. Lee las entradas en orden cronologico (de arriba hacia abajo en la seccion "HISTORIAL DE CAMBIOS").
+2. Cada entrada contiene:
+   - **ID y Fecha/Hora**: Identificador unico del cambio.
+   - **Objetivo / Resumen**: Que problema resuelve o que funcion agrega.
+   - **Archivos Afectados**: Rutas relativas desde la raiz del proyecto (`FOLIO-PDF-ENTERPRISE`).
+   - **Instrucciones Exactas de Implementacion (Bloques SEARCH / REPLACE)**:
+     - Ubica en cada archivo el bloque `<<< SEARCH` (incluyendo lineas de contexto) y reemplazalo exactamente por el bloque `=== REPLACE`.
+   - **Comandos / Verificacion**: Pruebas o comandos que debes ejecutar para validar que la implementacion quedo identica.
+3. Respeta siempre las reglas arquitectonicas de EVA PDF Enterprise:
+   - Privacidad por diseno (borrado temporal en `runtime/`, sin guardar documentos en SQLite).
+   - Aislamiento por subprocesos (`worker.py` / `ProcessTree`).
+   - Compatibilidad de `CLIENT_BUILD` en `server.py` cuando cambien contratos HTTP/JS.
+
+================================================================================
+PLANTILLA ESTANDAR PARA CADA NUEVA EDICION DE ANTIGRAVITY
+================================================================================
+Cada vez que Antigravity realice cualquier creacion, edicion o eliminacion de codigo en este proyecto, agregara una nueva entrada al final de este archivo con la siguiente estructura:
+
+--------------------------------------------------------------------------------
+## [CAMBIO-XXX] YYYY-MM-DD HH:MM - <Titulo corto del cambio>
+- **Resumen / Motivo**: <Explicacion clara de que cambio y por que>
+- **Archivos modificados**:
+  - `<ruta/relativa/archivo1>` (<accion: creado | modificado | eliminado>)
+- **Detalle de implementacion para GitHub Copilot Chat**:
+  Archivo: `<ruta/relativa/archivo1>` (Lineas aprox. X-Y)
+  <<< SEARCH
+  <codigo original exacto con contexto>
+  === REPLACE
+  <codigo nuevo exacto>
+  >>> END
+- **Verificacion**:
+  - Comando: `<comando de prueba ejecutado>`
+  - Resultado: `<resultado obtenido>`
+--------------------------------------------------------------------------------
+
+================================================================================
+HISTORIAL DE CAMBIOS
+================================================================================
+
+## [CAMBIO-000] 2026-10-20 20:34 - Inicializacion de bitacora para GitHub Copilot Chat
+- **Resumen / Motivo**: Creacion del archivo `Cambios de antigravity.txt` tras el analisis integral del proyecto EVA PDF Enterprise (build base `2026-10-20-eva-brand-1`). No se ha modificado ningun archivo existente del proyecto todavia.
+- **Archivos modificados**:
+  - `Cambios de antigravity.txt` (creado)
+- **Estado base del proyecto al crear esta bitacora**:
+  - `CLIENT_BUILD`: `"2026-10-20-eva-brand-1"` en `server.py`.
+  - Codigo fuente, configuracion y pruebas intactos.
+
+
+--------------------------------------------------------------------------------
+## [CAMBIO-001] 2026-10-20 20:39 - Creacion de regla persistente de proyecto (GEMINI.md)
+- **Resumen / Motivo**: Se creo el archivo `GEMINI.md` en la raiz del proyecto mediante `/learn` para que Antigravity cargue automaticamente en todas las sesiones presentes y futuras la obligacion de registrar cada cambio en `Cambios de antigravity.txt` con formato compatible con GitHub Copilot Chat.
+- **Archivos modificados**:
+  - `GEMINI.md` (creado)
+- **Detalle de implementacion para GitHub Copilot Chat**:
+  Archivo: `GEMINI.md` (Archivo nuevo, lineas 1-24)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  # Reglas de Proyecto — FOLIO-PDF-ENTERPRISE (EVA PDF Enterprise)
+
+  ## Registro Obligatorio de Cambios para GitHub Copilot Chat
+
+  Enunciado original del usuario:
+  > "todos los cambios que se hagan aqui, registralos en un archivo txt llamado "Cambios de antigravity" para que en otro equipo , Github copilot chat pueda leerlos y entender que cambio y como implementarlo. guarda esto en tu memoria para cada edicion o modificacion hecha a este proyecto en adelante. deja este mismo enunciado completo en el archivo txt, guardalo en el formato necesario para que github copilot chat lo pueda entender sin problemas"
+
+  ### Reglas de Ejecución en Cada Modificación
+  1. **Invariante obligatorio:** Cada vez que se cree, edite o elimine cualquier archivo del proyecto, **DEBES** actualizar inmediatamente el archivo `Cambios de antigravity.txt` en la raíz del repositorio antes de dar por finalizada la tarea.
+  2. **Preservación del encabezado:** Nunca elimines ni alteres el encabezado con el enunciado original del usuario ni la guía de lectura para GitHub Copilot Chat en `Cambios de antigravity.txt`.
+  3. **Formato de cada entrada (`[CAMBIO-XXX]`):**
+     Añade al final de la sección `HISTORIAL DE CAMBIOS` de `Cambios de antigravity.txt` un bloque numerado secuencialmente con:
+     - **ID, Fecha/Hora y Título descriptivo.**
+     - **Resumen / Motivo:** Qué cambió y por qué, incluyendo cualquier consideración de arquitectura (`CLIENT_BUILD`, aislamiento de subprocesos, limpieza temporal).
+     - **Archivos modificados:** Rutas relativas desde la raíz del proyecto e indicador (`creado`, `modificado` o `eliminado`).
+     - **Detalle de implementación para GitHub Copilot Chat:** Bloques exactos `<<< SEARCH`, `=== REPLACE` y `>>> END` con líneas de contexto suficientes para que GitHub Copilot Chat en otro equipo pueda localizar y aplicar el cambio sin ambigüedad.
+     - **Verificación:** Comandos de prueba ejecutados y resultado obtenido.
+  >>> END
+- **Verificacion**:
+  - Comando: Creacion de `GEMINI.md` y registro en `Cambios de antigravity.txt`.
+  - Resultado: Regla activa en la raiz del proyecto sin afectar el codigo fuente ni `deploy/eva-pdf.spec`.
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+## [CAMBIO-002] 2026-10-20 20:42 - Creacion de guia "EJECUCION PRIMERA VEZ LOCALMENTE.txt"
+- **Resumen / Motivo**: Se creo el archivo de texto `EJECUCION PRIMERA VEZ LOCALMENTE.txt` en la raiz del proyecto con los pasos detallados para crear el entorno virtual `.venv`, instalar `requirements.txt`, descargar modelos OCR (`deploy\install-ocr.ps1`), calibrar motores (`server.py --calibrate`) e iniciar el servidor local o en LAN. No modifica codigo ejecutable ni requiere actualizar `CLIENT_BUILD`.
+- **Archivos modificados**:
+  - `EJECUCION PRIMERA VEZ LOCALMENTE.txt` (creado)
+- **Detalle de implementacion para GitHub Copilot Chat**:
+  Archivo: `EJECUCION PRIMERA VEZ LOCALMENTE.txt` (Archivo nuevo, lineas 1-58)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  ================================================================================
+  GUIA DE EJECUCION POR PRIMERA VEZ LOCALMENTE — EVA PDF ENTERPRISE
+  ================================================================================
+
+  Sigue estos pasos desde una terminal PowerShell ubicada en la raiz del proyecto
+  (c:\Users\Drhapso\Documents\PROYECTOS IA INDEPENDIENTES\FOLIO-PDF-ENTERPRISE).
+
+  --------------------------------------------------------------------------------
+  1. PREPARACION UNICA (PRIMERA VEZ EN EL EQUIPO)
+  --------------------------------------------------------------------------------
+  Ejecuta los siguientes comandos en orden dentro de PowerShell:
+
+  # 1. Crear el entorno virtual .venv
+  python -m venv .venv
+
+  # 2. Actualizar pip e instalar las dependencias del proyecto
+  .\.venv\Scripts\python.exe -m pip install --upgrade pip
+  .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+  # 3. (Opcional pero recomendado) Descargar los modelos locales de OCR (espanol e ingles)
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\install-ocr.ps1
+
+  # 4. (Opcional) Calibrar los motores segun el hardware de tu equipo
+  .\.venv\Scripts\python.exe .\server.py --calibrate
+
+  NOTA SOBRE OFFICE A PDF:
+  Si deseas usar la herramienta "Office a PDF", necesitas tener instalado
+  LibreOffice en Windows (el motor lo detecta automaticamente en
+  C:\Program Files\LibreOffice\program\soffice.com).
+
+  --------------------------------------------------------------------------------
+  2. INICIAR EL SERVIDOR LOCALMENTE
+  --------------------------------------------------------------------------------
+  Una vez creado el entorno .venv, tienes dos formas de arrancarlo:
+
+  OPCION A: Con doble clic (Atajo incluido)
+  - Modo solo local (este equipo): Haz doble clic sobre "servidor local.bat"
+    (ejecuta .\deploy\run-lan.ps1 -LocalOnly).
+  - Modo red local (LAN): Haz doble clic sobre "servidor para LAN.bat"
+    (ejecuta .\deploy\run-lan.ps1).
+
+  OPCION B: Desde PowerShell
+  - Modo solo local:
+    .\.venv\Scripts\python.exe .\server.py --host 127.0.0.1 --port 8090
+  - Modo red local (LAN):
+    .\.venv\Scripts\python.exe .\server.py --host 0.0.0.0 --port 8090
+
+  --------------------------------------------------------------------------------
+  3. ABRIR EN EL NAVEGADOR
+  --------------------------------------------------------------------------------
+  Con la consola del servidor abierta, entra en tu navegador a:
+  - Aplicacion principal:          http://127.0.0.1:8090/
+  - Editor PDF estilo Acrobat:     http://127.0.0.1:8090/editor
+  - Estado de salud (JSON):        http://127.0.0.1:8090/health
+  >>> END
+- **Verificacion**:
+  - Comando: Creacion de `EJECUCION PRIMERA VEZ LOCALMENTE.txt` y registro en `Cambios de antigravity.txt`.
+  - Resultado: Archivo creado correctamente en la raiz del proyecto.
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+## [CAMBIO-002] 2026-10-20 20:42 - Creacion de guia "EJECUCION PRIMERA VEZ LOCALMENTE.txt"
+- **Resumen / Motivo**: Se creo el archivo de texto `EJECUCION PRIMERA VEZ LOCALMENTE.txt` en la raiz del proyecto con los pasos detallados para crear el entorno virtual `.venv`, instalar `requirements.txt`, descargar modelos OCR (`deploy\install-ocr.ps1`), calibrar motores (`server.py --calibrate`) e iniciar el servidor local o en LAN. No modifica codigo ejecutable ni requiere actualizar `CLIENT_BUILD`.
+- **Archivos modificados**:
+  - `EJECUCION PRIMERA VEZ LOCALMENTE.txt` (creado)
+- **Detalle de implementacion para GitHub Copilot Chat**:
+  Archivo: `EJECUCION PRIMERA VEZ LOCALMENTE.txt` (Archivo nuevo, lineas 1-58)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  ================================================================================
+  GUIA DE EJECUCION POR PRIMERA VEZ LOCALMENTE — EVA PDF ENTERPRISE
+  ================================================================================
+
+  Sigue estos pasos desde una terminal PowerShell ubicada en la raiz del proyecto
+  (c:\Users\Drhapso\Documents\PROYECTOS IA INDEPENDIENTES\FOLIO-PDF-ENTERPRISE).
+
+  --------------------------------------------------------------------------------
+  1. PREPARACION UNICA (PRIMERA VEZ EN EL EQUIPO)
+  --------------------------------------------------------------------------------
+  Ejecuta los siguientes comandos en orden dentro de PowerShell:
+
+  # 1. Crear el entorno virtual .venv
+  python -m venv .venv
+
+  # 2. Actualizar pip e instalar las dependencias del proyecto
+  .\.venv\Scripts\python.exe -m pip install --upgrade pip
+  .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+  # 3. (Opcional pero recomendado) Descargar los modelos locales de OCR (espanol e ingles)
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\install-ocr.ps1
+
+  # 4. (Opcional) Calibrar los motores segun el hardware de tu equipo
+  .\.venv\Scripts\python.exe .\server.py --calibrate
+
+  NOTA SOBRE OFFICE A PDF:
+  Si deseas usar la herramienta "Office a PDF", necesitas tener instalado
+  LibreOffice en Windows (el motor lo detecta automaticamente en
+  C:\Program Files\LibreOffice\program\soffice.com).
+
+  --------------------------------------------------------------------------------
+  2. INICIAR EL SERVIDOR LOCALMENTE
+  --------------------------------------------------------------------------------
+  Una vez creado el entorno .venv, tienes dos formas de arrancarlo:
+
+  OPCION A: Con doble clic (Atajo incluido)
+  - Modo solo local (este equipo): Haz doble clic sobre "servidor local.bat"
+    (ejecuta .\deploy\run-lan.ps1 -LocalOnly).
+  - Modo red local (LAN): Haz doble clic sobre "servidor para LAN.bat"
+    (ejecuta .\deploy\run-lan.ps1).
+
+  OPCION B: Desde PowerShell
+  - Modo solo local:
+    .\.venv\Scripts\python.exe .\server.py --host 127.0.0.1 --port 8090
+  - Modo red local (LAN):
+    .\.venv\Scripts\python.exe .\server.py --host 0.0.0.0 --port 8090
+
+  --------------------------------------------------------------------------------
+  3. ABRIR EN EL NAVEGADOR
+  --------------------------------------------------------------------------------
+  Con la consola del servidor abierta, entra en tu navegador a:
+  - Aplicacion principal:          http://127.0.0.1:8090/
+  - Editor PDF estilo Acrobat:     http://127.0.0.1:8090/editor
+  - Estado de salud (JSON):        http://127.0.0.1:8090/health
+  >>> END
+- **Verificacion**:
+  - Comando: Creacion de `EJECUCION PRIMERA VEZ LOCALMENTE.txt` y registro en `Cambios de antigravity.txt`.
+  - Resultado: Archivo creado correctamente en la raiz del proyecto.
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+## [CAMBIO-003] 2026-10-20 20:57 - Reproduccion incondicional de animaciones e instalacion de perfil productivo (site_config.json)
+- **Resumen / Motivo**:
+  1. En equipos Windows donde `SPI_GETCLIENTAREAANIMATION` (Efectos de animacion de Windows) esta desactivado, el navegador activa `@media (prefers-reduced-motion: reduce)`, lo que impedia abrir la animacion de bienvenida (`#folio-opening`), pausaba el video de procesamiento (`loadinggif.mp4`) y desactivaba las transiciones de interfaz. Se eliminaron las guardas `prefers-reduced-motion` en `static/opening.js`, `static/opening.css`, `static/processing_queue.js`, `static/palette.css` y `static/app.css` para que las animaciones de la aplicacion se reproduzcan siempre igual que en la maquina original.
+  2. Se instalo el perfil de produccion copiando `config/production_queue.json` a `config/site_config.json` (habilitando `editor_live_preview: true`, `recommended_upload_mb: 3`, `max_queued_upload_mb: 2048` y cumpliendo con `test_installed_profile_exact_limits`).
+- **Archivos modificados**:
+  - `static/opening.js` (modificado)
+  - `static/opening.css` (modificado)
+  - `static/processing_queue.js` (modificado)
+  - `static/palette.css` (modificado)
+  - `static/app.css` (modificado)
+  - `config/site_config.json` (creado a partir de `config/production_queue.json`)
+- **Detalle de implementacion para GitHub Copilot Chat**:
+  Archivo: `static/opening.js` (Lineas 1-32)
+  <<< SEARCH
+  "use strict";
+  (() => {
+    const opening = document.getElementById("folio-opening");
+    const motion = matchMedia("(prefers-reduced-motion: reduce)");
+    if (motion.matches) return;
+    const previousFocus = document.activeElement;
+    let timer;
+    function close() {
+      if (!opening.open) return;
+      clearTimeout(timer);
+      motion.removeEventListener("change", motionChanged);
+      opening.close();
+      if (previousFocus instanceof HTMLElement && previousFocus !== document.body) previousFocus.focus();
+      else document.querySelector(".brand").focus({preventScroll:true});
+    }
+    function motionChanged(event) {
+      if (event.matches) close();
+    }
+    opening.addEventListener("cancel", event => {
+      event.preventDefault();
+      close();
+    });
+    opening.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    });
+    motion.addEventListener("change", motionChanged);
+    opening.showModal();
+    timer = setTimeout(close, 4500);
+  })();
+  === REPLACE
+  "use strict";
+  (() => {
+    const opening = document.getElementById("folio-opening");
+    const previousFocus = document.activeElement;
+    let timer;
+    function close() {
+      if (!opening.open) return;
+      clearTimeout(timer);
+      opening.close();
+      if (previousFocus instanceof HTMLElement && previousFocus !== document.body) previousFocus.focus();
+      else document.querySelector(".brand").focus({preventScroll:true});
+    }
+    opening.addEventListener("cancel", event => {
+      event.preventDefault();
+      close();
+    });
+    opening.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    });
+    opening.showModal();
+    timer = setTimeout(close, 4500);
+  })();
+  >>> END
+
+  Archivo: `static/opening.css` (Lineas 203-211)
+  <<< SEARCH
+  @media (max-height: 450px) {
+    .opening-brand { top: 10%; }
+    .opening-brand img { width: 42px; }
+    .opening-word { font-size: 50px; }
+    .opening-tagline { bottom: 21%; font-size: 9px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #folio-opening *, #folio-opening[open] { animation: none; }
+  }
+  === REPLACE
+  @media (max-height: 450px) {
+    .opening-brand { top: 10%; }
+    .opening-brand img { width: 42px; }
+    .opening-word { font-size: 50px; }
+    .opening-tagline { bottom: 21%; font-size: 9px; }
+  }
+  >>> END
+
+  Archivo: `static/processing_queue.js` (Lineas 20-51 y 151-160)
+  <<< SEARCH
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncMotion = () => {
+      animation.autoplay = !reducedMotion.matches;
+      if (reducedMotion.matches) animation.pause();
+      else animation.play().catch(() => {
+        console.info("EVA PDF Enterprise: el navegador no permitió reproducir la animación; el estado sigue disponible.");
+      });
+    };
+    animation.addEventListener("error", () => {
+      animation.hidden = true;
+      console.warn("EVA PDF Enterprise: no se pudo cargar la animación de procesamiento.");
+    }, {once: true});
+    animation.src = `/static/loadinggif.mp4?v=${encodeURIComponent(build)}`;
+    const content = document.createElement("div");
+    content.className = "processing-notice-content";
+    const title = document.createElement("strong");
+    title.textContent = "Preparando procesamiento";
+    const message = document.createElement("p");
+    message.textContent = "Enviando la carga al servidor. No cierres esta pestaña.";
+    const guidance = document.createElement("small");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "secondary";
+    cancel.textContent = "Cancelar espera";
+    cancel.hidden = true;
+    content.append(title, message, guidance, cancel);
+    notice.append(animation, content);
+    const host = document.querySelector("dialog[open]") || document.body;
+    host.append(notice);
+    reducedMotion.addEventListener("change", syncMotion);
+    syncMotion();
+  === REPLACE
+    const syncMotion = () => {
+      animation.autoplay = true;
+      animation.play().catch(() => {
+        console.info("EVA PDF Enterprise: el navegador no permitió reproducir la animación; el estado sigue disponible.");
+      });
+    };
+    animation.addEventListener("error", () => {
+      animation.hidden = true;
+      console.warn("EVA PDF Enterprise: no se pudo cargar la animación de procesamiento.");
+    }, {once: true});
+    animation.src = `/static/loadinggif.mp4?v=${encodeURIComponent(build)}`;
+    const content = document.createElement("div");
+    content.className = "processing-notice-content";
+    const title = document.createElement("strong");
+    title.textContent = "Preparando procesamiento";
+    const message = document.createElement("p");
+    message.textContent = "Enviando la carga al servidor. No cierres esta pestaña.";
+    const guidance = document.createElement("small");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "secondary";
+    cancel.textContent = "Cancelar espera";
+    cancel.hidden = true;
+    content.append(title, message, guidance, cancel);
+    notice.append(animation, content);
+    const host = document.querySelector("dialog[open]") || document.body;
+    host.append(notice);
+    syncMotion();
+  >>> END
+
+  Archivo: `static/processing_queue.js` (Bloque finally, lineas 146-156)
+  <<< SEARCH
+      finished = true;
+      clearTimeout(timer);
+      controller.abort();
+      signal?.removeEventListener("abort", abort);
+      reducedMotion.removeEventListener("change", syncMotion);
+      animation.pause();
+      animation.removeAttribute("src");
+      animation.load();
+      notice.remove();
+  === REPLACE
+      finished = true;
+      clearTimeout(timer);
+      controller.abort();
+      signal?.removeEventListener("abort", abort);
+      animation.pause();
+      animation.removeAttribute("src");
+      animation.load();
+      notice.remove();
+  >>> END
+
+  Archivo: `static/palette.css` (Lineas 247-260)
+  <<< SEARCH
+  @media (max-width: 700px) {
+    .construction-sector { padding: 22px 16px; }
+    .construction-content { flex-direction: column; align-items: flex-start; gap: 18px; padding: 24px 18px; }
+    .construction-symbol { width: 70px; height: 70px; flex-basis: auto; }
+    .construction-code { font-size: 9px; letter-spacing: 1px; }
+    .construction-actions .secondary { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero .eyebrow > span { animation: none; }
+  }
+  .brand-suffix { margin-left: 9px; font-size: .42em; font-weight: 600; letter-spacing: .4px; opacity: .78; white-space: nowrap; }
+  === REPLACE
+  @media (max-width: 700px) {
+    .construction-sector { padding: 22px 16px; }
+    .construction-content { flex-direction: column; align-items: flex-start; gap: 18px; padding: 24px 18px; }
+    .construction-symbol { width: 70px; height: 70px; flex-basis: auto; }
+    .construction-code { font-size: 9px; letter-spacing: 1px; }
+    .construction-actions .secondary { width: 100%; }
+  }
+  .brand-suffix { margin-left: 9px; font-size: .42em; font-weight: 600; letter-spacing: .4px; opacity: .78; white-space: nowrap; }
+  >>> END
+
+  Archivo: `static/app.css` (Linea 6)
+  <<< SEARCH
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+  === REPLACE
+  (linea eliminada)
+  >>> END
+
+  Archivo: `config/site_config.json` (Copia exacta de `config/production_queue.json`)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  {
+    "max_file_mb": 1024,
+    "max_upload_mb": 1024,
+    "max_output_mb": 2048,
+    "max_active_upload_mb": 1026,
+    "max_queued_upload_mb": 2048,
+    "max_parallel_jobs": 5,
+    "max_heavy_jobs": 2,
+    "max_queued_jobs": 12,
+    "queue_wait_seconds": 45,
+    "heavy_upload_mb": 10,
+    "recommended_upload_mb": 3,
+    "editor_live_preview": true
+  }
+  >>> END
+- **Verificacion**:
+  - Comando: `git diff --stat -- static/` y comprobacion de `config/site_config.json`.
+  - Resultado: Los 5 archivos de `static/` y `config/site_config.json` quedaron actualizados correctamente.
+--------------------------------------------------------------------------------

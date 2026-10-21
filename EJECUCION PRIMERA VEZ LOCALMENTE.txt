@@ -1,0 +1,55 @@
+================================================================================
+GUIA DE EJECUCION POR PRIMERA VEZ LOCALMENTE — EVA PDF ENTERPRISE
+================================================================================
+
+Sigue estos pasos desde una terminal PowerShell ubicada en la raiz del proyecto
+(c:\Users\Drhapso\Documents\PROYECTOS IA INDEPENDIENTES\FOLIO-PDF-ENTERPRISE).
+
+--------------------------------------------------------------------------------
+1. PREPARACION UNICA (PRIMERA VEZ EN EL EQUIPO)
+--------------------------------------------------------------------------------
+Ejecuta los siguientes comandos en orden dentro de PowerShell:
+
+# 1. Crear el entorno virtual .venv
+python -m venv .venv
+
+# 2. Actualizar pip e instalar las dependencias del proyecto
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# 3. (Opcional pero recomendado) Descargar los modelos locales de OCR (espanol e ingles)
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\install-ocr.ps1
+
+# 4. (Opcional) Calibrar los motores segun el hardware de tu equipo
+.\.venv\Scripts\python.exe .\server.py --calibrate
+
+NOTA SOBRE OFFICE A PDF:
+Si deseas usar la herramienta "Office a PDF", necesitas tener instalado
+LibreOffice en Windows (el motor lo detecta automaticamente en
+C:\Program Files\LibreOffice\program\soffice.com).
+
+--------------------------------------------------------------------------------
+2. INICIAR EL SERVIDOR LOCALMENTE
+--------------------------------------------------------------------------------
+Una vez creado el entorno .venv, tienes dos formas de arrancarlo:
+
+OPCION A: Con doble clic (Atajo incluido)
+- Modo solo local (este equipo): Haz doble clic sobre "servidor local.bat"
+  (ejecuta .\deploy\run-lan.ps1 -LocalOnly).
+- Modo red local (LAN): Haz doble clic sobre "servidor para LAN.bat"
+  (ejecuta .\deploy\run-lan.ps1).
+
+OPCION B: Desde PowerShell
+- Modo solo local:
+  .\.venv\Scripts\python.exe .\server.py --host 127.0.0.1 --port 8090
+- Modo red local (LAN):
+  .\.venv\Scripts\python.exe .\server.py --host 0.0.0.0 --port 8090
+
+--------------------------------------------------------------------------------
+3. ABRIR EN EL NAVEGADOR
+--------------------------------------------------------------------------------
+Con la consola del servidor abierta, entra en tu navegador a:
+- Aplicacion principal:          http://127.0.0.1:8090/
+- Editor PDF estilo Acrobat:     http://127.0.0.1:8090/editor
+- Estado de salud (JSON):        http://127.0.0.1:8090/health
+

@@ -206,6 +206,3 @@ html:has(#folio-opening[open]) { overflow: hidden; }
   .opening-word { font-size: 50px; }
   .opening-tagline { bottom: 21%; font-size: 9px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  #folio-opening *, #folio-opening[open] { animation: none; }
-}
