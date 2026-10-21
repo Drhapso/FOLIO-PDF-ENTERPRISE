@@ -1,5 +1,11 @@
 # Cambios
 
+## 2026-10-21 - README de portada simplificado
+
+- README reducido a caracteristicas generales y funciones mas novedosas.
+- Documentacion tecnica y operativa completa trasladada sin cambios de
+  contenido a `docs/MANUAL_TECNICO.md` (enlaces relativos ajustados).
+
 ## 2026-10-21 - PDF a Word con disposicion posicional fiel
 
 - Problema real: un PDF de 2 paginas generaba un Word de 4 paginas con tablas y

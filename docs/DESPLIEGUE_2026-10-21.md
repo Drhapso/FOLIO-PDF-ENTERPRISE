@@ -13,7 +13,7 @@
 El editor unificado agrega reconstruccion local conservadora de palabras en
 escaneos. No convierte toda la pagina, no equivale al motor propietario de
 Adobe y exige revision visual. Las zonas no admitidas se bloquean con motivo.
-Consultar [README](../README.md#escaneos-reconstruccion-local-conservadora)
+Consultar [README](MANUAL_TECNICO.md#escaneos-reconstruccion-local-conservadora)
 y [registro de cambios](../CHANGELOG.md).
 
 ## Publicacion y activacion
