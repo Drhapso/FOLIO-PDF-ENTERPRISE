@@ -100,27 +100,29 @@
     </section>
     <section id="desktop-tools" class="privacy construction-sector" aria-labelledby="desktop-title" aria-describedby="construction-description">
       <div class="construction-heading">
-        <span class="eyebrow">MÓDULO LOCAL · ACCESO EN ESPERA</span>
+        <span class="eyebrow" id="desktop-eyebrow">MÓDULO LOCAL · ACCESO EN ESPERA</span>
         <h2 id="desktop-title">Escritorio, cámara e impresión</h2>
       </div>
-      <div class="construction-notice">
+      <div class="construction-notice" id="desktop-notice">
         <div class="construction-rail" aria-hidden="true"></div>
         <div class="construction-content">
-          <img class="construction-symbol" src="{{ url_for('static', filename='construction.svg') }}" width="112" height="112" alt="" aria-hidden="true">
+          <img class="construction-symbol" id="desktop-symbol" src="{{ url_for('static', filename='construction.svg') }}" width="112" height="112" alt="" aria-hidden="true">
           <div>
-            <span class="construction-code">EVA PDF ENTERPRISE / ESTADO: DESARROLLO</span>
-            <h3>Funcion en Construccion</h3>
+            <span class="construction-code" id="desktop-code">EVA PDF ENTERPRISE / ESTADO: DESARROLLO</span>
+            <h3 id="desktop-heading">Funcion en Construccion</h3>
             <p id="construction-description">Este módulo aún no está totalmente desarrollado. El escaneo, la cámara, la captura de pantalla y la impresión no están habilitados desde esta sección.</p>
-            <span class="construction-caption">ACCESO CERRADO · LAS HERRAMIENTAS PDF SIGUEN DISPONIBLES</span>
+            <span class="construction-caption" id="desktop-caption">ACCESO CERRADO · LAS HERRAMIENTAS PDF SIGUEN DISPONIBLES</span>
           </div>
         </div>
         <div class="construction-rail" aria-hidden="true"></div>
       </div>
-      <fieldset class="construction-actions" disabled aria-label="Funciones en construcción">
-        <legend>Opciones temporalmente deshabilitadas</legend>
-        <button type="button" class="secondary" disabled>Complemento Windows</button>
+      <fieldset class="construction-actions" disabled id="desktop-actions" aria-label="Funciones en construcción">
+        <legend id="desktop-legend">Opciones temporalmente deshabilitadas</legend>
+        <button type="button" id="desktop-scan" class="secondary" disabled>Complemento Windows</button>
         <button type="button" id="camera-open" class="secondary" disabled>Tomar foto para PDF</button>
         <button type="button" id="screen-capture" class="secondary" disabled>Capturar pantalla para PDF</button>
+        <button type="button" id="desktop-print" class="secondary" disabled>Imprimir documento</button>
+        <button type="button" id="desktop-help" class="secondary" disabled>¿Cómo usar esta función?</button>
       </fieldset>
     </section>
 
@@ -177,6 +179,42 @@
     <p id="camera-status" role="status"></p>
     <button id="camera-shot" class="primary" type="button">Capturar y convertir a PDF</button>
     <button id="camera-close" class="secondary" type="button">Cerrar cámara</button>
+  </dialog>
+  <dialog id="desktop-guide-dialog" class="desktop-guide-dialog" aria-labelledby="desktop-guide-title">
+    <div class="workspace-heading">
+      <div>
+        <span class="eyebrow">DISPOSITIVOS DETECTADOS · HARDWARE LOCAL</span>
+        <h2 id="desktop-guide-title">Escritorio, cámara e impresión habilitados</h2>
+      </div>
+      <button id="close-desktop-guide" class="icon-button" aria-label="Cerrar guía">✕</button>
+    </div>
+    <p id="desktop-detected-list" class="hint" style="color: var(--accent); font-weight: 600;"></p>
+    <div class="desktop-guide-steps">
+      <div class="desktop-guide-card">
+        <span class="desktop-guide-icon" aria-hidden="true">🖥️</span>
+        <div>
+          <h4>Escritorio y Escáner (WIA)</h4>
+          <p>Usa <strong>Escanear con WIA</strong> para abrir el diálogo nativo de escaneo de Windows. Podrás digitalizar hojas desde tu escáner físico directamente a PNG de alta calidad y procesarlas en EVA PDF.</p>
+        </div>
+      </div>
+      <div class="desktop-guide-card">
+        <span class="desktop-guide-icon" aria-hidden="true">📷</span>
+        <div>
+          <h4>Cámara para PDF</h4>
+          <p>Usa <strong>Tomar foto para PDF</strong> para enfocar documentos, facturas o contratos desde la cámara de tu equipo o portátil. La fotografía se añadirá automáticamente a <em>Imágenes a PDF</em>.</p>
+        </div>
+      </div>
+      <div class="desktop-guide-card">
+        <span class="desktop-guide-icon" aria-hidden="true">🖨️</span>
+        <div>
+          <h4>Impresión y Captura de Pantalla</h4>
+          <p>Usa <strong>Imprimir documento</strong> para enviar archivos PDF a tu impresora asociada de Windows o a <em>Microsoft Print to PDF</em>. Con <strong>Capturar pantalla</strong> puedes convertir cualquier ventana a PDF.</p>
+        </div>
+      </div>
+    </div>
+    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+      <button type="button" id="desktop-guide-ok" class="primary">¡Entendido!</button>
+    </div>
   </dialog>
 </body>
 </html>

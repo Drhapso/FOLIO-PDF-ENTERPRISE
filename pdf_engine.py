@@ -68,12 +68,43 @@ def libreoffice_path(config: dict) -> str | None:
     return None
 
 
+def detect_scanner_drivers() -> dict:
+    if os.name != "nt":
+        return {"available": False, "count": 0, "devices": []}
+    devices: list[str] = []
+    try:
+        import winreg
+        key_path = r"SYSTEM\CurrentControlSet\Control\Class\{6bdd1fc6-810f-11d0-bec7-08002be2092f}"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+            subkeys, _, _ = winreg.QueryInfoKey(key)
+            for i in range(subkeys):
+                name = winreg.EnumKey(key, i)
+                if name.isdigit():
+                    try:
+                        with winreg.OpenKey(key, name) as subkey:
+                            desc = winreg.QueryValueEx(subkey, "DriverDesc")[0]
+                            if desc and desc not in devices:
+                                devices.append(str(desc))
+                    except OSError:
+                        continue
+    except OSError:
+        pass
+    return {
+        "available": len(devices) > 0,
+        "count": len(devices),
+        "devices": devices,
+    }
+
+
 def capabilities(config: dict, root: Path) -> dict:
     languages = config["ocr_language"].split("+")
+    scanners = detect_scanner_drivers()
     return {
         "office": bool(libreoffice_path(config)),
         "ocr": all((root / "models" / f"{lang}.traineddata").is_file() for lang in languages),
         "ocr_language": config["ocr_language"],
+        "scanners": scanners,
+        "desktop_enabled": bool(scanners.get("available")),
     }
 
 

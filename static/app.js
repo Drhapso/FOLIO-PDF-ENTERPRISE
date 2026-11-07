@@ -503,8 +503,10 @@ window.addEventListener("pagehide",()=>{clearResult();files=[];edits=[];previewI
 renderTools();
 fetch("/api/capabilities").then(response=>{if(!response.ok)throw new Error();return response.json();}).then(data=>{
   caps=data; const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente"];
+  if (data.scanners && data.scanners.available) engines.push(`Escáner listo (${data.scanners.count})`);
   $("connection").textContent=`Motor local conectado · ${engines.join(" · ")} · ${limitLabel(data.max_upload_mb)} por sesión`;
   renderTools();
+  applyDesktopCapabilities(data);
   if($("workspace").open && current) {
     $("process").disabled=Boolean(current.requires && !caps[current.requires]);
     $("upload-limits").textContent=uploadLimits(current);
@@ -600,4 +602,88 @@ $("screen-capture").addEventListener("click",async()=>{
     openTool(tools.find(tool=>tool.id==="images_to_pdf"));addFiles([file]);
   }catch(error){captureError(error);}
   finally{if(stream)stream.getTracks().forEach(track=>track.stop());if(video)video.srcObject=null;}
+});
+
+function applyDesktopCapabilities(data) {
+  if (!data || !data.scanners || !data.scanners.available) {
+    const desc = $("construction-description");
+    if (desc) desc.textContent = "No se detectaron controladores de escáner en este equipo. Conecte un escáner WIA o instale su controlador para habilitar estas funciones.";
+    return;
+  }
+  const devicesText = data.scanners.devices && data.scanners.devices.length
+    ? data.scanners.devices.join(", ")
+    : "Controlador WIA / Image instalado";
+  const eyebrow = $("desktop-eyebrow");
+  if (eyebrow) eyebrow.innerHTML = '<span></span>MÓDULO LOCAL · DISPOSITIVOS DETECTADOS';
+  const notice = $("desktop-notice");
+  if (notice) notice.classList.add("active");
+  const code = $("desktop-code");
+  if (code) code.textContent = "EVA PDF ENTERPRISE / HARDWARE: VINCULADO";
+  const heading = $("desktop-heading");
+  if (heading) heading.textContent = "Dispositivos Habilitados";
+  const desc = $("construction-description");
+  if (desc) desc.textContent = `Controlador(es) de escáner detectados: ${devicesText}. Las funciones de escaneo local, cámara para PDF e impresión están activas.`;
+  const caption = $("desktop-caption");
+  if (caption) caption.textContent = "HARDWARE LOCAL VINCULADO · PROCESAMIENTO PRIVADO";
+  const legend = $("desktop-legend");
+  if (legend) legend.textContent = "Herramientas de escritorio activas:";
+  const actions = $("desktop-actions");
+  if (actions) {
+    actions.removeAttribute("disabled");
+    actions.classList.add("enabled");
+    for (const btn of actions.querySelectorAll("button")) {
+      btn.removeAttribute("disabled");
+    }
+  }
+  const detectedList = $("desktop-detected-list");
+  if (detectedList) detectedList.textContent = `Dispositivos detectados: ${devicesText}`;
+
+  if (!sessionStorage.getItem("eva_desktop_guide_shown")) {
+    sessionStorage.setItem("eva_desktop_guide_shown", "1");
+    const guide = $("desktop-guide-dialog");
+    if (guide && !guide.open) guide.showModal();
+  }
+}
+
+$("desktop-help")?.addEventListener("click", () => {
+  const guide = $("desktop-guide-dialog");
+  if (guide && !guide.open) guide.showModal();
+});
+$("close-desktop-guide")?.addEventListener("click", () => {
+  $("desktop-guide-dialog")?.close();
+});
+$("desktop-guide-ok")?.addEventListener("click", () => {
+  $("desktop-guide-dialog")?.close();
+});
+$("desktop-scan")?.addEventListener("click", async () => {
+  try {
+    setStatus("Abriendo asistente de escaneo local en Windows...");
+    const res = await fetch("/desktop/launch/Scan", {method: "POST"});
+    const result = await res.json();
+    if (result.ok) {
+      setStatus("Diálogo de escaneo abierto en tu equipo. Guarda el escaneo y selecciónalo en Imágenes a PDF.");
+    } else if (result.local_only) {
+      window.location.href = "/desktop/download";
+    } else {
+      setStatus(result.error || "No se pudo iniciar el escáner.", true);
+    }
+  } catch {
+    window.location.href = "/desktop/download";
+  }
+});
+$("desktop-print")?.addEventListener("click", async () => {
+  try {
+    setStatus("Abriendo selector de impresión local...");
+    const res = await fetch("/desktop/launch/Print", {method: "POST"});
+    const result = await res.json();
+    if (result.ok) {
+      setStatus("Selector de impresión abierto en Windows.");
+    } else if (result.local_only) {
+      window.print();
+    } else {
+      setStatus(result.error || "No se pudo iniciar la impresión.", true);
+    }
+  } catch {
+    window.print();
+  }
 });

@@ -1,0 +1,38 @@
+================================================================================
+EVA PDF ENTERPRISE — PAQUETE DE INSTALACION OFFLINE PARA OTRA MAQUINA
+================================================================================
+
+Este paquete permite instalar y ejecutar EVA PDF Enterprise en cualquier equipo
+con Windows 10 u 11 (64 bits), sin requerir Python, sin conexion a Internet y sin
+privilegios de administrador.
+
+ARCHIVO DEL INSTALADOR:
+  EVA-PDF-Enterprise-Offline-3.1.0-win-x64.zip (aprox. 122 MB)
+  Integridad SHA-256 en: EVA-PDF-Enterprise-Offline-3.1.0-win-x64.zip.sha256.txt
+
+--------------------------------------------------------------------------------
+PASOS PARA INSTALAR EN OTRA MAQUINA:
+--------------------------------------------------------------------------------
+1. Copia el archivo "EVA-PDF-Enterprise-Offline-3.1.0-win-x64.zip" al equipo de
+   destino (mediante memoria USB o recurso compartido).
+2. Haz clic derecho sobre el archivo ZIP y selecciona "Extraer todo...".
+3. Entra en la carpeta extraida y haz doble clic sobre "INSTALAR.bat".
+   - No requiere permisos de administrador.
+   - Verifica automaticamente la integridad de todos los archivos del paquete.
+   - Instala la aplicacion en: %LOCALAPPDATA%\EVA-PDF-Enterprise
+   - Calibra los motores de procesamiento segun la CPU y memoria de ese equipo.
+   - Crea los accesos directos en el Escritorio y Menu Inicio:
+       * "EVA PDF Enterprise" (Modo local)
+       * "EVA PDF Enterprise (compartir en LAN)" (Modo red local)
+       * "Desinstalar EVA PDF Enterprise"
+
+--------------------------------------------------------------------------------
+COMO USAR LA APLICACION EN LA OTRA MAQUINA:
+--------------------------------------------------------------------------------
+1. Haz doble clic en el acceso directo "EVA PDF Enterprise" del Escritorio.
+2. Se iniciara el servidor local minimizado y se abrira automaticamente tu
+   navegador predeterminado en:
+   http://127.0.0.1:8090/ (o el siguiente puerto libre si el 8090 esta ocupado).
+3. Todas las herramientas (unir, dividir, comprimir, OCR local, edicion estilo
+   Acrobat, conversion a Word/Excel/PowerPoint) procesaran los documentos de forma
+   100% local en ese equipo, garantizando maxima privacidad sin subir nada a la nube.

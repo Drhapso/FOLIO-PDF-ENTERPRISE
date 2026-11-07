@@ -4,7 +4,9 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path -LiteralPath $ParametersFile)) { $ParametersFile = Join-Path $PSScriptRoot "release.example.json" }
-$version = (Get-Content -LiteralPath $ParametersFile -Raw | ConvertFrom-Json).version
+$parameters = Get-Content -LiteralPath $ParametersFile -Raw | ConvertFrom-Json
+$version = $parameters.version
+$pyVersion = if ($parameters.python_version) { $parameters.python_version } else { "3.14" }
 $payload = Join-Path $root "dist\release-$version\EVA-PDF"
 if (-not (Test-Path -LiteralPath (Join-Path $payload "SHA256SUMS.txt"))) {
     throw "No existe un build verificado en $payload. Ejecute antes build-executable.ps1 -Build."
@@ -39,7 +41,7 @@ $sumsHash = (Get-FileHash -LiteralPath (Join-Path $stage "EVA-PDF\SHA256SUMS.txt
     "EVA PDF Enterprise offline $version (Windows x64)",
     "Build web: $build",
     "Generado: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))",
-    "Python embebido: 3.13 x64 (PyInstaller onedir)",
+    "Python embebido: $pyVersion x64 (PyInstaller onedir)",
     "SHA256 EVA-PDF.exe:      $exeHash",
     "SHA256 SHA256SUMS.txt:   $sumsHash",
     "Binarios sin firma Authenticode: verifique las huellas antes de distribuir."

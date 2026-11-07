@@ -10,13 +10,14 @@ $root = Split-Path -Parent $PSScriptRoot
 if (-not $Python) { $Python = Join-Path $root ".venv\Scripts\python.exe" }
 $parameters = Get-Content -LiteralPath $ParametersFile -Raw | ConvertFrom-Json
 if ($parameters.version -notmatch '^\d+\.\d+\.\d+$') { throw "Version no valida: use tres numeros." }
-if ($parameters.python_version -ne "3.13" -or $parameters.architecture -ne "AMD64") {
-    throw "Esta receta esta preparada para CPython 3.13 Windows x64."
+if ($parameters.python_version -notmatch '^\d+\.\d+$' -or $parameters.architecture -ne "AMD64") {
+    throw "Esta receta esta preparada para CPython Windows x64."
 }
 if ($Installer -and -not $Build) { throw "-Installer requiere -Build." }
 if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) { throw "No existe el interprete de construccion: $Python" }
+$pyParts = $parameters.python_version -split '\.'
 # Windows PowerShell 5.1 elimina comillas dobles incrustadas en argumentos nativos.
-& $Python -c "import sys,struct,os; assert os.name=='nt' and sys.version_info[:2]==(3,13) and struct.calcsize('P')==8, 'Se requiere CPython 3.13 Windows x64'"
+& $Python -c "import sys,struct,os; assert os.name=='nt' and sys.version_info[:2]==(int('$($pyParts[0])'),int('$($pyParts[1])')) and struct.calcsize('P')==8, 'Se requiere CPython $($parameters.python_version) Windows x64'"
 if ($LASTEXITCODE -ne 0) { throw "Interprete no compatible." }
 & $Python -m pip check
 if ($LASTEXITCODE -ne 0) { throw "Dependencias incompatibles." }

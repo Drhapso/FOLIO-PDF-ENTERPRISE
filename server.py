@@ -25,7 +25,7 @@ from settings import ROOT, load_settings
 from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
 from recovery_events import install_recovery, report_failure, request_recovery
 
-CLIENT_BUILD = "2026-10-21-word-positional-1"
+CLIENT_BUILD = "2026-11-06-desktop-scanner-1"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
@@ -211,6 +211,28 @@ def create_app(root: Path = ROOT) -> Flask:
     def desktop_download():
         return send_file(ROOT / "desktop" / "EVA-Desktop.ps1", as_attachment=True,
                          download_name="EVA-Desktop.ps1", mimetype="text/plain", conditional=False, etag=False)
+
+    @app.post("/desktop/launch/<action>")
+    def desktop_launch(action: str):
+        if action not in ("Scan", "Print", "Printers", "Menu"):
+            return jsonify(error="Accion no valida."), 400
+        is_local = request.remote_addr in ("127.0.0.1", "::1", "localhost")
+        if not is_local:
+            return jsonify(ok=False, local_only=True,
+                           message="Para escanear desde un equipo cliente en la LAN, descargue el complemento local.")
+        script = ROOT / "desktop" / "EVA-Desktop.ps1"
+        if not script.is_file():
+            return jsonify(error="No se encuentra el script de escritorio."), 404
+        try:
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            subprocess.Popen(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Action", action],
+                creationflags=creationflags,
+            )
+            return jsonify(ok=True, action=action, message=f"Accion {action} iniciada.")
+        except Exception as error:
+            LOG.error("Fallo al iniciar accion de escritorio: %s", error)
+            return jsonify(error="No se pudo iniciar la accion en el sistema."), 500
 
     @app.post("/api/process/<operation>")
     def handle(operation: str):
