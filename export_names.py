@@ -25,14 +25,20 @@ def prepare_export(folder: Path, result: dict) -> None:
         temporary.replace(output)
     elif output.suffix.lower() == ".zip":
         temporary = folder / "export.zip"
+        preserve_paths = bool(result.get("preserve_pipeline_structure"))
         with zipfile.ZipFile(output) as source:
             entries = [entry for entry in source.infolist() if not entry.is_dir()]
             name = "EVA00.zip"
             with zipfile.ZipFile(temporary, "w", allowZip64=True) as destination:
                 for index, entry in enumerate(entries, 1):
-                    filename = f"EVA00_{index:02d}{Path(entry.filename).suffix}"
                     info = copy.copy(entry)
-                    info.filename = str(Path(entry.filename).parent / filename).replace("\\", "/")
+                    if preserve_paths:
+                        parts = [part for part in Path(entry.filename).parts if part not in ("", ".", "..", "/", "\\")]
+                        clean_rel = "/".join(parts) or f"EVA00_{index:02d}{Path(entry.filename).suffix}"
+                        info.filename = clean_rel.replace("\\", "/")
+                    else:
+                        filename = f"EVA00_{index:02d}{Path(entry.filename).suffix}"
+                        info.filename = str(Path(entry.filename).parent / filename).replace("\\", "/")
                     with source.open(entry) as reader, destination.open(info, "w", force_zip64=True) as writer:
                         shutil.copyfileobj(reader, writer, 1024 * 1024)
         temporary.replace(output)

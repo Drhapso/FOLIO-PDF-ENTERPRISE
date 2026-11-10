@@ -73,8 +73,7 @@
   </dialog>
   <header class="topbar">
     <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
-    <nav aria-label="Navegacion principal"><a href="#herramientas">Herramientas</a><a href="#privacidad">Privacidad</a></nav>
-    <div class="header-actions"><span class="network"><span></span> Entorno local</span><button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button></div>
+    <div class="header-actions"><span class="network"><span></span> Entorno local</span><a href="#privacidad" class="header-privacy-link">Privacidad</a><button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button></div>
   </header>
   <main>
     <section class="hero">
@@ -90,10 +89,9 @@
       <div class="toolbar"><div class="filters" role="group" aria-label="Filtrar herramientas">
         <button class="filter active" data-category="all" aria-pressed="true">Todas</button>
         <button class="filter multi-edit-tab" id="multi-edit-tab" type="button" aria-pressed="false">Edición múltiple</button>
-        <button class="filter" data-category="organize" aria-pressed="false">Organizar</button>
-        <button class="filter" data-category="optimize" aria-pressed="false">Optimizar</button>
-        <button class="filter" data-category="convert" aria-pressed="false">Convertir</button>
-        <button class="filter" data-category="edit" aria-pressed="false">Editar y proteger</button>
+        <button class="filter" data-category="basic" aria-pressed="false">Edición básica</button>
+        <button class="filter" data-category="advanced" aria-pressed="false">Edición avanzada</button>
+        <button class="filter" data-category="professional" aria-pressed="false">Edición profesional</button>
       </div><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Buscar herramienta…" aria-label="Buscar herramienta"></label></div>
       <div id="tool-grid" class="tool-grid"></div>
       <p id="empty" class="empty" hidden>No hay herramientas que coincidan con tu búsqueda.</p>
@@ -216,5 +214,6 @@
       <button type="button" id="desktop-guide-ok" class="primary">¡Entendido!</button>
     </div>
   </dialog>
+  <aside id="tool-tooltip" class="tool-tooltip" role="tooltip" aria-hidden="true" hidden></aside>
 </body>
 </html>

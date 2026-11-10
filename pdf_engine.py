@@ -17,7 +17,16 @@ from xml.etree import ElementTree
 import pymupdf as pdf
 from PIL import Image, ImageOps
 
-OPERATIONS = {
+from engines.addons import addons_status
+from engines.registry import (
+    BULK_V2_OPERATIONS,
+    V2_SPECS,
+    dispatch_v2,
+    public_v2_catalog,
+    v2_operation_spec,
+)
+
+LEGACY_OPERATIONS = {
     "merge", "split", "organize", "rotate", "compress", "images_to_pdf",
     "pdf_to_images", "extract_text", "ocr", "edit", "watermark",
     "protect", "unlock", "pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx",
@@ -29,6 +38,7 @@ OPERATIONS = {
     "html_to_pdf", "pdf_to_svg",
     "heic_to_jpg", "epub_to_pdf", "pdf_to_epub", "verify_signatures",
 }
+OPERATIONS = LEGACY_OPERATIONS | set(V2_SPECS)
 IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp", ".heic", ".heif"}
 OFFICE_TYPES = {".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"}
 # Combinan muchas entradas en un solo resultado.
@@ -39,7 +49,7 @@ BATCH_OPERATIONS = {
     "pdf_to_xlsx", "pdf_to_pptx", "pdf_to_svg", "extract_images",
     "pdf_to_epub",
 }
-BULK_OPERATIONS = COMBINE_OPERATIONS | BATCH_OPERATIONS
+BULK_OPERATIONS = COMBINE_OPERATIONS | BATCH_OPERATIONS | BULK_V2_OPERATIONS
 
 
 def file_limit(operation: str, config: dict) -> int:
@@ -105,6 +115,9 @@ def capabilities(config: dict, root: Path) -> dict:
         "ocr_language": config["ocr_language"],
         "scanners": scanners,
         "desktop_enabled": bool(scanners.get("available")),
+        "v2_enabled": bool(config.get("enable_v2_modules", True)),
+        "addons": addons_status(config, root),
+        "v2_operations": public_v2_catalog(),
     }
 
 
@@ -251,7 +264,7 @@ def convert_office(source: Path, folder: Path, config: dict) -> Path:
 def validate_options(options: dict):
     if not isinstance(options, dict):
         raise ProcessingError("Opciones no validas.")
-    for key in ("password", "new_password", "pages", "groups", "text", "compression", "preprocess"):
+    for key in ("password", "new_password", "pages", "groups", "text", "compression", "preprocess", "target_format", "ocr_mode"):
         if key in options and (not isinstance(options[key], str) or len(options[key]) > 10000):
             raise ProcessingError(f"Opcion no valida: {key}.")
     for key in ("password", "new_password"):
@@ -265,6 +278,17 @@ def process(operation: str, sources: list[Path], options: dict, folder: Path, co
     validate_options(options)
     if not sources or len(sources) > file_limit(operation, config):
         raise ProcessingError("Cantidad de archivos no valida.")
+    spec = v2_operation_spec(operation)
+    if spec is not None:
+        if not config.get("enable_v2_modules", True):
+            raise ProcessingError("Los modulos V2 estan deshabilitados en site_config.json.", 503)
+        if len(sources) < spec.min_files:
+            raise ProcessingError(f"Esta herramienta requiere al menos {spec.min_files} archivos.")
+        if any(source.suffix.lower() not in spec.allowed_extensions for source in sources):
+            raise ProcessingError("Formato no admitido para esta herramienta.")
+        result = dispatch_v2(operation, sources, options, folder, config, root)
+        check_size(folder / result["file"], config)
+        return result
     if operation in BATCH_OPERATIONS and len(sources) > 1:
         return process_batch(operation, sources, options, folder, config, root)
     from acrobat_tools import ACROBAT_OPERATIONS, process_acrobat
@@ -287,9 +311,22 @@ def process(operation: str, sources: list[Path], options: dict, folder: Path, co
     notice = ""
     if operation == "office_to_pdf":
         converted = convert_office(sources[0], folder, config)
-        with open_pdf(converted, "", config["max_pages"]):
-            pass
-        shutil.move(converted, output)
+        if options.get("refine_scans"):
+            with open_pdf(converted, "", config["max_pages"]) as converted_doc:
+                from engines.scan_office_bridge import refine_pdf_scans_to_vector
+
+                refine_opts = {**options, "refine_embedded_images": True}
+                stats = refine_pdf_scans_to_vector(
+                    converted_doc, list(range(len(converted_doc))), output, config, root, refine_opts
+                )
+            notice = (
+                f"Office a PDF con refinado OCR/vectorial: {stats['pages']} pagina(s), "
+                f"{stats['tables']} tabla(s), {stats['diagrams']} diagrama(s)."
+            )
+        else:
+            with open_pdf(converted, "", config["max_pages"]):
+                pass
+            shutil.move(converted, output)
     elif operation == "images_to_pdf":
         from pillow_heif import register_heif_opener
         register_heif_opener()
@@ -443,7 +480,7 @@ def process(operation: str, sources: list[Path], options: dict, folder: Path, co
             elif operation in ("pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx"):
                 from office_export import export_office
 
-                output, notice = export_office(operation, doc, selected, folder, config)
+                output, notice = export_office(operation, doc, selected, folder, config, options=options, root=root)
     check_size(output, config)
     return {"file": output.name, "notice": notice}
 

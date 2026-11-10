@@ -138,8 +138,12 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
       signal: controller.signal,
     });
     if (!result.ok) {
-      const data = await result.json();
-      throw new Error(data.error || `El servidor rechazó la solicitud (${result.status}).`);
+      const data = await result.json().catch(() => ({}));
+      const message = data.error || `El servidor rechazó la solicitud (${result.status}).`;
+      if (result.status === 404 && message.includes("Herramienta desconocida")) {
+        throw new Error(`${message} El servidor local en ejecución puede tener una versión anterior en memoria; reinicia 'servidor local.bat' y recarga esta página con Ctrl+F5.`);
+      }
+      throw new Error(message);
     }
     // Consumir la respuesta mantiene el aviso durante la descarga, no solo hasta las cabeceras.
     const body = await result.blob();

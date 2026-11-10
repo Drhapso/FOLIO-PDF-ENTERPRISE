@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='acrobat_editor.css', v=build) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='palette.css', v=build) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='processing_queue.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='modules/workspace.css', v=build) }}">
 </head>
 <body class="folio-editor-page">
   <div class="acro-standalone-container" id="acrobat-container">
@@ -50,6 +51,7 @@
       </div>
 
       <div class="acro-topbar-right">
+        <button type="button" id="acro-btn-v2" class="acro-tool-btn" aria-expanded="false" aria-controls="acro-v2-drawer">✨ Suite V2</button>
         <button type="button" id="acro-btn-return" class="acro-tool-btn" hidden>← Otras modificaciones</button>
         <label class="acro-tool-btn" title="Abrir otro documento PDF">
           📂 Abrir PDF
@@ -238,6 +240,70 @@
           </div>
         </div>
       </aside>
+
+      <!-- Drawer Modular V2: Reflujo, Liquid PDF, Fuentes, LaTeX Vectorial, Traductor, WCAG + Audio-Tags y Co-Piloto -->
+      <aside id="acro-v2-drawer" class="acro-v2-drawer" aria-label="Herramientas avanzadas Suite V2" hidden>
+        <div class="acro-rhp-title">SUITE INTELIGENTE V2</div>
+        <p id="v2-editor-status" class="v2-status-bar" role="status">Abre un PDF para usar Reflujo, LaTeX, Traducción, WCAG y Co-Piloto.</p>
+        <div class="v2-field">
+          <label for="v2-editor-pdf">PDF activo en Suite V2 (sincronizado al abrir)</label>
+          <input id="v2-editor-pdf" type="file" accept=".pdf">
+        </div>
+        <div id="v2-download-box" hidden><a id="v2-download-link" class="primary">Descargar resultado V2</a></div>
+
+        <details open>
+          <summary><strong>#7 Co-Piloto Agéntico (Plan + Vista Previa)</strong></summary>
+          <div class="v2-field">
+            <label for="v2-copilot-prompt">Instrucción en lenguaje natural</label>
+            <textarea id="v2-copilot-prompt" rows="2" placeholder="Ej. Censurar todos los correos, agregar marca de agua CONFIDENCIAL y limpiar rastreo"></textarea>
+          </div>
+          <div class="v2-row">
+            <button id="v2-copilot-plan-btn" type="button" class="secondary">1. Generar Plan</button>
+            <button id="v2-copilot-apply-btn" type="button" class="primary" disabled>2. Aprobar y Aplicar</button>
+          </div>
+          <div id="v2-copilot-thumbs" class="v2-thumb-grid"></div>
+          <pre id="v2-copilot-json" class="v2-output-pre" hidden></pre>
+        </details>
+
+        <details>
+          <summary><strong>#1 Reflujo Inteligente &amp; #3 Liquid PDF</strong></summary>
+          <div class="v2-row">
+            <button id="v2-reflow-btn" type="button" class="secondary">Reflujo Story (.pdf)</button>
+            <select id="v2-liquid-preset" aria-label="Preset Liquid PDF">
+              <option value="kindle_6">Kindle 6"</option>
+              <option value="mobile">Móvil</option>
+              <option value="tablet_16_9">Tablet 16:9</option>
+              <option value="a4">A4</option>
+              <option value="letter">Carta</option>
+            </select>
+            <button id="v2-liquid-btn" type="button" class="secondary">Compilar Liquid</button>
+          </div>
+        </details>
+
+        <details>
+          <summary><strong>#10 Ecuaciones a LaTeX Vectorial</strong></summary>
+          <div class="v2-field">
+            <label for="v2-latex-input">Expresión LaTeX</label>
+            <input id="v2-latex-input" type="text" value="\frac{a + b}{c} + \sqrt{x^2 + 1}">
+          </div>
+          <div id="v2-math-preview" class="v2-math-box" aria-label="Vista previa SVG matemática"></div>
+          <button id="v2-latex-btn" type="button" class="secondary">Compilar / Insertar LaTeX SVG (.zip)</button>
+        </details>
+
+        <details>
+          <summary><strong>#4 Fuentes, #12 Traductor In-Situ y #18 WCAG Audio-Tags</strong></summary>
+          <div class="v2-row">
+            <button id="v2-fonts-btn" type="button" class="secondary">Auditar Fuentes (#4)</button>
+            <button id="v2-translate-btn" type="button" class="secondary">Traducir ES→EN (#12)</button>
+          </div>
+          <div class="v2-row">
+            <button id="v2-wcag-btn" type="button" class="secondary">Etiquetar PDF/UA (#18)</button>
+            <button id="v2-speak-btn" type="button" class="secondary">🔊 Audio-Tags Navegador</button>
+            <button id="v2-speak-stop" type="button" class="secondary">⏹ Detener</button>
+          </div>
+          <pre id="v2-tools-out" class="v2-output-pre" hidden></pre>
+        </details>
+      </aside>
     </div>
 
     <!-- Barra Inferior de Estado -->
@@ -254,5 +320,7 @@
 
   <script src="{{ url_for('static', filename='processing_queue.js', v=build) }}"></script>
   <script src="{{ url_for('static', filename='acrobat_editor.js', v=build) }}"></script>
+  <script src="{{ url_for('static', filename='modules/math_svg.js', v=build) }}"></script>
+  <script src="{{ url_for('static', filename='modules/editor_v2.js', v=build) }}"></script>
 </body>
 </html>

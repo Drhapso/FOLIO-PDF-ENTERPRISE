@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="client-build" content="{{ build }}">
+  <meta name="color-scheme" content="light dark">
+  <title>EVA PDF Enterprise | Bóveda Forense y Cripto-Roles</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg', v=build) }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='extended.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='palette.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='processing_queue.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='modules/workspace.css', v=build) }}">
+  <script src="{{ url_for('static', filename='processing_queue.js', v=build) }}" defer></script>
+  <script src="{{ url_for('static', filename='modules/vault.js', v=build) }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+    <nav class="v2-nav-links" aria-label="Espacios V2">
+      <a href="/">Inicio</a>
+      <a href="/editor">Editor Acrobat</a>
+      <a href="/pipeline">Pipeline Batch</a>
+      <a href="/canvas">Canvas</a>
+      <a href="/vault" aria-current="page">Bóveda Forense</a>
+    </nav>
+    <div class="header-actions"><button id="theme" type="button" class="icon-button" aria-label="Cambiar tema">◐</button></div>
+  </header>
+
+  <main class="v2-workspace-main">
+    <section class="v2-card">
+      <div class="v2-row">
+        <div class="v2-row-grow">
+          <span class="v2-badge">#16 CRIPTO-CONTENEDOR MULTI-ROL &amp; #13–#15 FORENSE</span>
+          <h2>Bóveda Forense, Auditoría de Custodia y Cifrado Multi-Rol</h2>
+          <p class="hint">Desinfección a revisión única (%%EOF=1), purga anti-rastreo, auditoría de custodia offline y contenedores duales AES-256-GCM (.evacrypt + ZIP roles).</p>
+        </div>
+        <div id="vault-download" hidden><a id="vault-download-link" class="primary">Descargar resultado</a></div>
+      </div>
+      <p id="vault-status" class="v2-status-bar" role="status" aria-live="polite">Listo. Ningún documento o clave se guarda en servidor o base de datos.</p>
+    </section>
+
+    <div class="v2-grid-2">
+      <section class="v2-card">
+        <span class="v2-badge">EMISOR · COMPILAR POR ROLES</span>
+        <h3>Generar Contenedor Dual (.evacrypt / ZIP Roles)</h3>
+        <div class="v2-field">
+          <label for="pack-pdf">PDF Base Confidencial</label>
+          <input id="pack-pdf" type="file" accept=".pdf">
+        </div>
+        <div class="v2-field">
+          <label for="pack-mode">Modo de Salida</label>
+          <select id="pack-mode">
+            <option value="dual" selected>Dual (.evacrypt + PDFs AES-256 por rol en ZIP)</option>
+            <option value="evacrypt">Solo contenedor WebCrypto (.evacrypt)</option>
+            <option value="role_zip">Solo ZIP con PDFs estándar redactados AES-256</option>
+          </select>
+        </div>
+        <div class="v2-row">
+          <input id="role-name" type="text" placeholder="Rol (ej. Auditor)" class="v2-row-grow">
+          <input id="role-pw" type="password" placeholder="Clave rol (>= 8 chars)" class="v2-row-grow">
+        </div>
+        <div class="v2-row">
+          <input id="role-patterns" type="text" placeholder="Patrones regex censurados para este rol (separados por ;)" class="v2-row-grow">
+          <button id="add-role-btn" type="button" class="secondary">+ Añadir Rol</button>
+        </div>
+        <ul id="role-list" class="v2-list"></ul>
+        <button id="run-pack-btn" type="button" class="primary">Compilar y Cifrar Roles →</button>
+      </section>
+
+      <section class="v2-card">
+        <span class="v2-badge">RECEPTOR · DESCIFRADO WEBCrypto CLIENTE</span>
+        <h3>Abrir Contenedor .evacrypt en tu Navegador</h3>
+        <p class="hint">El descifrado PBKDF2-SHA256 + AES-256-GCM corre localmente dentro de esta pestaña mediante WebCrypto sin subir el secreto.</p>
+        <div class="v2-field">
+          <label for="unlock-file">Archivo .evacrypt</label>
+          <input id="unlock-file" type="file" accept=".evacrypt">
+        </div>
+        <div class="v2-row">
+          <input id="unlock-role" type="text" placeholder="Nombre de rol (opcional)" class="v2-row-grow">
+          <input id="unlock-pw" type="password" placeholder="Clave del rol" class="v2-row-grow">
+        </div>
+        <div class="v2-row">
+          <button id="unlock-client-btn" type="button" class="primary">Descifrar en Navegador (WebCrypto)</button>
+          <button id="unlock-server-btn" type="button" class="secondary">Descifrar vía Motor Local</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="v2-grid-2">
+      <section class="v2-card">
+        <span class="v2-badge">#14 CUSTODIA, FIRMAS Y ESTILOMETRÍA</span>
+        <h3>Auditoría Forense y Comparación con Corpus Local</h3>
+        <div class="v2-field">
+          <label for="audit-files">1. PDF principal + PDF/TXT opcionales de corpus local</label>
+          <input id="audit-files" type="file" accept=".pdf,.txt" multiple>
+        </div>
+        <div class="v2-row">
+          <button id="run-audit-json" type="button" class="secondary">Auditar y Ver Timeline JSON</button>
+          <button id="run-audit-zip" type="button" class="primary">Descargar Informe Forense (.zip)</button>
+        </div>
+        <pre id="audit-preview" class="v2-output-pre" hidden></pre>
+      </section>
+
+      <section class="v2-card">
+        <span class="v2-badge">#13 &amp; #15 HIGIENE FORENSE Y ANTI-RASTREO</span>
+        <h3>Purga Anti-Rastreo y Desinfección a Revisión Única</h3>
+        <div class="v2-field">
+          <label for="clean-pdf">PDF objetivo</label>
+          <input id="clean-pdf" type="file" accept=".pdf">
+        </div>
+        <div class="v2-field">
+          <label for="sanitize-terms">Patrones regex a censurar definitivamente (opcional, separados por ;)</label>
+          <input id="sanitize-terms" type="text" placeholder="Ej. SALARIO.*$;[A-Z0-9._%+-]+@empresa\.com">
+        </div>
+        <div class="v2-row">
+          <button id="run-antitrack-btn" type="button" class="secondary">Purga Anti-Rastreo (#15)</button>
+          <button id="run-sanitize-btn" type="button" class="primary">Desinfección %%EOF=1 (#13) →</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

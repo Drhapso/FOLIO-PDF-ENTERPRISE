@@ -1,14 +1,19 @@
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 root = Path(SPECPATH).parent
 datas = []
 binaries = []
-hiddenimports = ["worker", "server", "performance", "advanced_tools", "extended_tools", "acrobat_tools", "scan_editor", "export_names", "office_export"]
+hiddenimports = [
+    "worker", "server", "performance", "advanced_tools", "extended_tools",
+    "acrobat_tools", "scan_editor", "export_names", "office_export",
+] + collect_submodules("engines")
 for package in (
     "flask", "waitress", "pymupdf", "PIL", "docx", "openpyxl", "pptx",
     "pikepdf", "cv2", "pillow_heif", "pyhanko", "pyhanko_certvalidator",
+    "cryptography", "lxml", "requests",
+    "ctranslate2", "sentencepiece", "subword_nmt", "sacremoses",
 ):
     package_datas, package_binaries, package_imports = collect_all(package)
     datas += package_datas
@@ -16,6 +21,10 @@ for package in (
     hiddenimports += package_imports
 for folder in ("templates", "static"):
     datas += [(str(root / folder / "*"), folder)]
+if (root / "static" / "modules").is_dir():
+    datas += [(str(root / "static" / "modules" / "*"), "static/modules")]
+if (root / "addons").is_dir():
+    datas += [(str(root / "addons"), "addons")]
 for language in ("spa", "eng"):
     datas.append((str(root / "models" / f"{language}.traineddata"), "models"))
 for path in (

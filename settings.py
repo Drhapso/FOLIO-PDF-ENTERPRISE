@@ -6,6 +6,7 @@ import sqlite3
 import sys
 from contextlib import closing
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 DEFAULTS = {
@@ -33,6 +34,15 @@ DEFAULTS = {
     "max_queued_upload_mb": 256,
     "heavy_upload_mb": 10,
     "recommended_upload_mb": 10,
+    # Configuracion V2.0 (retrocompatible con perfiles existentes)
+    "enable_v2_modules": True,
+    "ai_mode": "disabled",
+    "ai_loopback_url": "",
+    "ai_edge_endpoint": "",
+    "allow_external_ai": False,
+    "allow_wasm_viewer": False,
+    "max_ai_jobs": 1,
+    "addons_dir": "addons",
 }
 
 
@@ -58,7 +68,7 @@ def load_settings(root: Path = ROOT) -> dict:
         "max_heavy_jobs": (1, 8), "max_queued_jobs": (1, 24),
         "queue_wait_seconds": (1, 120), "max_active_upload_mb": (16, 4096),
         "max_queued_upload_mb": (16, 4096), "heavy_upload_mb": (1, 1024),
-        "recommended_upload_mb": (1, 1024),
+        "recommended_upload_mb": (1, 1024), "max_ai_jobs": (1, 4),
     }
     for key, (low, high) in limits.items():
         if type(config[key]) is not int or not low <= config[key] <= high:
@@ -69,15 +79,26 @@ def load_settings(root: Path = ROOT) -> dict:
         raise ValueError("El presupuesto activo debe cubrir la carga maxima y el margen multipart de 1 MB.")
     if config["recommended_upload_mb"] > min(config["max_upload_mb"], config["heavy_upload_mb"]):
         raise ValueError("El rango recomendado debe caber en la carga y el umbral pesado.")
-    for key in ("host", "ocr_language", "libreoffice_path"):
+    for key in ("host", "ocr_language", "libreoffice_path", "ai_mode", "ai_loopback_url", "ai_edge_endpoint", "addons_dir"):
         if not isinstance(config[key], str):
             raise ValueError(f"Configuracion no valida: {key}.")
     if not config["host"] or config["ocr_language"] not in ("spa", "eng", "spa+eng"):
         raise ValueError("Host o idioma OCR no valido.")
-    if type(config["secure_transport"]) is not bool:
-        raise ValueError("secure_transport debe ser booleano.")
-    if type(config["editor_live_preview"]) is not bool:
-        raise ValueError("editor_live_preview debe ser booleano.")
+    if config["ai_mode"] not in ("disabled", "local_addon", "loopback_slm", "edge_opt_in"):
+        raise ValueError("Modo AI no valido.")
+    if config["ai_loopback_url"]:
+        parsed = urlsplit(config["ai_loopback_url"])
+        if parsed.scheme not in ("http", "https") or parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
+            raise ValueError("ai_loopback_url debe apuntar unicamente a localhost / 127.0.0.1.")
+    if config["ai_edge_endpoint"]:
+        parsed = urlsplit(config["ai_edge_endpoint"])
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("ai_edge_endpoint debe usar HTTPS con origen valido.")
+    if not config["addons_dir"] or Path(config["addons_dir"]).is_absolute() or ".." in Path(config["addons_dir"]).parts:
+        raise ValueError("addons_dir debe ser una ruta relativa segura.")
+    for key in ("secure_transport", "editor_live_preview", "enable_v2_modules", "allow_external_ai", "allow_wasm_viewer"):
+        if type(config[key]) is not bool:
+            raise ValueError(f"{key} debe ser booleano.")
     data = root / "instance"
     data.mkdir(exist_ok=True)
     from performance import tune

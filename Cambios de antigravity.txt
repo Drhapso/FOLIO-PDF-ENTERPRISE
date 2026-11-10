@@ -794,3 +794,2331 @@ HISTORIAL DE CAMBIOS
   - Consulta a `http://127.0.0.1:8091/api/capabilities`: Detectados 2 controladores reales (`WSD Scan Device`, `HP Smart Tank 580-590 series (NET)`), `desktop_enabled: true`.
   - Navegador: Se cargan las opciones habilitadas y la ventana emergente informativa interactiva.
 --------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+## [CAMBIO-006] 2026-11-09 21:46 - Implementacion integral de Suite V2.0 Enterprise (20 funciones / 24 operaciones, 3 espacios de trabajo dedicados, drawer /editor V2 y arquitectura Core + Addons)
+- **Resumen / Motivo**:
+  Se implemento la Suite V2.0 completa sobre EVA PDF Enterprise manteniendo 100% de retrocompatibilidad con las 141 pruebas previas, la interfaz actual de `/` y `/editor`, el aislamiento por subprocesos (`worker.py` / `ProcessTree`), la limpieza estricta de `runtime/job-*` antes de cada respuesta HTTP y el esquema de `instance/platform.sqlite3` (unicamente tabla `settings`, cero texto o rutas de documentos almacenados).
+  Decisiones arquitectonicas aplicadas:
+  1. **Arquitectura modular Core + Addons (`engines/` + `addons/`) y Co-Piloto / IA por niveles**: Todas las operaciones V2 funcionan 100% offline con motores Python deterministas. `settings.py` incorpora `ai_mode` (`disabled` | `local_addon` | `loopback_slm` | `edge_opt_in`), `ai_loopback_url` (validado estrictamente a `127.0.0.1` / `localhost` / `::1`), `ai_edge_endpoint` (HTTPS requerido), `allow_external_ai` (`False` por defecto), `max_ai_jobs` (`1`..`4`, enforzado en `WorkloadQueue._fits`) y `addons_dir` (`addons` relativo). El Co-Piloto (#7) divide la ejecucion en `copilot_plan` (no mutante, genera miniaturas de vista previa con bounding boxes) y `copilot_apply` (lista blanca de acciones permitidas y bandera obligatoria `approved=True`).
+  2. **Cripto-Boveda Multi-Rol Dual (#16)**: Combina un contenedor cifrado por rol `.evacrypt` en WebCrypto-compatible AEAD (`PBKDF2-HMAC-SHA256` 310,000 iteraciones + `AES-256-GCM`) descifrable 100% en el navegador en `/vault` (sin subir claves en operaciones de solo cliente) mas un paquete ZIP de PDFs estandar AES-256 por rol con redaccion previa irreversible sobre zonas asignadas a otros roles. Contrasena o rol incorrecto retorna HTTP `403`.
+  3. **Nombrado contextual opt-in exclusivamente en Pipeline Batch (#6/#6a)**: `export_names.py` conserva `EVA00.*` / `EVA00_XX.*` en todas las operaciones existentes y de `/editor`, y habilita `preserve_pipeline_structure` unicamente cuando `pipeline_run` solicita `contextual_names=True` en un ZIP sanitario multi-carpeta.
+  4. **CSP opt-in para PDFium-Wasm y libre de scripts inline**: `server.py` actualiza `CLIENT_BUILD = "2026-11-09-v2-enterprise-1"`, registra tipos MIME `.wasm`, `.evacrypt`, `.evaboard` y `.evatpl`, añade rutas `/pipeline`, `/canvas` y `/vault`, y mantiene CSP estricta `'self'` sin scripts ni estilos inline; unicamente agrega `'wasm-unsafe-eval'` y `worker-src 'self' blob:` cuando `allow_wasm_viewer=True`, y `https://<netloc>` cuando `allow_external_ai=True`.
+
+- **Archivos modificados y creados**:
+  - `settings.py` (modificado)
+  - `workload.py` (modificado)
+  - `export_names.py` (modificado)
+  - `pdf_engine.py` (modificado)
+  - `server.py` (modificado)
+  - `deploy/eva-pdf.spec` (modificado)
+  - `templates/index.html` (modificado)
+  - `templates/editor.html` (modificado)
+  - `static/app.js` (modificado)
+  - `addons/README.md` (creado)
+  - `engines/__init__.py` (creado)
+  - `engines/addons.py` (creado)
+  - `engines/registry.py` (creado)
+  - `engines/forensics.py` (creado)
+  - `engines/vectors_and_tables.py` (creado)
+  - `engines/batch_and_templates.py` (creado)
+  - `engines/vision_ocr.py` (creado)
+  - `engines/typography_and_layout.py` (creado)
+  - `engines/security_vault.py` (creado)
+  - `static/modules/workspace.css` (creado)
+  - `static/modules/math_svg.js` (creado)
+  - `static/modules/editor_v2.js` (creado)
+  - `static/modules/pipeline.js` (creado)
+  - `static/modules/canvas_worker.js` (creado)
+  - `static/modules/canvas_workspace.js` (creado)
+  - `static/modules/vault.js` (creado)
+  - `templates/pipeline.html` (creado)
+  - `templates/canvas.html` (creado)
+  - `templates/vault.html` (creado)
+  - `tests/test_v2_enterprise.py` (creado)
+
+- **Detalle de implementacion para GitHub Copilot Chat**:
+
+  Archivo: `settings.py` (Lineas 1-120)
+  <<< SEARCH
+  from contextlib import closing
+  from pathlib import Path
+
+  ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+  DEFAULTS = {
+      "host": "127.0.0.1",
+      "port": 8090,
+      "max_file_mb": 1024,
+      "max_upload_mb": 1024,
+      "max_output_mb": 2048,
+      "max_files": 5,
+      "max_batch_files": 200,
+      "max_pages": 0,
+      "max_batch_pages": 0,
+      "max_render_pixels": 16_000_000,
+      "max_parallel_jobs": 5,
+      "max_job_memory_mb": 4096,
+      "timeout_seconds": 120,
+      "ocr_language": "spa+eng",
+      "libreoffice_path": "",
+      "secure_transport": False,
+      "editor_live_preview": False,
+      "max_heavy_jobs": 2,
+      "max_queued_jobs": 12,
+      "queue_wait_seconds": 45,
+      "max_active_upload_mb": 1026,
+      "max_queued_upload_mb": 256,
+      "heavy_upload_mb": 10,
+      "recommended_upload_mb": 10,
+  }
+  === REPLACE
+  from contextlib import closing
+  from pathlib import Path
+  from urllib.parse import urlsplit
+
+  ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+  DEFAULTS = {
+      "host": "127.0.0.1",
+      "port": 8090,
+      "max_file_mb": 1024,
+      "max_upload_mb": 1024,
+      "max_output_mb": 2048,
+      "max_files": 5,
+      "max_batch_files": 200,
+      "max_pages": 0,
+      "max_batch_pages": 0,
+      "max_render_pixels": 16_000_000,
+      "max_parallel_jobs": 5,
+      "max_job_memory_mb": 4096,
+      "timeout_seconds": 120,
+      "ocr_language": "spa+eng",
+      "libreoffice_path": "",
+      "secure_transport": False,
+      "editor_live_preview": False,
+      "max_heavy_jobs": 2,
+      "max_queued_jobs": 12,
+      "queue_wait_seconds": 45,
+      "max_active_upload_mb": 1026,
+      "max_queued_upload_mb": 256,
+      "heavy_upload_mb": 10,
+      "recommended_upload_mb": 10,
+      # Configuracion V2.0 (retrocompatible con perfiles existentes)
+      "enable_v2_modules": True,
+      "ai_mode": "disabled",
+      "ai_loopback_url": "",
+      "ai_edge_endpoint": "",
+      "allow_external_ai": False,
+      "allow_wasm_viewer": False,
+      "max_ai_jobs": 1,
+      "addons_dir": "addons",
+  }
+  >>> END
+
+  Archivo: `settings.py` (Validacion V2 en `load_settings`, lineas 68-105)
+  <<< SEARCH
+          "max_heavy_jobs": (1, 8), "max_queued_jobs": (1, 24),
+          "queue_wait_seconds": (1, 120), "max_active_upload_mb": (16, 4096),
+          "max_queued_upload_mb": (16, 4096), "heavy_upload_mb": (1, 1024),
+          "recommended_upload_mb": (1, 1024),
+      }
+      for key, (low, high) in limits.items():
+          if type(config[key]) is not int or not low <= config[key] <= high:
+              raise ValueError(f"Configuracion fuera de rango: {key}.")
+      if config["max_file_mb"] > config["max_upload_mb"]:
+          raise ValueError("max_file_mb no puede superar max_upload_mb.")
+      if config["max_active_upload_mb"] < config["max_upload_mb"] + 1:
+          raise ValueError("El presupuesto activo debe cubrir la carga maxima y el margen multipart de 1 MB.")
+      if config["recommended_upload_mb"] > min(config["max_upload_mb"], config["heavy_upload_mb"]):
+          raise ValueError("El rango recomendado debe caber en la carga y el umbral pesado.")
+      for key in ("host", "ocr_language", "libreoffice_path"):
+          if not isinstance(config[key], str):
+              raise ValueError(f"Configuracion no valida: {key}.")
+      if not config["host"] or config["ocr_language"] not in ("spa", "eng", "spa+eng"):
+          raise ValueError("Host o idioma OCR no valido.")
+      if type(config["secure_transport"]) is not bool:
+          raise ValueError("secure_transport debe ser booleano.")
+      if type(config["editor_live_preview"]) is not bool:
+          raise ValueError("editor_live_preview debe ser booleano.")
+  === REPLACE
+          "max_heavy_jobs": (1, 8), "max_queued_jobs": (1, 24),
+          "queue_wait_seconds": (1, 120), "max_active_upload_mb": (16, 4096),
+          "max_queued_upload_mb": (16, 4096), "heavy_upload_mb": (1, 1024),
+          "recommended_upload_mb": (1, 1024), "max_ai_jobs": (1, 4),
+      }
+      for key, (low, high) in limits.items():
+          if type(config[key]) is not int or not low <= config[key] <= high:
+              raise ValueError(f"Configuracion fuera de rango: {key}.")
+      if config["max_file_mb"] > config["max_upload_mb"]:
+          raise ValueError("max_file_mb no puede superar max_upload_mb.")
+      if config["max_active_upload_mb"] < config["max_upload_mb"] + 1:
+          raise ValueError("El presupuesto activo debe cubrir la carga maxima y el margen multipart de 1 MB.")
+      if config["recommended_upload_mb"] > min(config["max_upload_mb"], config["heavy_upload_mb"]):
+          raise ValueError("El rango recomendado debe caber en la carga y el umbral pesado.")
+      for key in ("host", "ocr_language", "libreoffice_path", "ai_mode", "ai_loopback_url", "ai_edge_endpoint", "addons_dir"):
+          if not isinstance(config[key], str):
+              raise ValueError(f"Configuracion no valida: {key}.")
+      if not config["host"] or config["ocr_language"] not in ("spa", "eng", "spa+eng"):
+          raise ValueError("Host o idioma OCR no valido.")
+      if config["ai_mode"] not in ("disabled", "local_addon", "loopback_slm", "edge_opt_in"):
+          raise ValueError("Modo AI no valido.")
+      if config["ai_loopback_url"]:
+          parsed = urlsplit(config["ai_loopback_url"])
+          if parsed.scheme not in ("http", "https") or parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
+              raise ValueError("ai_loopback_url debe apuntar unicamente a localhost / 127.0.0.1.")
+      if config["ai_edge_endpoint"]:
+          parsed = urlsplit(config["ai_edge_endpoint"])
+          if parsed.scheme != "https" or not parsed.netloc:
+              raise ValueError("ai_edge_endpoint debe usar HTTPS con origen valido.")
+      if not config["addons_dir"] or Path(config["addons_dir"]).is_absolute() or ".." in Path(config["addons_dir"]).parts:
+          raise ValueError("addons_dir debe ser una ruta relativa segura.")
+      for key in ("secure_transport", "editor_live_preview", "enable_v2_modules", "allow_external_ai", "allow_wasm_viewer"):
+          if type(config[key]) is not bool:
+              raise ValueError(f"{key} debe ser booleano.")
+  >>> END
+
+  Archivo: `workload.py` (Lineas 7-63)
+  <<< SEARCH
+  HEAVY_OPERATIONS = frozenset({
+      "ocr", "rasterize", "grayscale", "pdf_to_images", "office_to_pdf",
+      "pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx", "html_to_pdf",
+      "heic_to_jpg", "epub_to_pdf", "pdf_to_epub",
+  })
+  MB = 1024 * 1024
+
+
+  class AdmissionError(Exception):
+      def __init__(self, message: str, status: int):
+          super().__init__(message)
+          self.status = status
+
+
+  @dataclass
+  class Ticket:
+      token: str
+      size: int
+      heavy: bool
+      entered: float = field(default_factory=time.monotonic)
+      state: str = "queued"
+
+
+  class WorkloadQueue:
+      """FIFO por clase; los trabajos pesados no ocupan todos los motores."""
+
+      def __init__(self, config: dict, gate: threading.BoundedSemaphore):
+          self.config = config
+          self.gate = gate
+          self.condition = threading.Condition()
+          self.pending: list[Ticket] = []
+          self.active: dict[str, Ticket] = {}
+          self.closed = False
+
+      def _fits(self, ticket: Ticket) -> bool:
+          return (
+              len(self.active) < self.config["max_parallel_jobs"]
+              and (not ticket.heavy or sum(item.heavy for item in self.active.values())
+                   < self.config["max_heavy_jobs"])
+              and sum(item.size for item in self.active.values()) + ticket.size
+              <= self.config["max_active_upload_mb"] * MB
+          )
+
+      def enter(self, token: str, operation: str, size: int) -> Ticket:
+          ticket = Ticket(token, size, operation in HEAVY_OPERATIONS
+                          or size >= self.config["heavy_upload_mb"] * MB)
+  === REPLACE
+  from engines.registry import AI_HEAVY_OPERATIONS, HEAVY_V2_OPERATIONS
+
+  LEGACY_HEAVY_OPERATIONS = frozenset({
+      "ocr", "rasterize", "grayscale", "pdf_to_images", "office_to_pdf",
+      "pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx", "html_to_pdf",
+      "heic_to_jpg", "epub_to_pdf", "pdf_to_epub",
+  })
+  HEAVY_OPERATIONS = LEGACY_HEAVY_OPERATIONS | HEAVY_V2_OPERATIONS
+  MB = 1024 * 1024
+
+
+  class AdmissionError(Exception):
+      def __init__(self, message: str, status: int):
+          super().__init__(message)
+          self.status = status
+
+
+  @dataclass
+  class Ticket:
+      token: str
+      size: int
+      heavy: bool
+      entered: float = field(default_factory=time.monotonic)
+      state: str = "queued"
+      ai_heavy: bool = False
+
+
+  class WorkloadQueue:
+      """FIFO por clase; los trabajos pesados no ocupan todos los motores."""
+
+      def __init__(self, config: dict, gate: threading.BoundedSemaphore):
+          self.config = config
+          self.gate = gate
+          self.condition = threading.Condition()
+          self.pending: list[Ticket] = []
+          self.active: dict[str, Ticket] = {}
+          self.closed = False
+
+      def _fits(self, ticket: Ticket) -> bool:
+          return (
+              len(self.active) < self.config["max_parallel_jobs"]
+              and (not ticket.heavy or sum(item.heavy for item in self.active.values())
+                   < self.config["max_heavy_jobs"])
+              and (not ticket.ai_heavy or sum(item.ai_heavy for item in self.active.values())
+                   < self.config.get("max_ai_jobs", 1))
+              and sum(item.size for item in self.active.values()) + ticket.size
+              <= self.config["max_active_upload_mb"] * MB
+          )
+
+      def enter(self, token: str, operation: str, size: int) -> Ticket:
+          ticket = Ticket(
+              token,
+              size,
+              operation in HEAVY_OPERATIONS or size >= self.config["heavy_upload_mb"] * MB,
+              ai_heavy=operation in AI_HEAVY_OPERATIONS,
+          )
+  >>> END
+
+  Archivo: `export_names.py` (Lineas 26-45)
+  <<< SEARCH
+      elif output.suffix.lower() == ".zip":
+          temporary = folder / "export.zip"
+          with zipfile.ZipFile(output) as source:
+              entries = [entry for entry in source.infolist() if not entry.is_dir()]
+              name = "EVA00.zip"
+              with zipfile.ZipFile(temporary, "w", allowZip64=True) as destination:
+                  for index, entry in enumerate(entries, 1):
+                      filename = f"EVA00_{index:02d}{Path(entry.filename).suffix}"
+                      info = copy.copy(entry)
+                      info.filename = str(Path(entry.filename).parent / filename).replace("\\", "/")
+                      with source.open(entry) as reader, destination.open(info, "w", force_zip64=True) as writer:
+                          shutil.copyfileobj(reader, writer, 1024 * 1024)
+          temporary.replace(output)
+  === REPLACE
+      elif output.suffix.lower() == ".zip":
+          temporary = folder / "export.zip"
+          preserve_paths = bool(result.get("preserve_pipeline_structure"))
+          with zipfile.ZipFile(output) as source:
+              entries = [entry for entry in source.infolist() if not entry.is_dir()]
+              name = "EVA00.zip"
+              with zipfile.ZipFile(temporary, "w", allowZip64=True) as destination:
+                  for index, entry in enumerate(entries, 1):
+                      info = copy.copy(entry)
+                      if preserve_paths:
+                          parts = [part for part in Path(entry.filename).parts if part not in ("", ".", "..", "/", "\\")]
+                          clean_rel = "/".join(parts) or f"EVA00_{index:02d}{Path(entry.filename).suffix}"
+                          info.filename = clean_rel.replace("\\", "/")
+                      else:
+                          filename = f"EVA00_{index:02d}{Path(entry.filename).suffix}"
+                          info.filename = str(Path(entry.filename).parent / filename).replace("\\", "/")
+                      with source.open(entry) as reader, destination.open(info, "w", force_zip64=True) as writer:
+                          shutil.copyfileobj(reader, writer, 1024 * 1024)
+          temporary.replace(output)
+  >>> END
+
+  Archivo: `pdf_engine.py` (Lineas 20-54, 110-122 y 280-292)
+  <<< SEARCH
+  OPERATIONS = {
+      "merge", "split", "organize", "rotate", "compress", "images_to_pdf",
+      "pdf_to_images", "extract_text", "ocr", "edit", "watermark",
+      "protect", "unlock", "pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx",
+      "office_to_pdf", "inspect", "edit_text_pro",
+      "extract_pages", "delete_pages", "number_pages", "extract_images", "crop",
+      "resize", "nup", "overlay", "compare", "remove_metadata", "grayscale",
+      "rasterize", "flatten", "repair", "web_optimize", "blank_report",
+      "remove_blank", "form_fields", "fill_form", "dossier", "stamp",
+      "html_to_pdf", "pdf_to_svg",
+      "heic_to_jpg", "epub_to_pdf", "pdf_to_epub", "verify_signatures",
+  }
+  IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp", ".heic", ".heif"}
+  OFFICE_TYPES = {".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"}
+  # Combinan muchas entradas en un solo resultado.
+  COMBINE_OPERATIONS = {"merge", "images_to_pdf", "dossier"}
+  # Procesan cada PDF por separado y entregan un ZIP cuando hay varios.
+  BATCH_OPERATIONS = {
+      "split", "compress", "pdf_to_images", "extract_text", "pdf_to_docx",
+      "pdf_to_xlsx", "pdf_to_pptx", "pdf_to_svg", "extract_images",
+      "pdf_to_epub",
+  }
+  BULK_OPERATIONS = COMBINE_OPERATIONS | BATCH_OPERATIONS
+  === REPLACE
+  from engines.addons import addons_status
+  from engines.registry import (
+      BULK_V2_OPERATIONS,
+      V2_SPECS,
+      dispatch_v2,
+      public_v2_catalog,
+      v2_operation_spec,
+  )
+
+  LEGACY_OPERATIONS = {
+      "merge", "split", "organize", "rotate", "compress", "images_to_pdf",
+      "pdf_to_images", "extract_text", "ocr", "edit", "watermark",
+      "protect", "unlock", "pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx",
+      "office_to_pdf", "inspect", "edit_text_pro",
+      "extract_pages", "delete_pages", "number_pages", "extract_images", "crop",
+      "resize", "nup", "overlay", "compare", "remove_metadata", "grayscale",
+      "rasterize", "flatten", "repair", "web_optimize", "blank_report",
+      "remove_blank", "form_fields", "fill_form", "dossier", "stamp",
+      "html_to_pdf", "pdf_to_svg",
+      "heic_to_jpg", "epub_to_pdf", "pdf_to_epub", "verify_signatures",
+  }
+  OPERATIONS = LEGACY_OPERATIONS | set(V2_SPECS)
+  IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp", ".heic", ".heif"}
+  OFFICE_TYPES = {".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"}
+  # Combinan muchas entradas en un solo resultado.
+  COMBINE_OPERATIONS = {"merge", "images_to_pdf", "dossier"}
+  # Procesan cada PDF por separado y entregan un ZIP cuando hay varios.
+  BATCH_OPERATIONS = {
+      "split", "compress", "pdf_to_images", "extract_text", "pdf_to_docx",
+      "pdf_to_xlsx", "pdf_to_pptx", "pdf_to_svg", "extract_images",
+      "pdf_to_epub",
+  }
+  BULK_OPERATIONS = COMBINE_OPERATIONS | BATCH_OPERATIONS | BULK_V2_OPERATIONS
+  >>> END
+
+  Archivo: `pdf_engine.py` (`capabilities` y despacho V2 en `process`)
+  <<< SEARCH
+      return {
+          "office": bool(libreoffice_path(config)),
+          "ocr": all((root / "models" / f"{lang}.traineddata").is_file() for lang in languages),
+          "ocr_language": config["ocr_language"],
+          "scanners": scanners,
+          "desktop_enabled": bool(scanners.get("available")),
+      }
+  === REPLACE
+      return {
+          "office": bool(libreoffice_path(config)),
+          "ocr": all((root / "models" / f"{lang}.traineddata").is_file() for lang in languages),
+          "ocr_language": config["ocr_language"],
+          "scanners": scanners,
+          "desktop_enabled": bool(scanners.get("available")),
+          "v2_enabled": bool(config.get("enable_v2_modules", True)),
+          "addons": addons_status(config, root),
+          "v2_operations": public_v2_catalog(),
+      }
+  >>> END
+
+  <<< SEARCH
+      if not sources or len(sources) > file_limit(operation, config):
+          raise ProcessingError("Cantidad de archivos no valida.")
+      if operation in BATCH_OPERATIONS and len(sources) > 1:
+  === REPLACE
+      if not sources or len(sources) > file_limit(operation, config):
+          raise ProcessingError("Cantidad de archivos no valida.")
+      spec = v2_operation_spec(operation)
+      if spec is not None:
+          if not config.get("enable_v2_modules", True):
+              raise ProcessingError("Los modulos V2 estan deshabilitados en site_config.json.", 503)
+          if len(sources) < spec.min_files:
+              raise ProcessingError(f"Esta herramienta requiere al menos {spec.min_files} archivos.")
+          if any(source.suffix.lower() not in spec.allowed_extensions for source in sources):
+              raise ProcessingError("Formato no admitido para esta herramienta.")
+          result = dispatch_v2(operation, sources, options, folder, config, root)
+          check_size(folder / result["file"], config)
+          return result
+      if operation in BATCH_OPERATIONS and len(sources) > 1:
+  >>> END
+
+  Archivo: `server.py` (Imports, `CLIENT_BUILD`, MIME types, CSP opt-in, rutas V2, `/api/capabilities` y sufijos por operacion)
+  <<< SEARCH
+  from isolation import InstanceLock, ProcessTree, worker_command
+  from pdf_engine import BULK_OPERATIONS, OPERATIONS, ProcessingError, capabilities, file_limit
+  from settings import ROOT, load_settings
+  from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
+  from recovery_events import install_recovery, report_failure, request_recovery
+
+  CLIENT_BUILD = "2026-11-06-desktop-scanner-1"
+  LOG = logging.getLogger("pdf_lan")
+  INLINE_RESULT_BYTES = 64 * 1024 * 1024
+  STREAM_CHUNK = 1024 * 1024
+  === REPLACE
+  from engines.registry import allowed_upload_suffixes
+  from isolation import InstanceLock, ProcessTree, worker_command
+  from pdf_engine import BULK_OPERATIONS, OPERATIONS, ProcessingError, capabilities, file_limit
+  from settings import ROOT, load_settings
+  from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
+  from recovery_events import install_recovery, report_failure, request_recovery
+
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-1"
+  LOG = logging.getLogger("pdf_lan")
+  INLINE_RESULT_BYTES = 64 * 1024 * 1024
+  STREAM_CHUNK = 1024 * 1024
+  mimetypes.add_type("application/wasm", ".wasm")
+  mimetypes.add_type("application/octet-stream", ".evacrypt")
+  mimetypes.add_type("application/json", ".evaboard")
+  mimetypes.add_type("application/json", ".evatpl")
+  >>> END
+
+  <<< SEARCH
+          response.headers["Content-Security-Policy"] = (
+              "default-src 'self'; script-src 'self'; style-src 'self'; "
+              "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; "
+              "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+          )
+  === REPLACE
+          script_src = "'self' 'wasm-unsafe-eval'" if config.get("allow_wasm_viewer") else "'self'"
+          worker_src = "worker-src 'self' blob:; " if config.get("allow_wasm_viewer") else ""
+          connect_src = "'self'"
+          if config.get("allow_external_ai") and config.get("ai_edge_endpoint", "").startswith("https://"):
+              edge = urlsplit(config["ai_edge_endpoint"])
+              if edge.scheme == "https" and edge.netloc:
+                  connect_src = f"'self' https://{edge.netloc}"
+          response.headers["Content-Security-Policy"] = (
+              f"default-src 'self'; script-src {script_src}; {worker_src}style-src 'self'; "
+              f"img-src 'self' data: blob:; connect-src {connect_src}; object-src 'none'; "
+              "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+          )
+  >>> END
+
+  <<< SEARCH
+      @app.get("/editor")
+      def editor():
+          return render_template("editor.html", build=CLIENT_BUILD)
+
+      @app.get("/health")
+  === REPLACE
+      @app.get("/editor")
+      def editor():
+          return render_template("editor.html", build=CLIENT_BUILD)
+
+      @app.get("/pipeline")
+      def pipeline_workspace():
+          return render_template("pipeline.html", build=CLIENT_BUILD)
+
+      @app.get("/canvas")
+      def canvas_workspace():
+          return render_template("canvas.html", build=CLIENT_BUILD)
+
+      @app.get("/vault")
+      def vault_workspace():
+          return render_template("vault.html", build=CLIENT_BUILD)
+
+      @app.get("/health")
+  >>> END
+
+  <<< SEARCH
+                         timeout_seconds=config["timeout_seconds"], build=CLIENT_BUILD,
+                         performance=config["performance"],
+                         queue={"max_waiting": config["max_queued_jobs"],
+  === REPLACE
+                         timeout_seconds=config["timeout_seconds"], build=CLIENT_BUILD,
+                         performance=config["performance"],
+                         ai_mode=config.get("ai_mode", "disabled"),
+                         wasm_viewer=bool(config.get("allow_wasm_viewer", False)),
+                         max_ai_jobs=config.get("max_ai_jobs", 1),
+                         queue={"max_waiting": config["max_queued_jobs"],
+  >>> END
+
+  <<< SEARCH
+              folder = Path(tempfile.mkdtemp(prefix="job-", dir=runtime))
+              files = []
+              for index, upload in enumerate(uploads):
+                  suffix = Path(upload.filename or "").suffix.lower()
+                  if suffix not in {".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp",
+                                    ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".html", ".htm",
+                                    ".heic", ".heif", ".epub"}:
+                      raise ProcessingError("Extension no admitida.")
+  === REPLACE
+              folder = Path(tempfile.mkdtemp(prefix="job-", dir=runtime))
+              files = []
+              allowed_suffixes = allowed_upload_suffixes(operation)
+              for index, upload in enumerate(uploads):
+                  suffix = Path(upload.filename or "").suffix.lower()
+                  if suffix not in allowed_suffixes:
+                      raise ProcessingError("Extension no admitida.")
+  >>> END
+
+  Archivo: `deploy/eva-pdf.spec` (Lineas 1-30)
+  <<< SEARCH
+  from PyInstaller.utils.hooks import collect_all
+
+  root = Path(SPECPATH).parent
+  datas = []
+  binaries = []
+  hiddenimports = ["worker", "server", "performance", "advanced_tools", "extended_tools", "acrobat_tools", "scan_editor", "export_names", "office_export"]
+  for package in (
+      "flask", "waitress", "pymupdf", "PIL", "docx", "openpyxl", "pptx",
+      "pikepdf", "cv2", "pillow_heif", "pyhanko", "pyhanko_certvalidator",
+  ):
+      package_datas, package_binaries, package_imports = collect_all(package)
+      datas += package_datas
+      binaries += package_binaries
+      hiddenimports += package_imports
+  for folder in ("templates", "static"):
+      datas += [(str(root / folder / "*"), folder)]
+  === REPLACE
+  from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+  root = Path(SPECPATH).parent
+  datas = []
+  binaries = []
+  hiddenimports = [
+      "worker", "server", "performance", "advanced_tools", "extended_tools",
+      "acrobat_tools", "scan_editor", "export_names", "office_export",
+  ] + collect_submodules("engines")
+  for package in (
+      "flask", "waitress", "pymupdf", "PIL", "docx", "openpyxl", "pptx",
+      "pikepdf", "cv2", "pillow_heif", "pyhanko", "pyhanko_certvalidator",
+      "cryptography", "lxml", "requests",
+  ):
+      package_datas, package_binaries, package_imports = collect_all(package)
+      datas += package_datas
+      binaries += package_binaries
+      hiddenimports += package_imports
+  for folder in ("templates", "static"):
+      datas += [(str(root / folder / "*"), folder)]
+  if (root / "static" / "modules").is_dir():
+      datas += [(str(root / "static" / "modules" / "*"), "static/modules")]
+  if (root / "addons").is_dir():
+      datas += [(str(root / "addons"), "addons")]
+  >>> END
+
+  Archivo: `templates/index.html` (Topbar y categoria Suite V2)
+  <<< SEARCH
+    <nav aria-label="Navegacion principal"><a href="#herramientas">Herramientas</a><a href="#privacidad">Privacidad</a></nav>
+  === REPLACE
+    <nav aria-label="Navegacion principal"><a href="#herramientas">Herramientas</a><a href="/pipeline">Pipeline Batch</a><a href="/canvas">Canvas</a><a href="/vault">Bóveda Forense</a><a href="#privacidad">Privacidad</a></nav>
+  >>> END
+
+  <<< SEARCH
+        <button class="filter" data-category="edit" aria-pressed="false">Editar y proteger</button>
+      </div><label class="search">
+  === REPLACE
+        <button class="filter" data-category="edit" aria-pressed="false">Editar y proteger</button>
+        <button class="filter" data-category="v2" aria-pressed="false">Suite V2</button>
+      </div><label class="search">
+  >>> END
+
+  Archivo: `templates/editor.html` (CSS modular, boton #acro-btn-v2, drawer #acro-v2-drawer y scripts V2)
+  <<< SEARCH
+    <link rel="stylesheet" href="{{ url_for('static', filename='processing_queue.css', v=build) }}">
+  </head>
+  === REPLACE
+    <link rel="stylesheet" href="{{ url_for('static', filename='processing_queue.css', v=build) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modules/workspace.css', v=build) }}">
+  </head>
+  >>> END
+
+  <<< SEARCH
+      <div class="acro-topbar-right">
+        <button type="button" id="acro-btn-return" class="acro-tool-btn" hidden>← Otras modificaciones</button>
+  === REPLACE
+      <div class="acro-topbar-right">
+        <button type="button" id="acro-btn-v2" class="acro-tool-btn" aria-expanded="false" aria-controls="acro-v2-drawer">✨ Suite V2</button>
+        <button type="button" id="acro-btn-return" class="acro-tool-btn" hidden>← Otras modificaciones</button>
+  >>> END
+
+  <<< SEARCH
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Barra Inferior de Estado -->
+  === REPLACE
+          </div>
+        </div>
+      </aside>
+
+      <!-- Drawer Modular V2: Reflujo, Liquid PDF, Fuentes, LaTeX Vectorial, Traductor, WCAG + Audio-Tags y Co-Piloto -->
+      <aside id="acro-v2-drawer" class="acro-v2-drawer" aria-label="Herramientas avanzadas Suite V2" hidden>
+        <div class="acro-rhp-title">SUITE INTELIGENTE V2</div>
+        <p id="v2-editor-status" class="v2-status-bar" role="status">Abre un PDF para usar Reflujo, LaTeX, Traducción, WCAG y Co-Piloto.</p>
+        <div class="v2-field">
+          <label for="v2-editor-pdf">PDF activo en Suite V2 (sincronizado al abrir)</label>
+          <input id="v2-editor-pdf" type="file" accept=".pdf">
+        </div>
+        <div id="v2-download-box" hidden><a id="v2-download-link" class="primary">Descargar resultado V2</a></div>
+
+        <details open>
+          <summary><strong>#7 Co-Piloto Agéntico (Plan + Vista Previa)</strong></summary>
+          <div class="v2-field">
+            <label for="v2-copilot-prompt">Instrucción en lenguaje natural</label>
+            <textarea id="v2-copilot-prompt" rows="2" placeholder="Ej. Censurar todos los correos, agregar marca de agua CONFIDENCIAL y limpiar rastreo"></textarea>
+          </div>
+          <div class="v2-row">
+            <button id="v2-copilot-plan-btn" type="button" class="secondary">1. Generar Plan</button>
+            <button id="v2-copilot-apply-btn" type="button" class="primary" disabled>2. Aprobar y Aplicar</button>
+          </div>
+          <div id="v2-copilot-thumbs" class="v2-thumb-grid"></div>
+          <pre id="v2-copilot-json" class="v2-output-pre" hidden></pre>
+        </details>
+
+        <details>
+          <summary><strong>#1 Reflujo Inteligente &amp; #3 Liquid PDF</strong></summary>
+          <div class="v2-row">
+            <button id="v2-reflow-btn" type="button" class="secondary">Reflujo Story (.pdf)</button>
+            <select id="v2-liquid-preset" aria-label="Preset Liquid PDF">
+              <option value="kindle_6">Kindle 6"</option>
+              <option value="mobile">Móvil</option>
+              <option value="tablet_16_9">Tablet 16:9</option>
+              <option value="a4">A4</option>
+              <option value="letter">Carta</option>
+            </select>
+            <button id="v2-liquid-btn" type="button" class="secondary">Compilar Liquid</button>
+          </div>
+        </details>
+
+        <details>
+          <summary><strong>#10 Ecuaciones a LaTeX Vectorial</strong></summary>
+          <div class="v2-field">
+            <label for="v2-latex-input">Expresión LaTeX</label>
+            <input id="v2-latex-input" type="text" value="\frac{a + b}{c} + \sqrt{x^2 + 1}">
+          </div>
+          <div id="v2-math-preview" class="v2-math-box" aria-label="Vista previa SVG matemática"></div>
+          <button id="v2-latex-btn" type="button" class="secondary">Compilar / Insertar LaTeX SVG (.zip)</button>
+        </details>
+
+        <details>
+          <summary><strong>#4 Fuentes, #12 Traductor In-Situ y #18 WCAG Audio-Tags</strong></summary>
+          <div class="v2-row">
+            <button id="v2-fonts-btn" type="button" class="secondary">Auditar Fuentes (#4)</button>
+            <button id="v2-translate-btn" type="button" class="secondary">Traducir ES→EN (#12)</button>
+          </div>
+          <div class="v2-row">
+            <button id="v2-wcag-btn" type="button" class="secondary">Etiquetar PDF/UA (#18)</button>
+            <button id="v2-speak-btn" type="button" class="secondary">🔊 Audio-Tags Navegador</button>
+            <button id="v2-speak-stop" type="button" class="secondary">⏹ Detener</button>
+          </div>
+          <pre id="v2-tools-out" class="v2-output-pre" hidden></pre>
+        </details>
+      </aside>
+    </div>
+
+    <!-- Barra Inferior de Estado -->
+  >>> END
+
+  <<< SEARCH
+  <script src="{{ url_for('static', filename='processing_queue.js', v=build) }}"></script>
+  <script src="{{ url_for('static', filename='acrobat_editor.js', v=build) }}"></script>
+</body>
+  === REPLACE
+  <script src="{{ url_for('static', filename='processing_queue.js', v=build) }}"></script>
+  <script src="{{ url_for('static', filename='acrobat_editor.js', v=build) }}"></script>
+  <script src="{{ url_for('static', filename='modules/math_svg.js', v=build) }}"></script>
+  <script src="{{ url_for('static', filename='modules/editor_v2.js', v=build) }}"></script>
+</body>
+  >>> END
+
+  Archivo: `static/app.js` (Tarjetas Suite V2, BULK_TOOLS, navegacion workspaceUrl y campos dinamicos V2)
+  <<< SEARCH
+  {id:"verify_signatures",name:"Comprobar firmas · offline",icon:"✓",category:"edit",desc:"Informe de integridad criptográfica y cobertura de firmas PDF.",warning:"No certifica identidad, confianza, revocación ni validez legal. Sin consultas OCSP/CRL/TSA. Revisa cobertura y cambios: una firma correcta puede cubrir una versión anterior. No admite PDF cifrados ni crea firmas."},
+];
+// Herramientas por lote: tantos PDF como quepan en la cuota de peso; cada uno se procesa por separado.
+const BATCH_TOOLS=new Set(["split","compress","pdf_to_images","extract_text","pdf_to_docx","pdf_to_xlsx","pdf_to_pptx","pdf_to_svg","extract_images","pdf_to_epub"]);
+const BULK_TOOLS=new Set([...BATCH_TOOLS,"merge","images_to_pdf","dossier"]);
+  === REPLACE
+  {id:"verify_signatures",name:"Comprobar firmas · offline",icon:"✓",category:"edit",desc:"Informe de integridad criptográfica y cobertura de firmas PDF.",warning:"No certifica identidad, confianza, revocación ni validez legal. Sin consultas OCSP/CRL/TSA. Revisa cobertura y cambios: una firma correcta puede cubrir una versión anterior. No admite PDF cifrados ni crea firmas."},
+  {id:"anti_track",name:"Purga Anti-Rastreo",icon:"🛡",category:"v2",desc:"Elimina JavaScript, píxeles baliza ocultos y parámetros utm/tracking de enlaces PDF."},
+  {id:"forensic_sanitize",name:"Desinfección Forense Profunda",icon:"🧹",category:"v2",desc:"Reconstruye el árbol COS a revisión única (%%EOF=1) eliminando rastros e historial oculto.",warning:"Elimina historial incremental, texto invisible, adjuntos, PieceInfo y capas ocultas."},
+  {id:"extract_vectors_svg",name:"Cosechador Vectorial SVG/EPS",icon:"📐",category:"v2",desc:"Extrae gráficos y diagramas vectoriales en SVG editables separados en capas (#vectors/#labels)."},
+  {id:"table_bridge_extract",name:"Puente Tabular Tipado (.xlsx)",icon:"📊",category:"v2",desc:"Extrae tablas con y sin bordes con tipado automático (divisas, fechas, %) y coordenadas de retorno."},
+  {id:"scan_enhance_3d",name:"De-warping 3D y MRC",icon:"📷",category:"v2",desc:"Corrige perspectiva de cámara, curvatura de lomo, sombras y comprime en capas MRC lossless.",multiple:true,accept:".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif"},
+  {id:"edit_reflow",name:"Motor Reflujo Inteligente",icon:"¶",category:"v2",desc:"Reordena columnas mediante XY-Cut y repagina el texto conservando ilustraciones sin solapamientos."},
+  {id:"liquid_compile",name:"Compilador Liquid PDF",icon:"📱",category:"v2",desc:"Adapta el flujo del PDF a lectores Kindle 6\", móviles o tabletas como HTML5/PDF líquido."},
+  {id:"accessibility_tagger",name:"Normalizador WCAG / Audio-Tags",icon:"♿",category:"v2",desc:"Genera /StructTreeRoot PDF/UA completo, textos alternativos y guion offline Web Speech."},
+  {id:"translate_layout",name:"Traductor Vectorial In-Situ",icon:"🌐",category:"v2",desc:"Traduce bloques preservando las cajas de coordenadas y geometría original del documento."},
+  {id:"research_link",name:"Enlazador Académico BibTeX/DOI",icon:"🎓",category:"v2",desc:"Vincula citas internas/cruzadas entre PDFs y genera paquetes .bib, .ris y CSL APA7.",multiple:true,accept:".pdf,.bib"},
+  {id:"forensic_audit",name:"Auditor Custodia y Corpus Local",icon:"⚖",category:"v2",desc:"Analiza historial %%EOF, firmas offline pyHanko, citas huérfanas y similitud de corpus local.",multiple:true,accept:".pdf,.txt"},
+  {id:"v2_pipeline_studio",name:"Pipeline Batch Sin Código →",icon:"⚙",category:"v2",desc:"Divide PDFs por regex, enruta carpetas, nombra contextualmente y compila plantillas CSV.",workspaceUrl:"/pipeline"},
+  {id:"v2_canvas_studio",name:"Canvas Infinito Multidocumento →",icon:"🗺",category:"v2",desc:"Tablero de investigación con extractos sincronizados, enlaces visuales y comparador V1/V2.",workspaceUrl:"/canvas"},
+  {id:"v2_vault_studio",name:"Bóveda Cripto Multi-Rol (.evacrypt) →",icon:"🔐",category:"v2",desc:"Compila contenedores duales AES-256-GCM por rol con descifrado 100% cliente en navegador.",workspaceUrl:"/vault"},
+];
+// Herramientas por lote: tantos PDF como quepan en la cuota de peso; cada uno se procesa por separado.
+const BATCH_TOOLS=new Set(["split","compress","pdf_to_images","extract_text","pdf_to_docx","pdf_to_xlsx","pdf_to_pptx","pdf_to_svg","extract_images","pdf_to_epub"]);
+const BULK_TOOLS=new Set([...BATCH_TOOLS,"merge","images_to_pdf","dossier","semantic_replace","pipeline_run","research_link","forensic_audit"]);
+  >>> END
+
+  <<< SEARCH
+    card.addEventListener("click", () => openTool(tool));
+  === REPLACE
+    card.addEventListener("click", () => {
+      if (tool.workspaceUrl) {
+        window.location.href = tool.workspaceUrl;
+        return;
+      }
+      openTool(tool);
+    });
+  >>> END
+
+  <<< SEARCH
+  if(tool.id==="pdf_to_images") field("image_format","Formato",{choices:[["png","PNG"],["jpg","JPEG"],["tiff","TIFF por página"]],value:"png"});
+  === REPLACE
+  if(tool.id==="pdf_to_images") field("image_format","Formato",{choices:[["png","PNG"],["jpg","JPEG"],["tiff","TIFF por página"]],value:"png"});
+  if(tool.id==="liquid_compile") field("preset","Tamaño de pantalla objetivo",{choices:[["kindle_6","Kindle 6\""],["mobile","Móvil (320px)"],["tablet_16_9","Tablet 16:9"],["a4","A4"],["letter","Carta"]],value:"kindle_6"});
+  if(tool.id==="translate_layout") {
+    field("source_lang","Idioma origen",{choices:[["es","Español"],["en","Inglés"]],value:"es"});
+    field("target_lang","Idioma destino",{choices:[["en","Inglés"],["es","Español"]],value:"en"});
+  }
+  if(tool.id==="accessibility_tagger") field("lang","Idioma del árbol PDF/UA",{value:"es-ES"});
+  if(tool.id==="anti_track") field("strip_external_uris","Eliminar también enlaces externos http/https",{type:"checkbox"});
+  >>> END
+
+  Archivo: `engines/__init__.py` (Archivo nuevo, lineas 1-5)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  """Paquete modular de capacidades V2.0 para EVA PDF Enterprise."""
+
+  from __future__ import annotations
+
+  __all__ = ["addons", "registry"]
+  >>> END
+
+  Archivo: `addons/README.md` (Archivo nuevo, lineas 1-22)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  Documenta los packs locales opcionales (`pack-ocr-onnx`, `pack-nmt`, `pack-tts`, `pack-jbig2` en modo estrictamente lossless, `static/vendor/pdfium` y `static/vendor/katex`) con soporte de `manifest.json` para descubrimiento en `addons_status()`.
+  >>> END
+
+  Archivo: `engines/addons.py` (Archivo nuevo, 149 lineas — Contrato completo)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  Funciones exportadas:
+  - `discover_addon_packs(config: dict, root: Path) -> dict[str, dict]`: inspecciona `root / config.get("addons_dir", "addons")` leyendo cada `manifest.json` sin ejecucion remota.
+  - `addons_status(config: dict, root: Path) -> dict`: reporta flags (`packs`, `onnx`, `ctranslate2`, `fonttools`, `piper_tts`, `jbig2_lossless`, `loopback_slm`, `edge_ai_opt_in`, `wasm_pdfium`, `wasm_enabled`, `katex_vendor`).
+  - `active_ai_target(config: dict) -> tuple[str, str]`: devuelve `("loopback", url)` solo para `127.0.0.1`/`localhost`/`::1`, `("edge", url)` solo si `ai_mode=="edge_opt_in"` & `allow_external_ai is True` & HTTPS, o `("none", "")`.
+  - `call_ai_backend(prompt: str, system_prompt: str, config: dict, *, timeout: int = 25) -> dict | None`: cliente dual `/v1/chat/completions` (OpenAI-compatible) y `/api/chat` (Ollama) totalmente inactivo cuando `ai_mode=="disabled"`.
+  >>> END
+
+  Archivo: `engines/registry.py` (Archivo nuevo, 282 lineas — Registro declarativo de 24 operaciones V2)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  Define `@dataclass(frozen=True) class OperationSpec` y el mapa `V2_SPECS` con las 24 operaciones V2 mapeadas a sus modulos bajo `engines.*`:
+  - Fase 1: `anti_track`, `forensic_sanitize`, `extract_vectors_svg`, `table_bridge_extract`, `table_bridge_apply`, `semantic_replace`.
+  - Fase 2: `pipeline_run` (`preserve_zip_paths=True`), `template_detect`, `template_compile`, `compare_semantic`, `research_link`, `scan_enhance_3d`.
+  - Fase 3: `edit_reflow`, `liquid_compile`, `font_reconstruct`, `latex_ocr` (`ai_heavy=True`), `accessibility_tagger`, `translate_layout` (`ai_heavy=True`).
+  - Fase 4: `copilot_plan` (`ai_heavy=True`), `copilot_apply`, `forensic_audit`, `crypto_container_pack`, `crypto_container_unlock`, `canvas_extract_sync`.
+  Exporta `HEAVY_V2_OPERATIONS`, `AI_HEAVY_OPERATIONS`, `BULK_V2_OPERATIONS`, `PRESERVE_PIPELINE_ZIP_OPERATIONS`, `v2_operation_spec()`, `allowed_upload_suffixes()`, `dispatch_v2()` y `public_v2_catalog()`.
+  >>> END
+
+  Archivo: `engines/forensics.py` (Archivo nuevo, 524 lineas — Funciones #13, #14 y #15)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  - `handle_anti_track(...)` (#15): limpia `/Names /JavaScript`, `/OpenAction` y `/AA` (catalogo y paginas) con `pikepdf`, purga anotaciones de rastreo externo y/o parametros (`utm_*`, `fbclid`, `gclid`, `mc_cid`, `mc_eid`, `ref`, `tracking`), y elimina XObjects/imagenes baliza (`width<=2 or height<=2`). Entrega `resultado.pdf`.
+  - `handle_forensic_sanitize(...)` (#13): aplica redacciones en coordenadas reales si se solicitan, purga anotaciones no visibles, adjuntos embebidos (`/Names /EmbeddedFiles`), metadata XMP/Info, `/PieceInfo`, OCG ocultos y texto invisible (render mode `3` o alpha muy bajo). Reescribe y recompila arbol COS limpio garantizando `bytes.count(b"%%EOF") == 1`. Entrega ZIP (`documento_sanitizado.pdf`, `reporte_forense.json`).
+  - `handle_forensic_audit(...)` (#14): divide cortes por offsets `%%EOF` para detectar texto agregado en revisiones incrementales; verifica firmas con `pyhanko.sign.validation.validate_pdf_signature`; cruza citas inline `[n]` vs referencias declaradas (sin requerir declaracion previa para detectar citas huerfanas); compara n-gramas (5-grams Jaccard) contra un corpus local `.txt` opcional incluyendo aviso metodologico de estilometria no probatoria. Entrega `auditoria_forense.json`.
+  >>> END
+
+  Archivo: `engines/vectors_and_tables.py` (Archivo nuevo, 851 lineas — Funciones #5, #8 y #19)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  - `handle_extract_vectors_svg(...)` (#19): exporta SVGs por pagina y reorganiza recursivamente el arbol XML (`lxml.etree` / `ElementTree`), extrayendo todo `<text>` incluso dentro de `<g>` anidados con `clip-path` a una capa `<g id="labels">` preservando transforms heredados, y dejando geometria en `<g id="vectors">`. Opcionalmente genera `.eps` de vectores limpios. Entrega ZIP + `manifiesto_vectores.json`.
+  - `handle_table_bridge_extract(...)` y `handle_table_bridge_apply(...)` (#5): detecta tablas con bordes y tablas sin bordes por alineacion columnar de palabras; infiere tipos reales (`currency`, `percent`, `date`, `int`, `float`, `text`) y neutraliza formulas (`=`, `+`, `-`, `@` al inicio); genera `tablas_extraidas.xlsx` con hoja oculta `_EVA_COORDS` guardando `page,bbox,type,old_value`. `handle_table_bridge_apply` lee las celdas actualizadas desde el `.xlsx` + `.pdf`, aplica `add_redact_annot` y reescribe el valor con ajuste automatico en `resultado.pdf`.
+  - `handle_semantic_replace(...)` (#8): soporta reglas `literal`, `regex`, `date` y `currency` (conversion numerica exacta por factor de divisa / simbolo), mas `dry_run=True` retornando JSON de previsualizacion o ZIP/PDF modificado en modo batch.
+  >>> END
+
+  Archivo: `engines/batch_and_templates.py` (Archivo nuevo, 806 lineas — Funciones #2, #6/#6a, #9, #11 y #20)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  - `handle_pipeline_run(...)` (#6/#6a): soporta split por delimitador regex (`split_regex`), enrutado condicional por texto (`routes`), operaciones encadenadas de saneamiento/watermark/compresion/OCR, generacion de portada/indice y nombrado contextual (`contextual_names=True`) detectando folios multi-segmento (`(?:FAC|INV|CON|CTR|ORD|EXP|DOC)[-_ ]?\d{2,10}(?:[-_][A-Za-z0-9]+)*`), fechas y montos. Marca `preserve_pipeline_structure=True` exclusivamente cuando se activa `contextual_names` o subcarpetas de ruta.
+  - `handle_template_detect(...)` y `handle_template_compile(...)` (#2): detecta campos tipo `{{clave}}`, `[CAMPO]` o bloques AcroForm, exportando archivo `.evatpl` JSON editable; `template_compile` recibe `.pdf` + `.csv` (o `.json`) y compila lote personalizado en ZIP respetando tamaño y alineacion.
+  - `handle_compare_semantic(...)` (#11): compara V1 vs V2 por similitud de bloques entre todas las paginas, clasificando `SAME`, `MODIFIED`, `REMOVED`, `ADDED` y `MOVED` (cambio de pagina con similitud alta), y migra anotaciones de V1 a las nuevas coordenadas/paginas de V2 entregando `comparacion_v2.pdf` + `comparacion_semantica.json`.
+  - `handle_research_link(...)` (#9): vincula citas numericas y DOI internos (`LINK_GOTO`) / cruzados entre documentos (`LINK_GOTOR`) y exporta `referencias.bib`, `referencias.ris` y `referencias_apa7.json` (CSL/APA7).
+  - `handle_canvas_sync(...)` (#20): extrae coordenadas exactas, recorte PNG base64 de cada tarjeta/extracto y metadata de documento origen para `/canvas` y tableros `.evaboard`.
+  >>> END
+
+  Archivo: `engines/vision_ocr.py` (Archivo nuevo, 224 lineas — Funcion #17)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  - `handle_scan_enhance_3d(...)` (#17): acepta imagenes o PDFs; detecta cuadrilatero de hoja para enderezamiento de perspectiva homografica (o `corners` manuales), estima curvatura cuadratica de renglones/lomo para de-warping vertical, normaliza iluminacion de sombras mediante division morfologica con OpenCV, separa fondo suavizado (JPEG) de mascara binaria 1-bit comprimida lossless en `TIFF Group 4` (`PIL` `compression='group4'`, evitando JBIG2 con perdida) en capas MRC dentro del PDF resultante, con ejecucion opcional de OCR cuando esta solicitado y modelos disponibles.
+  >>> END
+
+  Archivo: `engines/typography_and_layout.py` (Archivo nuevo, 912 lineas — Funciones #1, #3, #4, #10, #12 y #18)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  - `handle_edit_reflow(...)` (#1): implementa segmentacion XY-Cut recursiva para reordenar lectura multi-columna e inserta flujo HTML/CSS paginado con `pymupdf.Story` (`story.write(writer, rectfn)` con callback de 2 argumentos `rectfn(rect_num, filled)`), respetando areas de ilustraciones para evitar solapamientos. Soporta `dry_run=True`.
+  - `handle_liquid_compile(...)` (#3): adapta el flujo semantico (encabezados, parrafos, listas, tablas) a formatos `a4`, `letter`, `kindle_6`, `tablet_16_9` o `mobile`, entregando ZIP con HTML5 autocontenido responsivo + `liquid_adaptado.pdf`.
+  - `handle_font_reconstruct(...)` (#4): analiza fuentes embebidas o ausentes y parsea directamente tablas SFNT `cmap` (formatos 4 y 12 big-endian en bytes TTF/OTF del sistema) para localizar fuentes con soporte real de diacriticos UTF-8 sin dependencias faltantes; re-embebe o reporta auditoria completa de cobertura glifica.
+  - `handle_latex_ocr(...)` (#10): extrae o acepta expresiones LaTeX, compila trazado vectorial SVG autocontenido y pagina PDF vectorial insertada (`show_pdf_page` + fallback vectorial limpio), soportando pack opcional `pack-ocr-onnx` cuando esta instalado.
+  - `handle_accessibility_tagger(...)` (#18): inyecta `/StructTreeRoot`, `/MarkInfo << /Marked true >>`, `/Lang`, `/ViewerPreferences << /DisplayDocTitle true >>`, `/Tabs /S` y roles estructurales (`/H1`, `/P`, `/Figure` con `/Alt`) en el catalogo PDF, generando `narracion.json` para Web Speech API y audio WAV con `piper` si `pack-tts` esta presente.
+  - `handle_translate_layout(...)` (#12): extrae bloques y traducciones via glosario determinista offline (`ctranslate2` o `call_ai_backend` cuando estan configurados) y re-inyecta cada bloque dentro de su `bbox` original con ajuste automatico de escala (`shrink-to-fit`) y reporte de advertencias de desbordamiento.
+  >>> END
+
+  Archivo: `engines/security_vault.py` (Archivo nuevo, 430 lineas — Funciones #7 y #16)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  - `handle_crypto_pack(...)` y `handle_crypto_unlock(...)` (#16): compila modo dual:
+    (a) Contenedor `.evacrypt` JSON v2 por rol con sal aleatoria (16B), nonce (12B), `PBKDF2HMAC(SHA256, iterations=310000)` y `AESGCM` cifrando payload PDF/manifiesto especifico del rol (compatible directamente con `window.crypto.subtle` en `/vault`).
+    (b) ZIP de PDFs estandar AES-256 (`pikepdf.Encryption(..., aes=True, R=6)`) tras redaccion previa irreversible (`apply_redactions()`) de bloques restringidos a otros roles.
+    `handle_crypto_unlock` valida HMAC/GCM autenticado y lanza `ProcessingError("Contrasena o rol incorrecto.", 403)` si falla la verificacion.
+  - `handle_copilot_plan(...)` y `handle_copilot_apply(...)` (#7): `copilot_plan` parsea ordenes deterministas (redaccion de PII/correos/regex, marca de agua, rotacion, anti-tracking, sanitizacion, numeracion) o consulta IA local loopback si esta habilitada, generando plan JSON + miniaturas PNG con cajas resaltadas sin modificar el PDF. `copilot_apply` exige `options.get("approved") is True` y valida cada paso contra una lista blanca estricta de operaciones permitidas.
+  >>> END
+
+  Archivos de interfaz modular y pruebas (Creados):
+  - `static/modules/canvas_worker.js` (Worker JS libre de red para `/canvas`).
+  - `static/modules/math_svg.js` (Renderizador LaTeX->SVG offline para drawer de `/editor` sin KaTeX obligatorio).
+  - `static/modules/editor_v2.js` (Controlador del drawer `#acro-v2-drawer` en `/editor`, conectado a `copilot_plan`, `copilot_apply`, `edit_reflow`, `liquid_compile`, `latex_ocr`, `font_reconstruct`, `translate_layout`, `accessibility_tagger` + `window.speechSynthesis`).
+  - `static/modules/pipeline.js` + `templates/pipeline.html` (Espacio `/pipeline`: configurador Batch regex/enrutamiento/nombrado contextual + compilador `.evatpl` / CSV + descarga `EVA00.zip`).
+  - `static/modules/canvas_workspace.js` + `templates/canvas.html` (Espacio `/canvas`: mesa de luz multidocumento con zoom/pan en Canvas 2D, tarjetas sincronizadas, enlaces visuales SVG, estado `.evaboard` y comparador semantico).
+  - `static/modules/vault.js` + `templates/vault.html` (Espacio `/vault`: empaquetado servidor multi-rol y descifrado `.evacrypt` 100% cliente con WebCrypto PBKDF2 310k + AES-256-GCM + Auditoria Forense y Corpus Local #14).
+  - `static/modules/workspace.css` (Estilos CSP-compliant para `/pipeline`, `/canvas`, `/vault` y drawer `/editor`).
+  - `tests/test_v2_enterprise.py` (16 pruebas unitarias y de integracion cubriendo las 20 capacidades / 24 operaciones V2, rutas HTTP `/pipeline`, `/canvas`, `/vault`, CSP Wasm opt-in, limite de concurrencia `max_ai_jobs` e invariante de tabla unica `settings` en SQLite).
+
+- **Verificacion**:
+  - Comando 1 (Suite V2 dedicada): `.\.venv\Scripts\python.exe -m unittest tests.test_v2_enterprise -v` -> `Ran 16 tests in 31.880s`, `OK`.
+  - Comando 2 (Suite completa tras la ultima edicion): `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` -> `Ran 157 tests in 191.484s`, `OK` (141 pruebas previas + 16 pruebas V2 aprobadas sin regresiones).
+--------------------------------------------------------------------------------
+## [CAMBIO-007] 2026-11-09 22:32 - Conversion Refinada Estilo Acrobat Pro (scan_to_office, scan_editable_mode en PDF->Office y refine_scans en Office->PDF) + Limite Memoria BLAS/OpenCV
+- **Resumen / Motivo**:
+  Se implementa una canalizacion determinista 100% offline estilo Adobe Acrobat DC Pro para reconstruir documentos escaneados o con imagenes rasterizadas en elementos altamente editables (PowerPoint, Word, Excel o PDF vectorial + OCR), refinando ademas la opcion **Office a PDF** (`refine_scans=True`) cuando los archivos Office contienen capturas o tablas/diagramas escaneados incrustados:
+  1. **Nueva herramienta V2 `scan_to_office` (`engines/scan_office_bridge.py` + `engines/registry.py`)**: Acepta PDFs escaneados, mixtos, rotados (90°/180°/270°) o lotes de imagenes directas (`PNG/JPG/TIFF/WEBP/BMP`), normaliza orientacion e inclinacion/iluminacion (`auto`/`deskew`/`clean`/`none`), suprime trazos largos de rejilla antes del OCR para evitar ruido `|`/`_`, extrae texto OCR con estimacion local de color RGB, tamano y negrita (`DistanceTransform`), detecta tablas con bordes (incluyendo celdas combinadas `_has_right_wall`/`_has_bottom_wall`, color de borde y relleno RGB por celda) y tablas sin bordes por alineacion columnar (`_detect_borderless_ocr_tables`), vectoriza contenedores de diagramas (`rect`, `round_rect`, `oval`, `diamond`, `polygon`) con OCR interno limpio en cada caja (`_extract_shape_embedded_ocr`), detecta conectores/flechas rectas (`HoughLinesP` + sondeo simetrico de punta triangular `_probe_arrowhead` normalizado `p1 -> p2` hacia `a:tailEnd`), conserva fotografias/logos complejos intactos (`_detect_photo_artwork_mask` con erosion `BORDER_CONSTANT=0`) e inpaintinga/borra del fondo residual los textos, tablas, formas y conos de flecha ya reconstruidos (`_build_clean_backdrop`).
+  2. **Integracion en `office_export.py` con retrocompatibilidad estricta**:
+     - `export_office`, `word_document`, `excel_document` y `powerpoint_document` aceptan ahora `*, options: dict | None = None, root: Path | None = None` y retornan `(fallback, stats)` manteniendo `scan_editable_mode=False` por defecto cuando se invocan por API directa sin la bandera (preservando el comportamiento de fallback explicito esperado por las pruebas previas).
+     - En la interfaz web (`static/app.js`), `pdf_to_pptx`, `pdf_to_docx` y `pdf_to_xlsx` activan `scan_editable_mode=True` de forma visible y configurable (`vectorize_diagrams`, `ocr_dpi`, `preprocess`).
+     - PPTX emite AutoShapes/Freeform con texto centrado (`MSO_ANCHOR.MIDDLE`), conectores con `a:headEnd`/`a:tailEnd` (`type="triangle"`, `w="med"`, `len="med"`), parrafos agrupados y bordes de tabla ECMA-376 (`a:lnL/R/T/B` al inicio de `a:tcPr`) mas rellenos solidos. DOCX recibe bordes coloreados opcionales (`show_borders=True`), sombreado `w:shd` y fondo compuesto vectorial `_render_diagrams_backdrop_for_word`.
+  3. **Refinado de imagenes escaneadas en `office_to_pdf` (`pdf_engine.py`)**:
+     - Si `options.get("refine_scans")` esta activo tras convertir Office via LibreOffice, ejecuta `refine_pdf_scans_to_vector(..., {"refine_embedded_images": True})` para reconstruir paginas escaneadas completas o regiones de imagen incrustadas que no contengan texto nativo en tablas vectoriales, formas y capa OCR buscable/editable.
+  4. **Control de memoria en subprocesos Windows (`server.py` y `performance.py`) y `CLIENT_BUILD`**:
+     - Actualiza `CLIENT_BUILD = "2026-11-09-v2-enterprise-2"` en `server.py`.
+     - Fija `OPENBLAS_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1` y `OPENCV_FOR_THREADS_NUM=1` junto a `OMP_THREAD_LIMIT=1` al lanzar subprocesos aislados `worker.py` dentro de `ProcessTree`, reduciendo la reserva de memoria virtual pico OpenBLAS+OpenCV de ~446 MB a ~220 MB para evitar fallos transitorios por `JobMemoryLimit`.
+     - Privacidad intacta: procesamiento 100% offline, limpieza inmediata de `runtime/job-*` antes de entregar la respuesta y SQLite con unicamente la tabla `settings`.
+
+- **Archivos modificados y creados**:
+  - `engines/scan_office_bridge.py` (creado, 1998 lineas)
+  - `tests/test_scan_office_bridge.py` (creado, 397 lineas)
+  - `engines/registry.py` (modificado)
+  - `pdf_engine.py` (modificado)
+  - `office_export.py` (modificado)
+  - `server.py` (modificado)
+  - `performance.py` (modificado)
+  - `static/app.js` (modificado)
+
+- **Detalle de implementacion para GitHub Copilot Chat**:
+
+  Archivo: `engines/registry.py` (Lineas 29-33 y 127-143)
+  <<< SEARCH
+  _PDF = frozenset({".pdf"})
+
+  V2_SPECS: dict[str, OperationSpec] = {
+  === REPLACE
+  _PDF = frozenset({".pdf"})
+  _PDF_OR_IMG = _PDF | LEGACY_IMAGE_TYPES
+
+  V2_SPECS: dict[str, OperationSpec] = {
+  >>> END
+
+  <<< SEARCH
+      "scan_enhance_3d": OperationSpec(
+          name="scan_enhance_3d",
+          handler_ref="engines.vision_ocr:handle_scan_enhance_3d",
+          allowed_extensions=_PDF | LEGACY_IMAGE_TYPES,
+          heavy=True,
+          phase=2,
+          title="De-warping 3D Fotometrico y MRC",
+      ),
+      # Fase 3: Tipografia Profunda, Accesibilidad e IA Modular
+  === REPLACE
+      "scan_enhance_3d": OperationSpec(
+          name="scan_enhance_3d",
+          handler_ref="engines.vision_ocr:handle_scan_enhance_3d",
+          allowed_extensions=_PDF_OR_IMG,
+          heavy=True,
+          phase=2,
+          title="De-warping 3D Fotometrico y MRC",
+      ),
+      "scan_to_office": OperationSpec(
+          name="scan_to_office",
+          handler_ref="engines.scan_office_bridge:handle_scan_to_office",
+          allowed_extensions=_PDF_OR_IMG,
+          heavy=True,
+          phase=2,
+          title="PDF Escaneado a Office Editable (OCR + Vectores)",
+      ),
+      # Fase 3: Tipografia Profunda, Accesibilidad e IA Modular
+  >>> END
+
+  Archivo: `pdf_engine.py` (Lineas 264-274, 311-331 y 480-486)
+  <<< SEARCH
+  def validate_options(options: dict):
+      if not isinstance(options, dict):
+          raise ProcessingError("Opciones no validas.")
+      for key in ("password", "new_password", "pages", "groups", "text", "compression", "preprocess"):
+          if key in options and (not isinstance(options[key], str) or len(options[key]) > 10000):
+              raise ProcessingError(f"Opcion no valida: {key}.")
+  === REPLACE
+  def validate_options(options: dict):
+      if not isinstance(options, dict):
+          raise ProcessingError("Opciones no validas.")
+      for key in ("password", "new_password", "pages", "groups", "text", "compression", "preprocess", "target_format", "ocr_mode"):
+          if key in options and (not isinstance(options[key], str) or len(options[key]) > 10000):
+              raise ProcessingError(f"Opcion no valida: {key}.")
+  >>> END
+
+  <<< SEARCH
+      if operation == "office_to_pdf":
+          converted = convert_office(sources[0], folder, config)
+          with open_pdf(converted, "", config["max_pages"]):
+              pass
+          shutil.move(converted, output)
+  === REPLACE
+      if operation == "office_to_pdf":
+          converted = convert_office(sources[0], folder, config)
+          if options.get("refine_scans"):
+              with open_pdf(converted, "", config["max_pages"]) as converted_doc:
+                  from engines.scan_office_bridge import refine_pdf_scans_to_vector
+
+                  refine_opts = {**options, "refine_embedded_images": True}
+                  stats = refine_pdf_scans_to_vector(
+                      converted_doc, list(range(len(converted_doc))), output, config, root, refine_opts
+                  )
+              notice = (
+                  f"Office a PDF con refinado OCR/vectorial: {stats['pages']} pagina(s), "
+                  f"{stats['tables']} tabla(s), {stats['diagrams']} diagrama(s)."
+              )
+          else:
+              with open_pdf(converted, "", config["max_pages"]):
+                  pass
+              shutil.move(converted, output)
+  >>> END
+
+  <<< SEARCH
+              elif operation in ("pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx"):
+                  from office_export import export_office
+
+                  output, notice = export_office(operation, doc, selected, folder, config)
+  === REPLACE
+              elif operation in ("pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx"):
+                  from office_export import export_office
+
+                  output, notice = export_office(operation, doc, selected, folder, config, options=options, root=root)
+  >>> END
+
+  Archivo: `office_export.py` (Lineas 270-948 actualizadas)
+  <<< SEARCH
+  def word_table(result, content: dict, lines: list[dict]) -> None:
+      from docx.enum.table import WD_ROW_HEIGHT_RULE
+      from docx.oxml import OxmlElement
+      from docx.oxml.ns import qn
+      from docx.shared import Pt
+  === REPLACE
+  def word_table(result, content: dict, lines: list[dict], *, drawings: list[dict] | None = None, show_borders: bool = False) -> None:
+      from docx.enum.table import WD_ROW_HEIGHT_RULE
+      from docx.oxml import OxmlElement, parse_xml
+      from docx.oxml.ns import nsdecls, qn
+      from docx.shared import Pt
+  >>> END
+
+  <<< SEARCH
+      for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+          border = OxmlElement("w:" + edge)
+          border.set(qn("w:val"), "nil")
+          borders.append(border)
+      properties.append(margins)
+      properties.append(borders)
+      for column, width in zip(table.columns, [b - a for a, b in zip(xs, xs[1:])]):
+          column.width = Pt(width)
+      for row, start, end_row, end_col, rect in content["cells"]:
+          cell = table.cell(row, start)
+          if end_row != row or end_col != start:
+              cell = cell.merge(table.cell(end_row, end_col))
+          cell.width = Pt(rect[2] - rect[0])
+          cell_lines = sorted(lines_in(lines, rect), key=lambda line: (line["bbox"][1], line["bbox"][0]))
+  === REPLACE
+      border_val = "single" if (show_borders and content.get("mode") != "borderless") else "nil"
+      border_color = content.get("border_rgb", "444444")
+      for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+          border = OxmlElement("w:" + edge)
+          border.set(qn("w:val"), border_val)
+          if border_val == "single":
+              border.set(qn("w:sz"), "4")
+              border.set(qn("w:space"), "0")
+              border.set(qn("w:color"), border_color)
+          borders.append(border)
+      properties.append(margins)
+      properties.append(borders)
+      for column, width in zip(table.columns, [b - a for a, b in zip(xs, xs[1:])]):
+          column.width = Pt(width)
+      fills_map = content.get("fills", {})
+      for row, start, end_row, end_col, rect in content["cells"]:
+          cell = table.cell(row, start)
+          if end_row != row or end_col != start:
+              cell = cell.merge(table.cell(end_row, end_col))
+          cell.width = Pt(rect[2] - rect[0])
+          fill_hex = fills_map.get((row, start))
+          if fill_hex is None and drawings:
+              sampled = cell_fill(drawings, rect)
+              if sampled != "FFFFFF":
+                  fill_hex = sampled
+          if fill_hex:
+              cell._tc.get_or_add_tcPr().append(
+                  parse_xml(f'<w:shd {nsdecls("w")} w:fill="{fill_hex}"/>')
+              )
+          cell_lines = sorted(lines_in(lines, rect), key=lambda line: (line["bbox"][1], line["bbox"][0]))
+  >>> END
+
+  <<< SEARCH
+  def word_document(doc: pdf.Document, selected: list[int], output: Path, config: dict) -> int:
+      from docx import Document
+      from docx.enum.section import WD_SECTION_START
+      from docx.shared import Pt
+      from pdf_engine import render
+
+      result = Document()
+      fallback = 0
+      for index, number in enumerate(selected):
+          page = doc[number]
+          section = result.sections[0] if not index else result.add_section(WD_SECTION_START.NEW_PAGE)
+          section.page_width, section.page_height = Pt(page.rect.width), Pt(page.rect.height)
+          section.left_margin = section.right_margin = Pt(0)
+          section.top_margin = section.bottom_margin = Pt(0)
+          anchor = result.add_paragraph()
+          anchor.paragraph_format.space_before = anchor.paragraph_format.space_after = Pt(0)
+          anchor.paragraph_format.line_spacing = Pt(1)
+          layout = page_layout(page, config)
+          if layout["fallback"]:
+              word_background(anchor, layout["image"], page.rect.width, page.rect.height)
+              fallback += 1
+              continue
+  === REPLACE
+  def _render_diagrams_backdrop_for_word(analysis: dict, config: dict) -> bytes | None:
+      """Genera capa visual limpia combinando fondo residual + diagramas vectorizados para DOCX."""
+      diagrams = analysis.get("diagrams", [])
+      connectors = analysis.get("connectors", [])
+      backdrop = analysis.get("backdrop_png")
+      if not diagrams and not connectors:
+          return backdrop
+      with pdf.open() as tmp:
+          w, h = analysis["width_pt"], analysis["height_pt"]
+          pg = tmp.new_page(width=w, height=h)
+          bg = pg.new_shape()
+          bg.draw_rect(pg.rect)
+          pc = analysis.get("paper_rgb", "FFFFFF")
+          bg.finish(color=None, fill=(int(pc[0:2], 16) / 255.0, int(pc[2:4], 16) / 255.0, int(pc[4:6], 16) / 255.0))
+          bg.commit()
+          if backdrop:
+              pg.insert_image(pg.rect, stream=backdrop, overlay=True)
+          for sh in diagrams:
+              sp = pg.new_shape()
+              rect = pdf.Rect(sh["bbox"])
+              fu = tuple(int(sh["fill_rgb"][i : i + 2], 16) / 255.0 for i in (0, 2, 4)) if sh.get("fill_rgb") else None
+              su = tuple(int(sh["stroke_rgb"][i : i + 2], 16) / 255.0 for i in (0, 2, 4)) if sh.get("stroke_rgb") else None
+              if sh["kind"] == "oval":
+                  sp.draw_oval(rect)
+              elif sh["kind"] == "round_rect":
+                  sp.draw_rect(rect, radius=0.12)
+              elif sh["kind"] in ("diamond", "polygon") and len(sh.get("points_pt", [])) >= 3:
+                  sp.draw_polyline([pdf.Point(x, y) for x, y in sh["points_pt"]])
+                  sp.finish(color=su, fill=fu, width=sh.get("stroke_pt", 1.25), closePath=True)
+                  sp.commit()
+                  continue
+              else:
+                  sp.draw_rect(rect)
+              sp.finish(color=su, fill=fu, width=sh.get("stroke_pt", 1.25))
+              sp.commit()
+          for conn in connectors:
+              sp = pg.new_shape()
+              p1, p2 = pdf.Point(*conn["p1"]), pdf.Point(*conn["p2"])
+              sp.draw_line(p1, p2)
+              su = tuple(int(conn["stroke_rgb"][i : i + 2], 16) / 255.0 for i in (0, 2, 4))
+              sp.finish(color=su, width=conn.get("stroke_pt", 1.5))
+              if conn.get("arrow_end") or conn.get("arrow_start"):
+                  import math
+
+                  dx, dy = p2.x - p1.x, p2.y - p1.y
+                  ln = max(1.0, math.hypot(dx, dy))
+                  ux, uy = dx / ln, dy / ln
+                  px, py = -uy, ux
+                  for tip, dir_s in ([(p2, 1.0)] if conn.get("arrow_end") else []) + ([(p1, -1.0)] if conn.get("arrow_start") else []):
+                      base = pdf.Point(tip.x - 7.0 * ux * dir_s, tip.y - 7.0 * uy * dir_s)
+                      w1 = pdf.Point(base.x + 3.5 * px, base.y + 3.5 * py)
+                      w2 = pdf.Point(base.x - 3.5 * px, base.y - 3.5 * py)
+                      sp.draw_polyline([tip, w1, w2])
+                      sp.finish(color=su, fill=su, closePath=True)
+              sp.commit()
+          from pdf_engine import render
+          return render(pg, 144, config).tobytes("png")
+
+
+  def word_document(doc: pdf.Document, selected: list[int], output: Path, config: dict,
+                    *, options: dict | None = None, root: Path | None = None) -> tuple[int, dict]:
+      from docx import Document
+      from docx.enum.section import WD_SECTION_START
+      from docx.shared import Pt
+      from pdf_engine import integer, render
+      from settings import ROOT
+
+      opts = options or {}
+      scan_editable = bool(opts.get("scan_editable_mode", False))
+      raw_dpi = opts.get("ocr_dpi", opts.get("dpi", 200))
+      dpi = integer(200 if raw_dpi in (None, "") else raw_dpi, 100, 300, "DPI")
+      stats = {"refined_pages": 0, "tables": 0, "diagrams": 0, "ocr_used": False}
+
+      result = Document()
+      fallback = 0
+      for index, number in enumerate(selected):
+          page = doc[number]
+          section = result.sections[0] if not index else result.add_section(WD_SECTION_START.NEW_PAGE)
+          section.page_width, section.page_height = Pt(page.rect.width), Pt(page.rect.height)
+          section.left_margin = section.right_margin = Pt(0)
+          section.top_margin = section.bottom_margin = Pt(0)
+          anchor = result.add_paragraph()
+          anchor.paragraph_format.space_before = anchor.paragraph_format.space_after = Pt(0)
+          anchor.paragraph_format.line_spacing = Pt(1)
+          layout = page_layout(page, config)
+          if layout["fallback"] and scan_editable:
+              from engines.scan_office_bridge import analyze_scanned_page_for_office
+
+              scanned = analyze_scanned_page_for_office(
+                  page,
+                  dpi,
+                  config,
+                  root or ROOT,
+                  preprocess=str(opts.get("preprocess", "auto")),
+                  vectorize_tables=bool(opts.get("vectorize_tables", True)),
+                  vectorize_diagrams=bool(opts.get("vectorize_diagrams", True)),
+                  ocr_mode=str(opts.get("ocr_mode", "auto")),
+              )
+              stats["refined_pages"] += 1
+              stats["tables"] += len(scanned["tables"])
+              stats["diagrams"] += len(scanned["diagrams"]) + len(scanned["connectors"])
+              stats["ocr_used"] = stats["ocr_used"] or scanned["ocr_applied"]
+              sw, sh_pt = scanned["width_pt"], scanned["height_pt"]
+              section.page_width, section.page_height = Pt(sw), Pt(sh_pt)
+              bg_img = _render_diagrams_backdrop_for_word(scanned, config)
+              if bg_img:
+                  word_background(anchor, bg_img, sw, sh_pt)
+              lines = list(scanned["lines"])
+              for sh in scanned["diagrams"]:
+                  lines.extend(sh.get("embedded_lines", []))
+              for line in sorted(lines, key=lambda item: (item["bbox"][1], item["bbox"][0])):
+                  spans = [span for span in line["spans"]
+                           if not any(contains(table["bbox"], span["bbox"]) for table in scanned["tables"])]
+                  if not spans:
+                      continue
+                  box = pdf.Rect(word_line_box(spans))
+                  paragraph = result.add_paragraph()
+                  word_frame(paragraph, tuple(box), sw)
+                  docx_runs(paragraph, [{**line, "spans": spans}])
+              for table in scanned["tables"]:
+                  word_table(result, table, lines, show_borders=True)
+              end = result.add_paragraph()
+              end.paragraph_format.space_after = Pt(0)
+              end.paragraph_format.line_spacing = Pt(1)
+              continue
+
+          if layout["fallback"]:
+              word_background(anchor, layout["image"], page.rect.width, page.rect.height)
+              fallback += 1
+              continue
+  >>> END
+
+  <<< SEARCH
+          end = result.add_paragraph()
+          end.paragraph_format.space_after = Pt(0)
+          end.paragraph_format.line_spacing = Pt(1)
+      result.save(output)
+      return fallback
+  === REPLACE
+          end = result.add_paragraph()
+          end.paragraph_format.space_after = Pt(0)
+          end.paragraph_format.line_spacing = Pt(1)
+      result.save(output)
+      return fallback, stats
+  >>> END
+
+  <<< SEARCH
+  def ppt_runs(frame, lines: list[dict], scale: float) -> None:
+      from pptx.dml.color import RGBColor
+      from pptx.util import Pt
+      from pdf_engine import clean_text
+
+      frame.clear()
+      frame.margin_left = frame.margin_right = frame.margin_top = frame.margin_bottom = 0
+      frame.word_wrap = False
+      for index, line in enumerate(lines):
+          paragraph = frame.paragraphs[0] if not index else frame.add_paragraph()
+          paragraph.space_before = paragraph.space_after = Pt(0)
+          paragraph.line_spacing = 1.0
+          previous = None
+  === REPLACE
+  def ppt_runs(frame, lines: list[dict], scale: float, *, word_wrap: bool = False, align_center: bool = False) -> None:
+      from pptx.dml.color import RGBColor
+      from pptx.enum.text import PP_ALIGN
+      from pptx.util import Pt
+      from pdf_engine import clean_text
+
+      frame.clear()
+      frame.margin_left = frame.margin_right = frame.margin_top = frame.margin_bottom = 0
+      frame.word_wrap = word_wrap
+      for index, line in enumerate(lines):
+          paragraph = frame.paragraphs[0] if not index else frame.add_paragraph()
+          paragraph.space_before = paragraph.space_after = Pt(0)
+          paragraph.line_spacing = 1.08 if word_wrap else 1.0
+          if align_center:
+              paragraph.alignment = PP_ALIGN.CENTER
+          previous = None
+  >>> END
+  Nota adicional para `office_export.py` (ver codigo completo en el repositorio):
+  - `excel_document(..., *, options: dict | None = None, root: Path | None = None) -> tuple[int, dict]`: reconstruye paginas escaneadas cuando `scan_editable_mode=True` usando `analyze_scanned_page_for_office(...)` y rellena `fills` por celda sin `drawings`.
+  - `_set_ppt_cell_borders(cell, hex_color, width_pt)`: inserta bordes ECMA-376 `a:lnL`, `a:lnR`, `a:lnT`, `a:lnB` al inicio de `a:tcPr` (antes de FillProperties).
+  - `_add_ppt_diagram_shapes(slide, diagrams, connectors, left, top, ratio)`: crea AutoShapes (`RECTANGLE`, `ROUNDED_RECTANGLE`, `OVAL`, `DIAMOND` y `build_freeform`) con texto centrado `MSO_ANCHOR.MIDDLE` y conectores `MSO_CONNECTOR.STRAIGHT` con puntas `a:headEnd` / `a:tailEnd` (`type="triangle"`, `w="med"`, `len="med"`).
+  - `powerpoint_document(..., *, options: dict | None = None, root: Path | None = None) -> tuple[int, dict]`: cuando `layout["fallback"] and scan_editable`, reajusta altura de presentacion a dimensiones verticales si es la primera diapositiva, inserta el fondo residual limpio (o color solido `paper_rgb`), agrega formas y conectores, tablas nativas con relleno y bordes ECMA-376, y parrafos editables agrupados fuera de tablas y diagramas.
+
+  <<< SEARCH
+  def export_office(operation: str, doc: pdf.Document, selected: list[int],
+                    folder: Path, config: dict) -> tuple[Path, str]:
+      converters = {
+          "pdf_to_docx": (word_document, "documento.docx", "Word: texto y tablas editables en su posicion original sobre un fondo con logos, firmas, marcas y bordes. Disposicion fija: textos largos nuevos no reacomodan el resto de la pagina."),
+          "pdf_to_xlsx": (excel_document, "tablas.xlsx", "Excel: tablas editables y texto; cada hoja Original conserva la pagina como imagen. Sin formulas inferidas."),
+          "pdf_to_pptx": (powerpoint_document, "presentacion.pptx", "PowerPoint: texto horizontal y tablas editables; imagenes, trazos y texto girado en fondo no editable."),
+      }
+      convert, filename, notice = converters[operation]
+      output = folder / filename
+      fallback = convert(doc, selected, output, config)
+      if fallback:
+          notice += f" {fallback} paginas complejas, escaneadas/sin texto visible o giradas conservadas como imagen; OCR recupera texto, no reconstruye el diseno."
+      notice += " Fuentes sustituidas si no estan instaladas; revise columnas, saltos, colores y celdas combinadas. No equivale a Acrobat."
+      return output, notice
+  === REPLACE
+  def export_office(operation: str, doc: pdf.Document, selected: list[int],
+                    folder: Path, config: dict, *, options: dict | None = None,
+                    root: Path | None = None) -> tuple[Path, str]:
+      converters = {
+          "pdf_to_docx": (word_document, "documento.docx", "Word: texto y tablas editables en su posicion original sobre un fondo con logos, firmas, marcas y bordes. Disposicion fija: textos largos nuevos no reacomodan el resto de la pagina."),
+          "pdf_to_xlsx": (excel_document, "tablas.xlsx", "Excel: tablas editables y texto; cada hoja Original conserva la pagina como imagen. Sin formulas inferidas."),
+          "pdf_to_pptx": (powerpoint_document, "presentacion.pptx", "PowerPoint: texto horizontal y tablas editables; imagenes, trazos y texto girado en fondo no editable."),
+      }
+      convert, filename, notice = converters[operation]
+      output = folder / filename
+      fallback, stats = convert(doc, selected, output, config, options=options, root=root)
+      if stats.get("refined_pages"):
+          notice = (
+              f"Conversion refinada Acrobat-Pro ({operation.split('_')[-1].upper()}): "
+              f"{stats['refined_pages']} pagina(s) escaneadas reconstruidas con "
+              f"{stats['tables']} tabla(s), {stats['diagrams']} elemento(s) vectoriales y "
+              f"{'OCR local activo' if stats['ocr_used'] else 'texto recuperado'}. Revise fuentes y alineacion."
+          )
+      elif fallback:
+          notice += f" {fallback} paginas complejas, escaneadas/sin texto visible o giradas conservadas como imagen; OCR recupera texto, no reconstruye el diseno."
+      notice += " Fuentes sustituidas si no estan instaladas; revise columnas, saltos, colores y celdas combinadas. No equivale a Acrobat."
+      return output, notice
+  >>> END
+
+  Archivo: `server.py` (Lineas 29 y 324-334)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-1"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-2"
+  >>> END
+
+  <<< SEARCH
+              environment = os.environ.copy()
+              for key in ("TEMP", "TMP", "TMPDIR"):
+                  environment[key] = str(folder)
+              environment["OMP_THREAD_LIMIT"] = "1"
+              environment["PYTHONDONTWRITEBYTECODE"] = "1"
+  === REPLACE
+              environment = os.environ.copy()
+              for key in ("TEMP", "TMP", "TMPDIR"):
+                  environment[key] = str(folder)
+              environment["OMP_THREAD_LIMIT"] = "1"
+              environment["OPENBLAS_NUM_THREADS"] = "1"
+              environment["MKL_NUM_THREADS"] = "1"
+              environment["NUMEXPR_NUM_THREADS"] = "1"
+              environment["OPENCV_FOR_THREADS_NUM"] = "1"
+              environment["PYTHONDONTWRITEBYTECODE"] = "1"
+  >>> END
+
+  Archivo: `performance.py` (Lineas 123-131)
+  <<< SEARCH
+          environment = os.environ.copy()
+          environment["OMP_THREAD_LIMIT"] = "1"
+          environment["PYTHONDONTWRITEBYTECODE"] = "1"
+  === REPLACE
+          environment = os.environ.copy()
+          environment["OMP_THREAD_LIMIT"] = "1"
+          environment["OPENBLAS_NUM_THREADS"] = "1"
+          environment["MKL_NUM_THREADS"] = "1"
+          environment["NUMEXPR_NUM_THREADS"] = "1"
+          environment["OPENCV_FOR_THREADS_NUM"] = "1"
+          environment["PYTHONDONTWRITEBYTECODE"] = "1"
+  >>> END
+
+  Archivo: `static/app.js` (Tarjetas `tools`, filtro de categorias multiples, `pages` y opciones dinamicas en `openTool`)
+  <<< SEARCH
+    {id:"pdf_to_pptx",name:"PDF a PowerPoint",icon:"P",category:"convert",desc:"Diapositivas con texto y tablas editables.",warning:"Reconstruye texto horizontal y tablas sobre un fondo que conserva imágenes y gráficos no editables. Fuentes y espaciado pueden variar. Las páginas escaneadas o giradas se mantienen como imagen; revisa el resultado."},
+  === REPLACE
+    {id:"pdf_to_pptx",name:"PDF a PowerPoint",icon:"P",category:"convert",desc:"Diapositivas con texto y tablas editables.",warning:"Reconstruye texto horizontal y tablas sobre un fondo limpio; activa el modo escaneo OCR + vectores para páginas escaneadas o diagramas."},
+    {id:"scan_to_office",name:"PDF Escaneado a Office Editable",icon:"✨",category:"convert",categories:["convert","v2"],desc:"Estilo Acrobat Pro: OCR local de texto + vectorización de tablas, cajas, flechas y diagramas hacia PowerPoint, Word, Excel o PDF.",keywords:"office pdf powerpoint word excel escaneo ocr vectores diagramas acrobat pptx docx xlsx",multiple:true,accept:".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp",warning:"Reconstruye texto OCR con estilo/color, tablas editables (con y sin bordes), formas vectoriales y conectores; borra texto/tablas duplicadas del fondo."},
+  >>> END
+
+  <<< SEARCH
+    const visible = tools.filter(t => (activeCategory === "all" || t.category === activeCategory) && normalized(t.name+" "+t.desc).includes(query));
+  === REPLACE
+    const visible = tools.filter(t => (activeCategory === "all" || t.category === activeCategory || (Array.isArray(t.categories) && t.categories.includes(activeCategory))) && normalized(t.name+" "+t.desc+" "+(t.keywords||"")).includes(query));
+  >>> END
+
+  <<< SEARCH
+    if (["organize","rotate","pdf_to_images","extract_text","watermark","pdf_to_docx","pdf_to_xlsx","pdf_to_pptx"].includes(tool.id))
+      field("pages",tool.id === "organize" ? "Páginas en el orden deseado" : "Páginas a procesar",{placeholder:"Ej. 1,3,5-8",hint:tool.id === "organize" ? "Las páginas omitidas se eliminan. Puedes invertir rangos: 5-1." : "Vacío: todas las páginas."});
+  === REPLACE
+    if (["organize","rotate","pdf_to_images","extract_text","watermark","pdf_to_docx","pdf_to_xlsx","pdf_to_pptx","scan_to_office"].includes(tool.id))
+      field("pages",tool.id === "organize" ? "Páginas en el orden deseado" : "Páginas a procesar",{placeholder:"Ej. 1,3,5-8",hint:tool.id === "organize" ? "Las páginas omitidas se eliminan. Puedes invertir rangos: 5-1." : "Vacío: todas las páginas (o todas las imágenes cargadas)."});
+  >>> END
+
+  <<< SEARCH
+    if(tool.id==="pdf_to_images") field("image_format","Formato",{choices:[["png","PNG"],["jpg","JPEG"],["tiff","TIFF por página"]],value:"png"});
+    if(tool.id==="liquid_compile") field("preset","Tamaño de pantalla objetivo",{choices:[["kindle_6","Kindle 6\""],["mobile","Móvil (320px)"],["tablet_16_9","Tablet 16:9"],["a4","A4"],["letter","Carta"]],value:"kindle_6"});
+  === REPLACE
+    if(tool.id==="pdf_to_images") field("image_format","Formato",{choices:[["png","PNG"],["jpg","JPEG"],["tiff","TIFF por página"]],value:"png"});
+    if(tool.id==="scan_to_office") {
+      field("target_format","Formato exportado editable",{choices:[["pptx","PowerPoint editable (.pptx) · Modo Acrobat Pro"],["docx","Word editable (.docx)"],["xlsx","Excel editable (.xlsx)"],["pdf","PDF vectorial + OCR limpio (.pdf)"]],value:"pptx"});
+      field("ocr_dpi","Resolución de análisis y OCR",{choices:[["150","150 DPI · Rápido"],["200","200 DPI · Recomendado"],["300","300 DPI · Alta precisión"]],value:"200"});
+      field("preprocess","Limpieza previa de escaneo",{choices:[["auto","Automático (enderezado si requiere)"],["deskew","Enderezar inclinación (hasta 5°)"],["clean","Enderezar y limpiar sombras/papel"],["none","Sin preprocesamiento"]],value:"auto"});
+      const vt=field("vectorize_tables","Reconocer y reconstruir tablas editables (con y sin bordes)",{type:"checkbox"}); vt.checked=true;
+      const vd=field("vectorize_diagrams","Vectorizar formas, cajas y flechas de diagramas",{type:"checkbox"}); vd.checked=true;
+      field("ocr_mode","Lectura de texto OCR",{choices:[["auto","Automático (OCR local si es escaneo)"],["force","Forzar nueva lectura OCR en todas las páginas"],["existing_only","Solo capa OCR oculta existente"]],value:"auto"});
+    }
+    if(["pdf_to_pptx","pdf_to_docx","pdf_to_xlsx"].includes(tool.id)) {
+      const sem=field("scan_editable_mode","Refinar escaneos (OCR + vectores de tablas y diagramas · estilo Acrobat Pro)",{type:"checkbox",hint:"Cuando una página sea un escaneo o esté girada, ejecuta OCR local, reconstruye tablas y diagramas vectoriales editables y limpia texto fantasma del fondo."});
+      sem.checked=true;
+      const vd=field("vectorize_diagrams","Vectorizar cajas, conectores y diagramas en páginas escaneadas",{type:"checkbox"}); vd.checked=true;
+      field("ocr_dpi","DPI de reconocimiento (solo si es escaneo)",{choices:[["150","150 DPI"],["200","200 DPI (Recomendado)"],["300","300 DPI"]],value:"200"});
+      field("preprocess","Preprocesamiento de escaneo",{choices:[["auto","Automático"],["deskew","Enderezar"],["clean","Enderezar + limpiar fondo"],["none","Sin cambios"]],value:"auto"});
+      sem.addEventListener("change",()=>{
+        const on=sem.checked;
+        vd.disabled=!on;
+        $("option-ocr_dpi").disabled=!on;
+        $("option-preprocess").disabled=!on;
+      });
+    }
+    if(tool.id==="office_to_pdf") {
+      field("refine_scans","Refinar imágenes escaneadas incrustadas (OCR buscable + vectorizar tablas/diagramas)",{type:"checkbox",hint:"Opcional: si tu archivo de Office contiene capturas o escaneos pegados, intenta reconstruir tablas/diagramas vectoriales y capa de texto buscable en el PDF."});
+    }
+    if(tool.id==="liquid_compile") field("preset","Tamaño de pantalla objetivo",{choices:[["kindle_6","Kindle 6\""],["mobile","Móvil (320px)"],["tablet_16_9","Tablet 16:9"],["a4","A4"],["letter","Carta"]],value:"kindle_6"});
+  >>> END
+
+  Archivo: `engines/scan_office_bridge.py` (Archivo nuevo, 1998 lineas — Contrato completo)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  - `_normalize_orientation_bgr(bgr, page_rotation, pt_w, pt_h)`: detecta y revierte orientacion girada (90/180/270) devolviendo dimensiones verticales exactas `(upright_w, upright_h)`.
+  - `_sample_paper_bgr(bgr)` & `_preprocess_bgr(bgr, mode, max_pixels)`: estima color del papel en bordes/fondo, endereza inclinacion leve y normaliza iluminacion/sombras en modo `"clean"`.
+  - `_build_line_and_ink_masks(bgr, paper_bgr)`: separa mascara de tinta multicolor/pasa-altas (`ink_mask`), trazos `horiz_lines`, `vert_lines` y `long_rules` (para limpiar bordes de tabla antes del OCR).
+  - `_detect_raster_tables(...)`: reconstruye cuadriculas rasterizadas con bordes y celdas combinadas (`_has_right_wall`, `_has_bottom_wall`), color de relleno RGB por celda y borde.
+  - `_detect_raster_containers(...)` & `_extract_shape_embedded_ocr(...)`: detecta figuras geometricas de diagramas (`rect`, `round_rect`, `oval`, `diamond`, `polygon`) con relleno plano y OCR interno por figura invertido automaticamente si la caja es oscura.
+  - `_detect_photo_artwork_mask(...)`: aisla logos/fotografias multicolores o grandes (usando erosion de nucleo `BORDER_CONSTANT=0`) para protegerlas en el fondo residual.
+  - `_detect_raster_connectors(...)`: detecta lineas y flechas con `crisp_ink` + Canny + `HoughLinesP`, centrando al eje real del asta y sondeando simetricamente cabezas triangulares (`_probe_arrowhead`) normalizadas en `p1 -> p2`.
+  - `_extract_ocr_words(...)`, `_estimate_word_style(...)`, `_words_to_lines(...)`, `_detect_borderless_ocr_tables(...)`, `_group_paragraphs(...)`, `_build_clean_backdrop(...)`: OCR local sin trazos de borde, color/negrita real, tablas sin bordes por columnas, agrupacion de parrafos e inpainting `INPAINT_TELEA` + limpieza de conos de flechas sobre fondo residual.
+  - `analyze_scanned_page_for_office(...)`: punto de analisis por pagina (respeta paginas vectoriales nativas no rotadas; reconstruye paginas escaneadas/giradas).
+  - `refine_pdf_scans_to_vector(...)` & `_draw_vector_analysis_on_pdf_page(...)`: reconstruye paginas escaneadas o regiones de imagen incrustadas (`refine_embedded_images=True`) hacia PDF vectorial editable + capa de texto real.
+  - `handle_scan_to_office(operation, sources, options, folder, config, root)`: entrypoint V2 para convertir PDF o lotes de imagenes hacia `.pptx`, `.docx`, `.xlsx` o `.pdf`.
+  >>> END
+
+  Archivo: `tests/test_scan_office_bridge.py` (Archivo nuevo, 397 lineas — Suite de pruebas)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  7 pruebas en `ScanOfficeBridgeTests`:
+  - `test_scan_to_office_registered_in_capabilities_and_js`
+  - `test_scan_to_office_pptx_acrobat_pro_mode` (tabla combinada con sombreado `#DBEAFF` y bordes ECMA-376, cajas vectoriales + `a:tailEnd`, titulo rojo negrita, fondo residual limpio con logo intacto y verificacion con LibreOffice Impress)
+  - `test_legacy_pdf_to_pptx_refined_vs_default_fallback` (verifica retrocompatibilidad sin `scan_editable_mode` y reconstruccion al activarlo)
+  - `test_scan_to_office_docx_xlsx_and_vector_pdf`
+  - `test_png_image_rotated_and_mixed_pdf_plus_borderless_table`
+  - `test_office_to_pdf_with_refine_scans_embedded_table`
+  - `test_missing_ocr_models_returns_503_for_text_only_scan`
+  >>> END
+
+- **Verificacion**:
+  - Comando 1 (Suite dedicada): `.\.venv\Scripts\python.exe -m unittest tests.test_scan_office_bridge -v` -> `Ran 7 tests in 46.557s`, `OK`.
+  - Comando 2 (Suite completa tras todas las ediciones de codigo): `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` -> `Ran 164 tests in 247.922s`, `OK` (141 pruebas originales + 16 pruebas V2 + 7 pruebas Scan-to-Office aprobadas sin regresiones).
+  - Comando 3 (Sintaxis JS): `node --check static/app.js` -> codigo de salida `0`.
+  - Comando 4 (Higiene SQLite y temporales): `instance/platform.sqlite3` conserva unicamente la tabla `settings`; `runtime/job-*` vacio (`[]`).
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+## [CAMBIO-008] 2026-11-09 22:45 - Guardas cliente contra servidor desactualizado en memoria, bump CLIENT_BUILD y reinicio del servidor local
+- **Resumen / Motivo**:
+  - **Causa raiz diagnosticada del error `"Herramienta desconocida."` (`HTTP 404`) en `"PDF Escaneado a Office Editable"` (`scan_to_office`)**: un proceso anterior de `server.py` (`PID 15192`/`11248`, iniciado desde `servidor local.bat` antes de `[CAMBIO-007]`) seguia ejecutandose en memoria sobre `127.0.0.1:8090` con `CLIENT_BUILD = "2026-11-09-v2-enterprise-1"` y su diccionario `OPERATIONS` sin `scan_to_office`. Al recargar `/`, Flask entrego el nuevo `static/app.js` desde disco (con la tarjeta `scan_to_office`) mientras el HTML y `/api/capabilities` seguian sirviendo la build `-1`; por eso `X-PDF-Client` coincidio y la peticion `POST /api/process/scan_to_office` llego a `OPERATIONS` obsoleto del proceso en memoria.
+  - **Solucion aplicada**:
+    1. Se agrego deteccion dinamica en `static/app.js` (`unavailableInBackend(tool)`) contra `caps.v2_operations`: si el servidor en memoria carece de una herramienta V2 mostrada en el frontend, la tarjeta muestra badge `"REINICIAR SERVIDOR"`, la barra de conexion advierte reiniciar `'servidor local.bat'` y recargar con `Ctrl+F5`, y el modal explica la causa antes de enviar.
+    2. Se enriquecio el mensaje de error `404` en `static/processing_queue.js` cuando el servidor responde `"Herramienta desconocida"` para indicar explicitamente reiniciar `'servidor local.bat'` y recargar (`Ctrl+F5`).
+    3. Se actualizo `CLIENT_BUILD` en `server.py` a `"2026-11-09-v2-enterprise-3"` (compatibilidad de contratos HTML/JS e invalidacion inmediata de pestanas en cache).
+    4. Se amplio `test_scan_to_office_registered_in_capabilities_and_js` en `tests/test_scan_office_bridge.py` para validar que toda tarjeta operativa de `static/app.js` exista en `pdf_engine.OPERATIONS` y que las guardas permanezcan presentes.
+    5. Se detuvo el proceso obsoleto en `127.0.0.1:8090` y se reinicio `server.py --host 127.0.0.1` cargando el codigo actualizado en memoria (`runtime/job-*` vacio, sin alterar `instance/platform.sqlite3`).
+- **Archivos modificados**:
+  - `server.py` (modificado)
+  - `static/app.js` (modificado)
+  - `static/processing_queue.js` (modificado)
+  - `tests/test_scan_office_bridge.py` (modificado)
+- **Detalle de implementacion para GitHub Copilot Chat**:
+
+  Archivo: `server.py` (Linea 29)
+  <<< SEARCH
+  from recovery_events import install_recovery, report_failure, request_recovery
+
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-2"
+  LOG = logging.getLogger("pdf_lan")
+  === REPLACE
+  from recovery_events import install_recovery, report_failure, request_recovery
+
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-3"
+  LOG = logging.getLogger("pdf_lan")
+  >>> END
+
+  Archivo: `static/processing_queue.js` (Lineas 140-146)
+  <<< SEARCH
+      if (!result.ok) {
+        const data = await result.json();
+        throw new Error(data.error || `El servidor rechazó la solicitud (${result.status}).`);
+      }
+  === REPLACE
+      if (!result.ok) {
+        const data = await result.json().catch(() => ({}));
+        const message = data.error || `El servidor rechazó la solicitud (${result.status}).`;
+        if (result.status === 404 && message.includes("Herramienta desconocida")) {
+          throw new Error(`${message} El servidor local en ejecución puede tener una versión anterior en memoria; reinicia 'servidor local.bat' y recarga esta página con Ctrl+F5.`);
+        }
+        throw new Error(message);
+      }
+  >>> END
+
+  Archivo: `static/app.js` (Lineas 94-118)
+  <<< SEARCH
+  function normalized(value) { return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); }
+  function renderTools() {
+    const query = normalized($("search").value);
+    $("tool-grid").replaceChildren();
+    const visible = tools.filter(t => (activeCategory === "all" || t.category === activeCategory || (Array.isArray(t.categories) && t.categories.includes(activeCategory))) && normalized(t.name+" "+t.desc+" "+(t.keywords||"")).includes(query));
+    for (const tool of visible) {
+      const card = document.createElement("button");
+      card.className = "tool-card"; card.dataset.category = tool.category;
+      const icon = document.createElement("span"); icon.className="tool-icon"; icon.textContent=tool.icon; icon.setAttribute("aria-hidden","true");
+      const title = document.createElement("h3"); title.textContent=tool.name;
+      const desc = document.createElement("p"); desc.textContent=tool.desc;
+      const arrow = document.createElement("span"); arrow.className="card-arrow"; arrow.textContent="↗"; arrow.setAttribute("aria-hidden","true");
+      card.append(icon, title, desc, arrow);
+      if (caps && tool.requires && !caps[tool.requires]) {
+        const badge = document.createElement("span"); badge.className="badge"; badge.textContent="MOTOR PENDIENTE"; card.append(badge);
+      }
+  === REPLACE
+  function normalized(value) { return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); }
+  function unavailableInBackend(tool) {
+    if (!caps || !tool || tool.workspaceUrl || tool.standaloneTab) return false;
+    const isV2 = tool.category === "v2" || (Array.isArray(tool.categories) && tool.categories.includes("v2"));
+    if (!isV2 || !Array.isArray(caps.v2_operations)) return false;
+    return !caps.v2_operations.some(op => op.id === tool.id);
+  }
+  function renderTools() {
+    const query = normalized($("search").value);
+    $("tool-grid").replaceChildren();
+    const visible = tools.filter(t => (activeCategory === "all" || t.category === activeCategory || (Array.isArray(t.categories) && t.categories.includes(activeCategory))) && normalized(t.name+" "+t.desc+" "+(t.keywords||"")).includes(query));
+    for (const tool of visible) {
+      const card = document.createElement("button");
+      card.className = "tool-card"; card.dataset.category = tool.category;
+      const icon = document.createElement("span"); icon.className="tool-icon"; icon.textContent=tool.icon; icon.setAttribute("aria-hidden","true");
+      const title = document.createElement("h3"); title.textContent=tool.name;
+      const desc = document.createElement("p"); desc.textContent=tool.desc;
+      const arrow = document.createElement("span"); arrow.className="card-arrow"; arrow.textContent="↗"; arrow.setAttribute("aria-hidden","true");
+      card.append(icon, title, desc, arrow);
+      if (unavailableInBackend(tool)) {
+        const badge = document.createElement("span"); badge.className="badge"; badge.textContent="REINICIAR SERVIDOR"; card.append(badge);
+      } else if (caps && tool.requires && !caps[tool.requires]) {
+        const badge = document.createElement("span"); badge.className="badge"; badge.textContent="MOTOR PENDIENTE"; card.append(badge);
+      }
+  >>> END
+
+  Archivo: `static/app.js` (Lineas 233-242, 326-330, 462-468, 569-581)
+  <<< SEARCH
+    $("workspace-title").textContent=tool.name; $("tool-description").textContent=tool.desc;
+    const missing=caps && tool.requires && !caps[tool.requires];
+    $("tool-warning").hidden=!tool.warning && !missing;
+    $("tool-warning").textContent=missing ? "Este motor aún no está disponible. Contacta al administrador para completar su instalación local." : (tool.warning || "");
+  === REPLACE
+    $("workspace-title").textContent=tool.name; $("tool-description").textContent=tool.desc;
+    const staleBackend=unavailableInBackend(tool);
+    const missing=caps && tool.requires && !caps[tool.requires];
+    $("tool-warning").hidden=!tool.warning && !missing && !staleBackend;
+    $("tool-warning").textContent=staleBackend
+      ? "El servidor EVA PDF en ejecución tiene una versión anterior en memoria que aún no registra esta herramienta. Cierra y reinicia 'servidor local.bat' (o run-lan.ps1) y recarga esta página (Ctrl+F5)."
+      : missing
+        ? "Este motor aún no está disponible. Contacta al administrador para completar su instalación local."
+        : (tool.warning || "");
+  >>> END
+
+  <<< SEARCH
+    } else {
+      $("process").innerHTML='Procesar documento <span aria-hidden="true">→</span>';
+    }
+    $("process").disabled=Boolean(missing) || !caps;
+  === REPLACE
+    } else {
+      $("process").innerHTML='Procesar documento <span aria-hidden="true">→</span>';
+    }
+    $("process").disabled=Boolean(missing || staleBackend) || !caps;
+  >>> END
+
+  <<< SEARCH
+  function setBusy(value) {
+    busy=value; $("process-form").setAttribute("aria-busy",String(value));
+    $("process-form").querySelectorAll("button,input,select,textarea").forEach(element=>element.disabled=value);
+    if(!value) {
+      $("process").disabled=!caps || Boolean(current.requires && !caps[current.requires]); renderFiles();
+    }
+  === REPLACE
+  function setBusy(value) {
+    busy=value; $("process-form").setAttribute("aria-busy",String(value));
+    $("process-form").querySelectorAll("button,input,select,textarea").forEach(element=>element.disabled=value);
+    if(!value) {
+      $("process").disabled=!caps || Boolean(current.requires && !caps[current.requires]) || unavailableInBackend(current); renderFiles();
+    }
+  >>> END
+
+  <<< SEARCH
+  fetch("/api/capabilities").then(response=>{if(!response.ok)throw new Error();return response.json();}).then(data=>{
+    caps=data; const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente"];
+    if (data.scanners && data.scanners.available) engines.push(`Escáner listo (${data.scanners.count})`);
+    $("connection").textContent=`Motor local conectado · ${engines.join(" · ")} · ${limitLabel(data.max_upload_mb)} por sesión`;
+    renderTools();
+    applyDesktopCapabilities(data);
+    if($("workspace").open && current) {
+      $("process").disabled=Boolean(current.requires && !caps[current.requires]);
+      $("upload-limits").textContent=uploadLimits(current);
+    }
+  }).catch(()=>{$("connection").textContent="Sin conexión con el motor. Recarga la página cuando el servidor esté disponible.";});
+  === REPLACE
+  fetch("/api/capabilities").then(response=>{if(!response.ok)throw new Error();return response.json();}).then(data=>{
+    caps=data; const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente"];
+    if (data.scanners && data.scanners.available) engines.push(`Escáner listo (${data.scanners.count})`);
+    const hasStaleTools=tools.some(unavailableInBackend);
+    $("connection").textContent=`Motor local conectado · ${engines.join(" · ")} · ${limitLabel(data.max_upload_mb)} por sesión` +
+      (hasStaleTools ? " · ⚠ Servidor en memoria desactualizado: reinicia 'servidor local.bat' y recarga (Ctrl+F5)." : "");
+    renderTools();
+    applyDesktopCapabilities(data);
+    if($("workspace").open && current) {
+      $("process").disabled=Boolean(current.requires && !caps[current.requires]) || unavailableInBackend(current);
+      $("upload-limits").textContent=uploadLimits(current);
+    }
+  }).catch(()=>{$("connection").textContent="Sin conexión con el motor. Recarga la página cuando el servidor esté disponible.";});
+  >>> END
+
+  Archivo: `tests/test_scan_office_bridge.py` (Lineas 158-179)
+  <<< SEARCH
+      def test_scan_to_office_registered_in_capabilities_and_js(self):
+          caps = self.client.get("/api/capabilities").json
+          ids = {item["id"] for item in caps["v2_operations"]}
+          self.assertIn("scan_to_office", ids)
+          app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+          self.assertIn('id:"scan_to_office"', app_js)
+          self.assertIn('scan_editable_mode', app_js)
+          self.assertIn('refine_scans', app_js)
+  === REPLACE
+      def test_scan_to_office_registered_in_capabilities_and_js(self):
+          import re
+          from pdf_engine import OPERATIONS
+
+          caps = self.client.get("/api/capabilities").json
+          ids = {item["id"] for item in caps["v2_operations"]}
+          self.assertIn("scan_to_office", ids)
+          app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+          self.assertIn('id:"scan_to_office"', app_js)
+          self.assertIn("scan_editable_mode", app_js)
+          self.assertIn("refine_scans", app_js)
+          self.assertIn("unavailableInBackend", app_js)
+          self.assertIn("REINICIAR SERVIDOR", app_js)
+
+          for line in app_js.splitlines():
+              stripped = line.strip()
+              if stripped.startswith('{id:"') and "workspaceUrl" not in line and "standaloneTab" not in line:
+                  m = re.search(r'id:"([^"]+)"', line)
+                  self.assertIsNotNone(m)
+                  self.assertIn(m.group(1), OPERATIONS)
+  >>> END
+
+- **Verificacion**:
+  - Comando 1 (Sintaxis JS): `node --check static/app.js` y `node --check static/processing_queue.js` -> codigo de salida `0`.
+  - Comando 2 (Pruebas automatizadas): `.\.venv\Scripts\python.exe -m unittest tests.test_scan_office_bridge tests.test_platform tests.test_v2_enterprise -v` -> `Ran 64 tests in 142.918s`, `OK`.
+  - Comando 3 (Verificacion HTTP E2E en vivo tras reiniciar `127.0.0.1:8090`):
+    - `/health` y `/api/capabilities` confirman `client_build: "2026-11-09-v2-enterprise-3"` e inclusion de `"scan_to_office"`.
+    - `POST /api/process/scan_to_office` con `X-PDF-Client` antiguo responde `403 {"error":"Recargue la pagina antes de continuar."}`.
+    - `POST /api/process/scan_to_office` con PDF escaneado sintetico y `X-PDF-Client: 2026-11-09-v2-enterprise-3` responde `HTTP 200`, genera `EVA00.pptx` (28795 bytes, 1 tabla editable y texto OCR verificado), `X-PDF-Cleanup: complete`, `runtime/job-*` vacio (`[]`) e `instance/platform.sqlite3` conserva unicamente la tabla `settings`.
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+## [CAMBIO-009] 2026-11-09 23:20 - Motor neuronal offline NMT (CTranslate2 ES<->EN + OCR), ventana emergente sutil por herramienta y clasificacion en 3 niveles (basica/avanzada/profesional) sin pestana Suite V2
+- **Resumen / Motivo**:
+  1. **Diagnostico y reemplazo del motor de traduccion (`translate_layout`)**:
+     - **Por que fallaba antes**: con `ai_mode="disabled"` por defecto, solo usaba `_OFFLINE_GLOSSARY` (22 palabras sueltas); con SLM activo truncaba a `texts[:40]`; traducia cada span SVG suelto sin agrupar lineas de parrafo; reinsertaba con Helvetica WinAnsi sin tildes/eñe completas; y no ejecutaba OCR en PDFs escaneados ni parcheaba fondos en PDFs previamente OCR.
+     - **Solucion implementada (100% offline)**:
+       - Se agregan `ctranslate2`, `sentencepiece`, `subword-nmt` y `sacremoses` a `requirements.txt` y `deploy/eva-pdf.spec`, junto con el instalador portable `deploy/install-nmt.ps1` y `addons/pack-nmt/manifest.json` (modelos Argos `en_es` 91 MB SentencePiece y `es_en` 301 MB OPUS-MT Moses+BPE, excluidos del control de versiones en `.gitignore`).
+       - `engines/addons.py`: agrega `discover_nmt_pairs()` y reporta `ctranslate2`, `nmt_offline` y `nmt_pairs` en `addons_status()`.
+       - `engines/typography_and_layout.py`: carga modelos NMT en cache con `compute_type="default"` (evita colapso de repeticion `int8` observado en `es_en`), acota `intra_threads` al valor de `OMP_THREAD_LIMIT` (evita corrupcion OpenMP `<unk>` cuando `OMP_THREAD_LIMIT=1` restringe subprocesos), fuerza `CT2_USE_MKL=0` (evita fallo `mkl_malloc` bajo el `JobMemoryLimit` de `ProcessTree` en Windows), respeta `target_prefix` nativo del `config.json` en `es_en`, normaliza bloques en MAYUSCULAS, preserva prefijos de lista/numeros/URLs/correos, divide por lotes de 64 oraciones deduped, reemplaza `texts[:40]` por lotes JSON de 20 en `_translate_via_ai_chunks`, agrupa lineas continuas de parrafo sin fusionar columnas (`_collect_translatable_units`), usa fuentes TTF del sistema UTF-8 (`_resolve_translation_font`), agrega fallback OCR a 100-200 DPI en escaneos + deteccion de texto OCR previo (`GlyphLessFont` / `render_mode=3`) con estimacion de color papel/tinta (`_sample_scan_unit_styles`) y rechaza `source_lang == target_lang` con HTTP `400`.
+     - **Subprocesos y memoria (`server.py`, `worker.py`)**: actualiza `CLIENT_BUILD = "2026-11-09-v2-enterprise-4"`, define `CT2_USE_MKL="0"` en trabajadores aislados y asigna holgura controlada `max(max_job_memory_mb, min(1536, memory_budget_mb))` para `translate_layout` dentro del presupuesto RAM de `performance.py`.
+  2. **Eliminacion de pestana `Suite V2` y clasificacion en 3 niveles (`templates/index.html`, `static/app.js`, `static/extended.css`)**:
+     - En la barra de filtros principal se elimina el boton `Suite V2` (`data-category="v2"`) y se sustituyen las categorias de filtro por **`Todas`**, **`Edición múltiple`**, **`Edición básica` (`18` herramientas)**, **`Edición avanzada` (`28` herramientas)** y **`Edición profesional` (`15` herramientas)** — conservando el atributo interno `isV2: true` para la guarda `unavailableInBackend` y manteniendo intacto `/editor` (`#acro-btn-v2`). Cada tarjeta muestra su insignia visual `.tool-level`.
+  3. **Ventana emergente sutil descriptiva por herramienta (`templates/index.html`, `static/extended.css`, `static/app.js`)**:
+     - Se agrega `<aside id="tool-tooltip" class="tool-tooltip" role="tooltip" aria-hidden="true" hidden>` controlado por `scheduleToolTooltip`, `showToolTooltip`, `positionToolTooltip` y `hideToolTooltip`: aparece de forma no intrusiva (`220 ms` al pasar el puntero, `60 ms` en foco visible por teclado), muestra titulo, nivel, detalle funcional (`detail`) y formato entrada/salida (`io` + estado NMT offline), se reposiciona dentro del viewport, ignora tactil (`@media (hover:none),(pointer:coarse)`) y se oculta con `Escape`, `scroll`, `resize`, `blur` o `click`.
+  4. **Nota de despliegue en otro equipo**: tras aplicar los parches, ejecutar `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` y `powershell -ExecutionPolicy Bypass -File .\deploy\install-nmt.ps1` para poblar `addons/pack-nmt/en_es/` y `addons/pack-nmt/es_en/`.
+
+- **Archivos modificados y creados**:
+  - `requirements.txt` (modificado)
+  - `.gitignore` (modificado)
+  - `deploy/eva-pdf.spec` (modificado)
+  - `deploy/install-nmt.ps1` (creado, 70 lineas)
+  - `addons/README.md` (modificado)
+  - `addons/pack-nmt/manifest.json` (creado, 6 lineas)
+  - `engines/addons.py` (modificado)
+  - `engines/typography_and_layout.py` (modificado)
+  - `server.py` (modificado)
+  - `worker.py` (modificado)
+  - `templates/index.html` (modificado)
+  - `static/extended.css` (modificado)
+  - `static/app.js` (modificado)
+  - `tests/test_platform.py` (modificado)
+  - `tests/test_v2_enterprise.py` (modificado)
+
+- **Detalle de implementacion para GitHub Copilot Chat**:
+
+  Archivo: `requirements.txt`
+  <<< SEARCH
+  pillow-heif>=1,<2
+  pyHanko>=0.31,<0.35
+  === REPLACE
+  pillow-heif>=1,<2
+  pyHanko>=0.31,<0.35
+  ctranslate2>=4.6,<5
+  sentencepiece>=0.2,<1
+  subword-nmt>=0.3.8,<1
+  sacremoses>=0.1.1,<1
+  >>> END
+
+  Archivo: `.gitignore`
+  <<< SEARCH
+  models/*.traineddata
+  *.log
+  === REPLACE
+  models/*.traineddata
+  addons/pack-nmt/en_es/
+  addons/pack-nmt/es_en/
+  addons/pack-nmt/*.argosmodel
+  *.log
+  >>> END
+
+  Archivo: `deploy/eva-pdf.spec` (Lineas 12-18)
+  <<< SEARCH
+      "cryptography", "lxml", "requests",
+  ):
+  === REPLACE
+      "cryptography", "lxml", "requests",
+      "ctranslate2", "sentencepiece", "subword_nmt", "sacremoses",
+  ):
+  >>> END
+
+  Archivo: `deploy/install-nmt.ps1` (Archivo nuevo, 70 lineas)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  Script PowerShell offline/portable: descarga `translate-en_es-1_0.argosmodel` y `translate-es_en-1_9.argosmodel`, valida tamanos minimos (`50 MB` y `200 MB`), extrae hacia `addons/pack-nmt/en_es/` y `addons/pack-nmt/es_en/`, elimina subdirectorios no usados `stanza/` y genera `addons/pack-nmt/manifest.json`.
+  >>> END
+
+  Archivo: `addons/pack-nmt/manifest.json` (Archivo nuevo)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  {
+    "name": "EVA Neural MT Offline Pack (ES<->EN)",
+    "version": "1.0.0",
+    "capabilities": ["ctranslate2", "nmt_offline", "es_en", "en_es"],
+    "pairs": ["en_es", "es_en"]
+  }
+  >>> END
+
+  Archivo: `addons/README.md` (Lineas 7-10)
+  <<< SEARCH
+  - `addons/pack-nmt/` (`manifest.json` + modelos CTranslate2 + tokenizer SentencePiece): Traduccion neuronal offline ES↔EN sin SLM externo.
+  === REPLACE
+  - `addons/pack-nmt/` (`manifest.json` + subcarpetas `en_es/` y `es_en/` con modelos CTranslate2 + `sentencepiece.model`/`bpe.model`, instalables localmente con `deploy\install-nmt.ps1`): Traduccion neuronal 100% offline ES↔EN sin SLM externo.
+  >>> END
+
+  Archivo: `engines/addons.py` (Lineas 53-99)
+  <<< SEARCH
+  def addons_status(config: dict, root: Path) -> dict:
+      packs = discover_addon_packs(config, root)
+      ai_mode = config.get("ai_mode", "disabled")
+      loopback_url = config.get("ai_loopback_url", "").strip()
+      edge_endpoint = config.get("ai_edge_endpoint", "").strip()
+      allow_external = bool(config.get("allow_external_ai", False))
+      pdfium_dir = root / "static" / "vendor" / "pdfium"
+      pdfium_available = (pdfium_dir / "pdfium.js").is_file() and (pdfium_dir / "pdfium.wasm").is_file()
+      katex_available = (root / "static" / "vendor" / "katex" / "katex.min.js").is_file()
+
+      return {
+          "packs": packs,
+          "onnx": _has_python_package("onnxruntime") or "pack-ocr-onnx" in packs,
+          "ctranslate2": _has_python_package("ctranslate2") or "pack-nmt" in packs,
+          "fonttools": _has_python_package("fontTools"),
+  === REPLACE
+  def discover_nmt_pairs(config: dict, root: Path) -> list[str]:
+      if not _has_python_package("ctranslate2"):
+          return []
+      nmt_root = root / config.get("addons_dir", "addons") / "pack-nmt"
+      if not nmt_root.is_dir():
+          return []
+      has_sp = _has_python_package("sentencepiece")
+      has_bpe = _has_python_package("subword_nmt") and _has_python_package("sacremoses")
+      pairs: list[str] = []
+      for entry in sorted(nmt_root.iterdir()):
+          if not entry.is_dir() or not re.fullmatch(r"[a-z]{2}_[a-z]{2}", entry.name):
+              continue
+          if not (entry / "model" / "model.bin").is_file():
+              continue
+          if (entry / "sentencepiece.model").is_file() and has_sp:
+              pairs.append(entry.name)
+          elif (entry / "bpe.model").is_file() and has_bpe:
+              pairs.append(entry.name)
+      return pairs
+
+
+  def addons_status(config: dict, root: Path) -> dict:
+      packs = discover_addon_packs(config, root)
+      nmt_pairs = discover_nmt_pairs(config, root)
+      ai_mode = config.get("ai_mode", "disabled")
+      loopback_url = config.get("ai_loopback_url", "").strip()
+      edge_endpoint = config.get("ai_edge_endpoint", "").strip()
+      allow_external = bool(config.get("allow_external_ai", False))
+      pdfium_dir = root / "static" / "vendor" / "pdfium"
+      pdfium_available = (pdfium_dir / "pdfium.js").is_file() and (pdfium_dir / "pdfium.wasm").is_file()
+      katex_available = (root / "static" / "vendor" / "katex" / "katex.min.js").is_file()
+
+      return {
+          "packs": packs,
+          "onnx": _has_python_package("onnxruntime") or "pack-ocr-onnx" in packs,
+          "ctranslate2": _has_python_package("ctranslate2") or bool(nmt_pairs),
+          "nmt_offline": bool(nmt_pairs),
+          "nmt_pairs": nmt_pairs,
+          "fonttools": _has_python_package("fontTools"),
+  >>> END
+
+  Archivo: `worker.py` (Lineas 1-10)
+  <<< SEARCH
+  from __future__ import annotations
+
+  import json
+  import subprocess
+  import sys
+  === REPLACE
+  from __future__ import annotations
+
+  import json
+  import os
+  import subprocess
+  import sys
+
+  os.environ.setdefault("CT2_USE_MKL", "0")
+  >>> END
+
+  Archivo: `server.py` (Lineas 29 y 329-339)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-3"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-4"
+  >>> END
+
+  <<< SEARCH
+              environment["NUMEXPR_NUM_THREADS"] = "1"
+              environment["OPENCV_FOR_THREADS_NUM"] = "1"
+              environment["PYTHONDONTWRITEBYTECODE"] = "1"
+              tree = ProcessTree(config["max_job_memory_mb"])
+  === REPLACE
+              environment["NUMEXPR_NUM_THREADS"] = "1"
+              environment["OPENCV_FOR_THREADS_NUM"] = "1"
+              environment["CT2_USE_MKL"] = "0"
+              environment["PYTHONDONTWRITEBYTECODE"] = "1"
+              job_memory_mb = config["max_job_memory_mb"]
+              if operation == "translate_layout":
+                  budget_mb = int(config.get("performance", {}).get("memory_budget_mb", job_memory_mb))
+                  job_memory_mb = max(job_memory_mb, min(1536, budget_mb))
+              tree = ProcessTree(job_memory_mb)
+  >>> END
+
+  Archivo: `engines/typography_and_layout.py` (Lineas 1-29 y 875-1569)
+  <<< SEARCH
+  import math
+  import re
+  ...
+  from acrobat_tools import parse_color, resolve_font
+  from engines.addons import active_ai_target, call_ai_backend
+  from engines.vectors_and_tables import _fit_text_in_box
+  from pdf_engine import ProcessingError, open_pdf, pages_from, save
+  === REPLACE
+  import math
+  import os
+  import re
+  ...
+  from acrobat_tools import FONT_FAMILY_MAPPING, WINDOWS_FONTS_DIR, parse_color, resolve_font
+  from engines.addons import active_ai_target, call_ai_backend
+  from engines.vectors_and_tables import _fit_text_in_box
+  from pdf_engine import ProcessingError, capabilities, open_pdf, pages_from, render, save
+  >>> END
+
+  <<< SEARCH
+  def _translate_offline_or_ai(texts: list[str], src_lang: str, dst_lang: str, user_map: dict, config: dict) -> tuple[list[str], str]:
+      ...
+  def handle_translate_layout(operation, sources, options, folder, config, root):
+      ...
+  === REPLACE
+  (Reemplazo completo en lineas 875-1569; ver `engines/typography_and_layout.py` en el repositorio)
+  - `_NMT_BUNDLE_CACHE`: carga `ctranslate2.Translator(model_dir, device="cpu", compute_type="default", intra_threads=threads)` acotando `threads` a `OMP_THREAD_LIMIT` y asegurando `os.environ.setdefault("CT2_USE_MKL", "0")`. Soporta `"sp"` (SentencePiece para `en_es`) y `"bpe"` (MosesTokenizer + SubwordNMT BPE para `es_en`).
+  - `_split_segment_for_nmt`, `_should_skip_translation`, `_translate_with_ctranslate2`: divide por oraciones respetando espaciado y prefijos de viñeta, normaliza bloques ALL CAPS, salta cifras/URLs/correos, procesa en lotes de 64 unicos, unescapa entidades HTML (`html.unescape`) y recompone tokens BPE `@@`.
+  - `_translate_via_ai_chunks`: reemplaza el recorte `texts[:40]` por iteracion completa en bloques de 20 strings con contrato JSON estricto.
+  - `_translate_offline_or_ai(..., root=None, engine_pref="auto")`: prioridad `user_map` -> IA opt-in (`loopback`/`edge`) -> NMT CTranslate2 offline (`nmt_offline_{src}_{dst}`) -> glosario `_OFFLINE_GLOSSARY`.
+  - `_resolve_translation_font`: enlaza familias Windows TTF (`Arial`, `Times`, `Courier` + negrita/cursiva) con soporte completo UTF-8 para diacriticos en Español.
+  - `_split_line_subunits` y `_collect_translatable_units`: agrupa lineas envueltas de parrafos coherentes separando columnas, saltos de fuente y viñetas.
+  - `_sample_scan_unit_styles` y `handle_translate_layout`: valida `src_lang != dst_lang` (400), detecta OCR previo (`GlyphLessFont` / `render_mode=3`) o aplica OCR seguro a 200-72 DPI en paginas puramente escaneadas, cubre fondo del texto original con color de papel muestreado y evita invadir columnas vecinas al expandir ligeramente la caja de salida.
+  >>> END
+
+  Archivo: `templates/index.html` (Lineas 90-98 y 217-220)
+  <<< SEARCH
+        <div class="toolbar"><div class="filters" role="group" aria-label="Filtrar herramientas">
+          <button class="filter active" data-category="all" aria-pressed="true">Todas</button>
+          <button class="filter multi-edit-tab" id="multi-edit-tab" type="button" aria-pressed="false">Edición múltiple</button>
+          <button class="filter" data-category="organize" aria-pressed="false">Organizar</button>
+          <button class="filter" data-category="optimize" aria-pressed="false">Optimizar</button>
+          <button class="filter" data-category="convert" aria-pressed="false">Convertir</button>
+          <button class="filter" data-category="edit" aria-pressed="false">Editar y proteger</button>
+          <button class="filter" data-category="v2" aria-pressed="false">Suite V2</button>
+        </div><label class="search">
+  === REPLACE
+        <div class="toolbar"><div class="filters" role="group" aria-label="Filtrar herramientas">
+          <button class="filter active" data-category="all" aria-pressed="true">Todas</button>
+          <button class="filter multi-edit-tab" id="multi-edit-tab" type="button" aria-pressed="false">Edición múltiple</button>
+          <button class="filter" data-category="basic" aria-pressed="false">Edición básica</button>
+          <button class="filter" data-category="advanced" aria-pressed="false">Edición avanzada</button>
+          <button class="filter" data-category="professional" aria-pressed="false">Edición profesional</button>
+        </div><label class="search">
+  >>> END
+
+  <<< SEARCH
+    <aside class="desktop-guide" ...>
+    </dialog>
+  </body>
+  === REPLACE
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+        <button type="button" id="desktop-guide-ok" class="primary">¡Entendido!</button>
+      </div>
+    </dialog>
+    <aside id="tool-tooltip" class="tool-tooltip" role="tooltip" aria-hidden="true" hidden></aside>
+  </body>
+  >>> END
+
+  Archivo: `static/extended.css` (Lineas 28-42 agregadas)
+  <<< SEARCH
+  .workspace-body.has-session-tools #process-form{padding-right:0}
+    dialog.multi-edit-workspace{width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;padding:16px}
+    dialog.multi-edit-workspace .workspace-body.has-session-tools{height:calc(100dvh - 230px)}
+  }
+  === REPLACE
+  .workspace-body.has-session-tools #process-form{padding-right:0}
+    dialog.multi-edit-workspace{width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;padding:16px}
+    dialog.multi-edit-workspace .workspace-body.has-session-tools{height:calc(100dvh - 230px)}
+  }
+
+  .tool-card p{margin-bottom:12px}
+  .tool-level{align-self:flex-start;margin-top:auto;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:.25px}
+  .tool-level[data-level="basic"]{background:var(--success-bg);color:var(--success)}
+  .tool-level[data-level="advanced"]{background:var(--convert-bg);color:var(--convert)}
+  .tool-level[data-level="professional"]{background:var(--soft);color:var(--accent);border:1px solid var(--border)}
+
+  .tool-tooltip{position:fixed;z-index:80;width:min(315px,calc(100vw - 24px));pointer-events:none;background:var(--surface);color:var(--text);border:1px solid var(--border);border-top:2px solid var(--accent);border-radius:11px;padding:12px 14px;box-shadow:0 14px 34px rgba(18,12,26,.18),var(--shadow);opacity:0;transform:translateY(4px) scale(.985);transition:opacity .15s ease,transform .15s ease}
+  .tool-tooltip.visible{opacity:1;transform:translateY(0) scale(1)}
+  .tool-tooltip-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .tool-tooltip-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:6px;background:var(--soft);color:var(--accent);font-size:13px;font-weight:700;flex-shrink:0}
+  .tool-tooltip-title{font-size:13px;font-weight:700;color:var(--text);line-height:1.25;flex:1}
+  .tool-tooltip-tier{font-size:9px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--soft);color:var(--accent);white-space:nowrap}
+  .tool-tooltip-body{margin:0;font-size:11.5px;line-height:1.5;color:var(--text)}
+  .tool-tooltip-meta{margin:7px 0 0;padding-top:6px;border-top:1px solid var(--border);font-size:10px;line-height:1.4;color:var(--muted)}
+  @media (hover:none),(pointer:coarse){.tool-tooltip{display:none!important}}
+  >>> END
+
+  Archivo: `static/app.js` (Clasificacion en 3 niveles, popup sutil `#tool-tooltip`, advertencia/hint de NMT y estado en barra de conexion)
+  <<< SEARCH
+  const $ = (id) => document.getElementById(id);
+  const tools = [
+  ...
+  ];
+  === REPLACE
+  (Reemplazo de catalogo de 61 herramientas en lineas 4-67; ver `static/app.js` completo)
+  - Define `const LEVEL_LABELS = {basic:"Edición básica",advanced:"Edición avanzada",professional:"Edición profesional"};`
+  - Cada una de las 61 entradas conserva una unica linea `{id:"..."...}` con `level: "basic" | "advanced" | "professional"`, `detail:"..."`, `io:"..."` y `isV2:true` en operaciones registradas en `V2_SPECS` (18 basicas, 28 avanzadas, 15 profesionales).
+  >>> END
+
+  <<< SEARCH
+  function unavailableInBackend(tool) {
+    if (!caps || !tool || tool.workspaceUrl || tool.standaloneTab) return false;
+    const isV2 = tool.category === "v2" || (Array.isArray(tool.categories) && tool.categories.includes("v2"));
+    if (!isV2 || !Array.isArray(caps.v2_operations)) return false;
+    return !caps.v2_operations.some(op => op.id === tool.id);
+  }
+  function renderTools() {
+    const query = normalized($("search").value);
+    $("tool-grid").replaceChildren();
+    const visible = tools.filter(t => (activeCategory === "all" || t.category === activeCategory || (Array.isArray(t.categories) && t.categories.includes(activeCategory))) && normalized(t.name+" "+t.desc+" "+(t.keywords||"")).includes(query));
+    ...
+    card.addEventListener("click", () => {
+      if (tool.workspaceUrl) {
+        window.location.href = tool.workspaceUrl;
+        return;
+      }
+      openTool(tool);
+    });
+  === REPLACE
+  function unavailableInBackend(tool) {
+    if (!caps || !tool || tool.workspaceUrl || tool.standaloneTab) return false;
+    const isV2 = Boolean(tool.isV2 || tool.category === "v2" || (Array.isArray(tool.categories) && tool.categories.includes("v2")));
+    if (!isV2 || !Array.isArray(caps.v2_operations)) return false;
+    return !caps.v2_operations.some(op => op.id === tool.id);
+  }
+  // + hideToolTooltip(), positionToolTooltip(card, tip), showToolTooltip(tool, card), scheduleToolTooltip(tool, card, delay)
+  // + listeners globales scroll/resize/Escape
+  function renderTools() {
+    hideToolTooltip();
+    const query = normalized($("search").value);
+    $("tool-grid").replaceChildren();
+    const visible = tools.filter(t => (activeCategory === "all" || t.level === activeCategory) && normalized(t.name+" "+t.desc+" "+(t.detail||"")+" "+(t.keywords||"")+" "+(LEVEL_LABELS[t.level]||"")).includes(query));
+    for (const tool of visible) {
+      ... // agrega badge .tool-level y listeners pointerenter/pointerleave/pointerdown/focus(:focus-visible)/blur
+    }
+  >>> END
+
+  <<< SEARCH
+    const staleBackend=unavailableInBackend(tool);
+    const missing=caps && tool.requires && !caps[tool.requires];
+    $("tool-warning").hidden=!tool.warning && !missing && !staleBackend;
+    $("tool-warning").textContent=staleBackend
+      ? "El servidor EVA PDF en ejecución tiene una versión anterior en memoria que aún no registra esta herramienta. Cierra y reinicia 'servidor local.bat' (o run-lan.ps1) y recarga esta página (Ctrl+F5)."
+      : missing
+        ? "Este motor aún no está disponible. Contacta al administrador para completar su instalación local."
+        : (tool.warning || "");
+  === REPLACE
+    const staleBackend=unavailableInBackend(tool);
+    const missing=caps && tool.requires && !caps[tool.requires];
+    const missingNmt=tool.id==="translate_layout" && caps && !caps.addons?.nmt_offline && !caps.addons?.loopback_slm && !caps.addons?.edge_ai_opt_in;
+    $("tool-warning").hidden=!tool.warning && !missing && !staleBackend && !missingNmt;
+    $("tool-warning").textContent=staleBackend
+      ? "El servidor EVA PDF en ejecución tiene una versión anterior en memoria que aún no registra esta herramienta. Cierra y reinicia 'servidor local.bat' (o run-lan.ps1) y recarga esta página (Ctrl+F5)."
+      : missing
+        ? "Este motor aún no está disponible. Contacta al administrador para completar su instalación local."
+        : missingNmt
+          ? "Modelos neuronales NMT offline (addons/pack-nmt) no detectados: se usará el glosario básico. Ejecuta deploy\\install-nmt.ps1 para traducción completa ES↔EN."
+          : (tool.warning || "");
+  >>> END
+
+  <<< SEARCH
+    if(tool.id==="translate_layout") {
+      field("source_lang","Idioma origen",{choices:[["es","Español"],["en","Inglés"]],value:"es"});
+      field("target_lang","Idioma destino",{choices:[["en","Inglés"],["es","Español"]],value:"en"});
+    }
+  === REPLACE
+    if(tool.id==="translate_layout") {
+      field("source_lang","Idioma origen",{choices:[["es","Español"],["en","Inglés"]],value:"es"});
+      const nmtReady=Boolean(caps?.addons?.nmt_offline);
+      const pairs=Array.isArray(caps?.addons?.nmt_pairs) && caps.addons.nmt_pairs.length
+        ? caps.addons.nmt_pairs.map(p=>p.replace("_","→").toUpperCase()).join(", ")
+        : "ES↔EN";
+      field("target_lang","Idioma destino",{
+        choices:[["en","Inglés"],["es","Español"]],
+        value:"en",
+        hint:nmtReady
+          ? `Motor neuronal CTranslate2 100% offline activo (${pairs}). Incluye OCR automático si el PDF es un escaneo.`
+          : "Modo glosario básico (instala addons/pack-nmt con deploy\\install-nmt.ps1 para traducción neuronal completa)."
+      });
+    }
+  >>> END
+
+  <<< SEARCH
+  fetch("/api/capabilities").then(response=>{if(!response.ok)throw new Error();return response.json();}).then(data=>{
+    caps=data; const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente"];
+    if (data.scanners && data.scanners.available) engines.push(`Escáner listo (${data.scanners.count})`);
+  === REPLACE
+  fetch("/api/capabilities").then(response=>{if(!response.ok)throw new Error();return response.json();}).then(data=>{
+    caps=data; const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente",data.addons?.nmt_offline?"Traducción ES↔EN offline lista":"Traducción NMT pendiente"];
+    if (data.scanners && data.scanners.available) engines.push(`Escáner listo (${data.scanners.count})`);
+  >>> END
+
+  Archivo: `tests/test_platform.py` (Lineas 76-102)
+  <<< SEARCH
+      def test_health_and_page(self):
+          self.assertEqual(self.client.get("/health").json["client_build"], CLIENT_BUILD)
+          response = self.client.get("/")
+          self.assertIn(b"EVA PDF Enterprise", response.data)
+          self.assertIn(b'id="multi-edit-tab"', response.data)
+          self.assertIn("Edición múltiple".encode(), response.data)
+          self.assertIn(b'id="session-tools"', response.data)
+          self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+          self.assertEqual(self.client.get("/api/capabilities").json["max_pages"], 0)
+  === REPLACE
+      def test_health_and_page(self):
+          self.assertEqual(self.client.get("/health").json["client_build"], CLIENT_BUILD)
+          response = self.client.get("/")
+          self.assertIn(b"EVA PDF Enterprise", response.data)
+          self.assertIn(b'id="multi-edit-tab"', response.data)
+          self.assertIn("Edición múltiple".encode(), response.data)
+          self.assertIn(b'data-category="basic"', response.data)
+          self.assertIn("Edición básica".encode(), response.data)
+          self.assertIn(b'data-category="advanced"', response.data)
+          self.assertIn("Edición avanzada".encode(), response.data)
+          self.assertIn(b'data-category="professional"', response.data)
+          self.assertIn("Edición profesional".encode(), response.data)
+          self.assertIn(b'id="tool-tooltip"', response.data)
+          self.assertNotIn(b'data-category="v2"', response.data)
+          self.assertNotIn(b"Suite V2", response.data)
+          self.assertIn(b'id="session-tools"', response.data)
+          self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+          self.assertEqual(self.client.get("/api/capabilities").json["max_pages"], 0)
+
+          app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+          card_lines = [line for line in app_js.splitlines() if line.strip().startswith('{id:"')]
+          self.assertGreaterEqual(len(card_lines), 60)
+          for line in card_lines:
+              self.assertRegex(line, r'level:"(basic|advanced|professional)"')
+              self.assertIn('detail:"', line)
+              self.assertIn('io:"', line)
+  >>> END
+
+  Archivo: `tests/test_v2_enterprise.py` (Lineas 18, 443-449 y 522-654)
+  <<< SEARCH
+          # #12 Traductor Vectorial In-Situ
+          tr = self.call("translate_layout", [(src, "doc.pdf")], {"source_lang": "es", "target_lang": "en"})
+          with pdf.open(stream=tr.data, filetype="pdf") as trdoc:
+              self.assertIn("Invoice", trdoc[0].get_text())
+  === REPLACE
+          # #12 Traductor Vectorial In-Situ (validacion y fallback de glosario aislado)
+          self.call("translate_layout", [(src, "doc.pdf")], {"source_lang": "es", "target_lang": "es"}, expected=400)
+          tr = self.call("translate_layout", [(src, "doc.pdf")], {"source_lang": "es", "target_lang": "en"})
+          with pdf.open(stream=tr.data, filetype="pdf") as trdoc:
+              self.assertIn("Invoice", trdoc[0].get_text())
+  >>> END
+
+  <<< SEARCH
+          # Privacidad SQLite intacta tras las 20 capacidades V2
+          ...
+  === REPLACE
+          # + `test_14_offline_nmt_translation_paragraphs_diacritics_and_scans`: valida `addons_status` (`nmt_pairs`), traduccion ES->EN de >45 bloques + parrafos + MAYUSCULAS + preservacion de email, EN->ES con diacriticos UTF-8, PDF puramente escaneado via OCR, PDF ya OCR (`GlyphLessFont`), ejecucion en subproceso aislado `worker.py` (EN->ES) y fallback seguro a `_OFFLINE_GLOSSARY`.
+  >>> END
+
+- **Verificacion**:
+  - Comando 1 (Sintaxis JS): `node --check static/app.js` -> codigo de salida `0`.
+  - Comando 2 (Suite completa): `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` -> `Ran 165 tests in 306.882s`, `OK` (incluyendo las nuevas verificaciones de niveles UI/tooltip en `tests/test_platform.py` y traduccion NMT+OCR+subproceso en `tests/test_v2_enterprise.py`).
+  - Comando 3 (Verificacion HTTP E2E en vivo contra `127.0.0.1:8090`, build `2026-11-09-v2-enterprise-4`):
+    - `/health` confirma `client_build: "2026-11-09-v2-enterprise-4"`.
+    - `/api/capabilities` confirma `addons.ctranslate2: true`, `addons.nmt_offline: true`, `addons.nmt_pairs: ["en_es", "es_en"]`.
+    - `/` confirma pestañas `Edición básica`, `Edición avanzada`, `Edición profesional`, `Edición múltiple`, `#tool-tooltip` y ausencia total de `Suite V2` / `data-category="v2"`.
+    - `POST /api/process/translate_layout` ES->EN traduce parrafo y titular (`CONFIDENTIALITY AGREEMENT` / `The company shall protect all confidential documents during the annual review process.`) preservando `legal@empresa.com`; EN->ES emite `Documentación técnica e informe de evaluación para la comunicación electrónica.` con tildes UTF-8 intactas (`X-PDF-Cleanup: complete`).
+  - Comando 4 (Higiene SQLite y temporales): `runtime/job-*` vacio (`[]`) e `instance/platform.sqlite3` conserva unicamente la tabla `settings`.
+--------------------------------------------------------------------------------
+## [CAMBIO-010] 2026-11-09 23:31 - Simplificacion de Barra Superior, Reubicacion de Privacidad a la Derecha y Actualizacion Documental + README para Git
+- **Resumen / Motivo**:
+  Se depura la barra de navegacion superior de la portada (`templates/index.html`) y se actualiza la documentacion del proyecto para repositorio Git (`README.md`, `CHANGELOG.md`):
+  1. **Barra superior principal (`templates/index.html` y `static/extended.css`)**:
+     - Retira del `<nav aria-label="Navegacion principal">` las opciones `Herramientas` (`#herramientas`), `Pipeline Batch` (`/pipeline`) y `Bóveda Forense` (`/vault`), conservando `<a href="/canvas">Canvas</a>`. Los estudios `/pipeline` y `/vault` siguen completamente accesibles desde sus tarjetas en la pestaña `Edición profesional` / `Todas`.
+     - Mueve `<a href="#privacidad" class="header-privacy-link">Privacidad</a>` al extremo derecho dentro de `.header-actions`, inmediatamente junto al boton de cambio de tema claro/oscuro (`#theme`). Al reducirse el viewport (`<= 1050px`, cuando `.network` "Entorno local" se oculta) y en movil (`<= 700px`), `Privacidad` permanece alineada junto al selector de tema sin desbordamiento horizontal ni estilos inline (cumplimiento CSP `style-src 'self'`).
+  2. **Invalidacion de cache (`server.py`) y pruebas (`tests/test_platform.py`)**:
+     - Actualiza `CLIENT_BUILD` a `"2026-11-09-v2-enterprise-5"`.
+     - Amplia `test_health_and_page` en `tests/test_platform.py` verificando en `<header class="topbar">` la ausencia de `#herramientas`, `/pipeline` y `/vault`, la presencia de `/canvas` y la ubicacion de `#privacidad` dentro de `.header-actions` antes de `#theme`.
+  3. **Documentacion y README para Git (`README.md`, `CHANGELOG.md`)**:
+     - Actualiza `README.md` reflejando la arquitectura vigente (>60 herramientas en 3 niveles + Edición múltiple, Editor Acrobat + Co-Piloto, `scan_to_office` estilo Acrobat Pro, traductor neuronal offline `CTranslate2` ES<->EN + OCR, estudios `/canvas`, `/pipeline` y `/vault`), comandos de instalacion desde Git (`install-ocr.ps1` + `install-nmt.ps1` + `run-lan.ps1 -LocalOnly`), tabla de estructura del repositorio y exclusiones `.gitignore` (`models/`, `addons/pack-nmt/en_es/`, `addons/pack-nmt/es_en/`, `runtime/`, `instance/`, `MUESTRAS/`, etc.).
+     - Agrega la entrada cronologica `2026-11-09` en `CHANGELOG.md`.
+
+- **Archivos modificados**:
+  - `templates/index.html` (modificado)
+  - `static/extended.css` (modificado)
+  - `server.py` (modificado)
+  - `tests/test_platform.py` (modificado)
+  - `README.md` (modificado)
+  - `CHANGELOG.md` (modificado)
+
+- **Detalle de implementacion para GitHub Copilot Chat**:
+
+  Archivo: `templates/index.html` (Lineas 74-78)
+  <<< SEARCH
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+      <nav aria-label="Navegacion principal"><a href="#herramientas">Herramientas</a><a href="/pipeline">Pipeline Batch</a><a href="/canvas">Canvas</a><a href="/vault">Bóveda Forense</a><a href="#privacidad">Privacidad</a></nav>
+      <div class="header-actions"><span class="network"><span></span> Entorno local</span><button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button></div>
+    </header>
+  === REPLACE
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+      <nav aria-label="Navegacion principal"><a href="/canvas">Canvas</a></nav>
+      <div class="header-actions"><span class="network"><span></span> Entorno local</span><a href="#privacidad" class="header-privacy-link">Privacidad</a><button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button></div>
+    </header>
+  >>> END
+
+  Archivo: `static/extended.css` (Final del archivo)
+  <<< SEARCH
+  .tool-tooltip-meta{margin:7px 0 0;padding-top:6px;border-top:1px solid var(--border);font-size:10px;line-height:1.4;color:var(--muted)}
+  @media (hover:none),(pointer:coarse){.tool-tooltip{display:none!important}}
+  === REPLACE
+  .tool-tooltip-meta{margin:7px 0 0;padding-top:6px;border-top:1px solid var(--border);font-size:10px;line-height:1.4;color:var(--muted)}
+  .header-privacy-link{font-size:14px;color:var(--muted);transition:color .15s;white-space:nowrap}
+  .header-privacy-link:hover{color:var(--accent)}
+  @media(max-width:700px){
+    .header-privacy-link{font-size:12px}
+  }
+  @media (hover:none),(pointer:coarse){.tool-tooltip{display:none!important}}
+  >>> END
+
+  Archivo: `server.py` (Linea 29)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-4"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-5"
+  >>> END
+
+  Archivo: `tests/test_platform.py` (Lineas 88-105)
+  <<< SEARCH
+          self.assertNotIn(b'data-category="v2"', response.data)
+          self.assertNotIn(b"Suite V2", response.data)
+          self.assertIn(b'id="session-tools"', response.data)
+          self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+  === REPLACE
+          self.assertNotIn(b'data-category="v2"', response.data)
+          self.assertNotIn(b"Suite V2", response.data)
+          self.assertIn(b'id="session-tools"', response.data)
+          topbar = response.get_data(as_text=True).split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+          self.assertNotIn('href="#herramientas"', topbar)
+          self.assertNotIn('href="/pipeline"', topbar)
+          self.assertNotIn('href="/vault"', topbar)
+          self.assertIn('href="/canvas"', topbar)
+          actions = topbar.split('class="header-actions"', 1)[1]
+          self.assertIn('href="#privacidad"', actions)
+          self.assertIn('id="theme"', actions)
+          self.assertLess(actions.index('href="#privacidad"'), actions.index('id="theme"'))
+          self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+  >>> END
+
+  Archivo: `CHANGELOG.md` (Encabezado al inicio del archivo)
+  <<< SEARCH
+  # Cambios
+
+  ## 2026-10-21 - README de portada simplificado
+  === REPLACE
+  # Cambios
+
+  ## 2026-11-09 - Barra superior depurada, niveles de edición, traductor NMT offline y conversión escaneada estilo Acrobat Pro
+
+  - **Barra superior principal simplificada (`templates/index.html`, `static/extended.css`):**
+    - Retirados los accesos superiores `Herramientas`, `Pipeline Batch` y `Bóveda Forense` (los estudios `/pipeline` y `/vault` siguen accesibles desde sus tarjetas en la cuadrícula).
+    - Conservado `Canvas` en la navegación central y desplazada la opción `Privacidad` (`#privacidad`) al extremo derecho dentro de `.header-actions`, inmediatamente junto al botón de cambio de tema claro/oscuro.
+  - **Reorganización de herramientas por nivel y tooltips (`templates/index.html`, `static/app.js`, `static/extended.css`):**
+    - Retirada la pestaña aislada `Suite V2`; las 61 herramientas de la portada quedan clasificadas en `Edición básica` (18), `Edición avanzada` (28) y `Edición profesional` (15), manteniendo `Edición múltiple`.
+    - Añadido tooltip flotante descriptivo al situar o enfocar cada tarjeta de herramienta.
+  - **Traductor Vectorial In-Situ 100 % offline (`engines/typography_and_layout.py`, `deploy/install-nmt.ps1`, `engines/addons.py`):**
+    - Integrado motor neuronal `CTranslate2` (`addons/pack-nmt`, pares `en_es` y `es_en`) con soporte OCR automático en PDFs escaneados y capas `GlyphLessFont`, aislamiento de memoria `CT2_USE_MKL=0` e hilos `OMP_THREAD_LIMIT`, además de fallback determinista a glosario si no hay modelos NMT.
+  - **Conversión escaneada refinada estilo Acrobat Pro (`engines/scan_office_bridge.py`, `office_export.py`, `pdf_engine.py`):**
+    - Nueva operación `scan_to_office` y modo editable automático/refinado (`scan_editable_mode` en PDF→Office y `refine_scans` en Office→PDF) con OCR Tesseract, detección de tablas con/sin bordes y celdas combinadas, vectorización de cajas/conectores/flechas y limpieza de fondo sin texto fantasma.
+  - **Suite modular V2 (`engines/`, `/pipeline`, `/canvas`, `/vault`, `/editor` drawer):**
+    - Incorporados estudios dedicados `/pipeline`, `/canvas` y `/vault`, además del registro `engines/registry.py` con 25 operaciones V2 y pruebas dedicadas en `tests/test_v2_enterprise.py` y `tests/test_scan_office_bridge.py`.
+  - **Documentación para Git (`README.md`, `CHANGELOG.md`, `Cambios de antigravity.txt`):**
+    - Actualizado `README.md` con la arquitectura actual, scripts `deploy\install-ocr.ps1` y `deploy\install-nmt.ps1`, tabla de estructura y exclusiones de `.gitignore`.
+  - Build web `2026-11-09-v2-enterprise-5`.
+
+  ## 2026-10-21 - README de portada simplificado
+  >>> END
+
+  Archivo: `README.md` (Reemplazo completo de portada para Git/GitHub)
+  - Reescrito integramente para reflejar las capacidades actuales de EVA PDF Enterprise: procesamiento 100 % local u offline, privacidad sin almacenamiento documental, >60 herramientas en 3 niveles (`Edición básica` 18, `Edición avanzada` 28, `Edición profesional` 15 + `Edición múltiple`), Editor Acrobat + Co-Piloto local, `scan_to_office` estilo Acrobat Pro, traductor neuronal offline `CTranslate2` ES<->EN (`deploy\install-nmt.ps1`), OCR (`deploy\install-ocr.ps1`), estudios `/canvas`, `/pipeline` y `/vault`, guia de arranque tras `git clone`, tabla de estructura de carpetas y exclusiones `.gitignore` (`models/*.traineddata`, `addons/pack-nmt/en_es/`, `addons/pack-nmt/es_en/`, `runtime/`, `instance/`, `MUESTRAS/`, `dist/`, etc.).
+
+- **Verificacion**:
+  - Comando 1 (Pruebas focalizadas de portada/topbar): `.\.venv\Scripts\python.exe -m unittest tests.test_platform -v` -> `Ran 41 tests in 54.821s`, `OK`.
+  - Comando 2 (Suite completa): `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` -> `Ran 165 tests in 260.734s`, `OK`.
+  - Comando 3 (Verificacion HTTP en vivo tras reiniciar demonio local en `127.0.0.1:8090`):
+    - `/health`: `BUILD=2026-11-09-v2-enterprise-5 STATUS=ok`.
+    - `/`: `<header class="topbar">` contiene `<nav aria-label="Navegacion principal"><a href="/canvas">Canvas</a></nav>` y `<div class="header-actions"><span class="network"><span></span> Entorno local</span><a href="#privacidad" class="header-privacy-link">Privacidad</a><button id="theme"...>◐</button></div>` (sin `#herramientas`, `/pipeline` ni `/vault`).
+    - `/static/extended.css?v=2026-11-09-v2-enterprise-5`: contiene `.header-privacy-link` (`CSS_HAS_PRIVACY=True`).
+  - Comando 4 (Higiene SQLite y temporales): `runtime/job-*` vacio (`[]`) e `instance/platform.sqlite3` conserva unicamente `settings`.
+--------------------------------------------------------------------------------
+## [CAMBIO-011] 2026-11-09 23:33 - Retiro de Opcion Canvas Superior en la Portada
+- **Resumen / Motivo**:
+  Se retira tambien el acceso superior `Canvas` (`/canvas`) de `<header class="topbar">` en `templates/index.html`, eliminando el contenedor `<nav aria-label="Navegacion principal">` ya vacio para mantener un encabezado limpio con la marca a la izquierda y `.header-actions` (`Entorno local`, `Privacidad` y boton de tema claro/oscuro) alineada a la derecha.
+  - El estudio `/canvas` continua accesible desde la tarjeta `Canvas Infinito Multidocumento →` en la cuadricula de herramientas (`Edición profesional` / `Todas`) y por ruta directa `/canvas`.
+  - Se actualiza `CLIENT_BUILD` a `"2026-11-09-v2-enterprise-6"` en `server.py`, las aserciones de `test_health_and_page` en `tests/test_platform.py` y la entrada del `2026-11-09` en `CHANGELOG.md`.
+
+- **Archivos modificados**:
+  - `templates/index.html` (modificado)
+  - `server.py` (modificado)
+  - `tests/test_platform.py` (modificado)
+  - `CHANGELOG.md` (modificado)
+
+- **Detalle de implementacion para GitHub Copilot Chat**:
+
+  Archivo: `templates/index.html` (Lineas 74-77)
+  <<< SEARCH
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+      <nav aria-label="Navegacion principal"><a href="/canvas">Canvas</a></nav>
+      <div class="header-actions"><span class="network"><span></span> Entorno local</span><a href="#privacidad" class="header-privacy-link">Privacidad</a><button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button></div>
+    </header>
+  === REPLACE
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+      <div class="header-actions"><span class="network"><span></span> Entorno local</span><a href="#privacidad" class="header-privacy-link">Privacidad</a><button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button></div>
+    </header>
+  >>> END
+
+  Archivo: `server.py` (Linea 29)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-5"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-09-v2-enterprise-6"
+  >>> END
+
+  Archivo: `tests/test_platform.py` (Lineas 91-99)
+  <<< SEARCH
+          topbar = response.get_data(as_text=True).split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+          self.assertNotIn('href="#herramientas"', topbar)
+          self.assertNotIn('href="/pipeline"', topbar)
+          self.assertNotIn('href="/vault"', topbar)
+          self.assertIn('href="/canvas"', topbar)
+          actions = topbar.split('class="header-actions"', 1)[1]
+  === REPLACE
+          topbar = response.get_data(as_text=True).split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+          self.assertNotIn('href="#herramientas"', topbar)
+          self.assertNotIn('href="/pipeline"', topbar)
+          self.assertNotIn('href="/canvas"', topbar)
+          self.assertNotIn('href="/vault"', topbar)
+          self.assertNotIn("<nav", topbar)
+          actions = topbar.split('class="header-actions"', 1)[1]
+  >>> END
+
+  Archivo: `CHANGELOG.md` (Lineas 5-20)
+  <<< SEARCH
+  - **Barra superior principal simplificada (`templates/index.html`, `static/extended.css`):**
+    - Retirados los accesos superiores `Herramientas`, `Pipeline Batch` y `Bóveda Forense` (los estudios `/pipeline` y `/vault` siguen accesibles desde sus tarjetas en la cuadrícula).
+    - Conservado `Canvas` en la navegación central y desplazada la opción `Privacidad` (`#privacidad`) al extremo derecho dentro de `.header-actions`, inmediatamente junto al botón de cambio de tema claro/oscuro.
+  === REPLACE
+  - **Barra superior principal simplificada (`templates/index.html`, `static/extended.css`):**
+    - Retirados los accesos superiores `Herramientas`, `Pipeline Batch`, `Canvas` y `Bóveda Forense` (los estudios `/pipeline`, `/canvas` y `/vault` siguen accesibles desde sus tarjetas en la cuadrícula).
+    - Desplazada la opción `Privacidad` (`#privacidad`) al extremo derecho dentro de `.header-actions`, inmediatamente junto al botón de cambio de tema claro/oscuro.
+  >>> END
+
+  <<< SEARCH
+  - Build web `2026-11-09-v2-enterprise-5`.
+  === REPLACE
+  - Build web `2026-11-09-v2-enterprise-6`.
+  >>> END
+
+- **Verificacion**:
+  - Comando 1 (Pruebas plataforma y topbar): `.\.venv\Scripts\python.exe -m unittest tests.test_platform -v` -> `Ran 41 tests in 53.343s`, `OK`.
+  - Comando 2 (Verificacion HTTP en vivo tras reiniciar demonio local en `127.0.0.1:8090`):
+    - `/health`: `BUILD=2026-11-09-v2-enterprise-6 STATUS=ok`.
+    - `/`: `<header class="topbar">` contiene unicamente `.brand` y `.header-actions` (`HAS_NAV=False`), sin `#herramientas`, `/pipeline`, `/canvas` ni `/vault`, y con `Privacidad` junto a `#theme`.
+    - `runtime/job-*` vacio (`JOBS=0`).
+--------------------------------------------------------------------------------

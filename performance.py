@@ -122,6 +122,10 @@ def calibrate(root: Path, config: dict) -> dict:
         tree = ProcessTree(config["max_job_memory_mb"])
         environment = os.environ.copy()
         environment["OMP_THREAD_LIMIT"] = "1"
+        environment["OPENBLAS_NUM_THREADS"] = "1"
+        environment["MKL_NUM_THREADS"] = "1"
+        environment["NUMEXPR_NUM_THREADS"] = "1"
+        environment["OPENCV_FOR_THREADS_NUM"] = "1"
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         for key in ("TEMP", "TMP", "TMPDIR"):
             environment[key] = str(folder)

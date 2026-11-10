@@ -79,9 +79,36 @@ class PlatformTests(unittest.TestCase):
         self.assertIn(b"EVA PDF Enterprise", response.data)
         self.assertIn(b'id="multi-edit-tab"', response.data)
         self.assertIn("Edición múltiple".encode(), response.data)
+        self.assertIn(b'data-category="basic"', response.data)
+        self.assertIn("Edición básica".encode(), response.data)
+        self.assertIn(b'data-category="advanced"', response.data)
+        self.assertIn("Edición avanzada".encode(), response.data)
+        self.assertIn(b'data-category="professional"', response.data)
+        self.assertIn("Edición profesional".encode(), response.data)
+        self.assertIn(b'id="tool-tooltip"', response.data)
+        self.assertNotIn(b'data-category="v2"', response.data)
+        self.assertNotIn(b"Suite V2", response.data)
         self.assertIn(b'id="session-tools"', response.data)
+        topbar = response.get_data(as_text=True).split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+        self.assertNotIn('href="#herramientas"', topbar)
+        self.assertNotIn('href="/pipeline"', topbar)
+        self.assertNotIn('href="/canvas"', topbar)
+        self.assertNotIn('href="/vault"', topbar)
+        self.assertNotIn("<nav", topbar)
+        actions = topbar.split('class="header-actions"', 1)[1]
+        self.assertIn('href="#privacidad"', actions)
+        self.assertIn('id="theme"', actions)
+        self.assertLess(actions.index('href="#privacidad"'), actions.index('id="theme"'))
         self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
         self.assertEqual(self.client.get("/api/capabilities").json["max_pages"], 0)
+
+        app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        card_lines = [line for line in app_js.splitlines() if line.strip().startswith('{id:"')]
+        self.assertGreaterEqual(len(card_lines), 60)
+        for line in card_lines:
+            self.assertRegex(line, r'level:"(basic|advanced|professional)"')
+            self.assertIn('detail:"', line)
+            self.assertIn('io:"', line)
 
     def test_no_document_tables(self):
         with closing(sqlite3.connect(self.root / "instance" / "platform.sqlite3")) as connection:

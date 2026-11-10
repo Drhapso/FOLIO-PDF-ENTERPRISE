@@ -6,6 +6,9 @@ instance/
 runtime/
 config/site_config.json
 models/*.traineddata
+addons/pack-nmt/en_es/
+addons/pack-nmt/es_en/
+addons/pack-nmt/*.argosmodel
 *.log
 .pytest_cache/
 build/

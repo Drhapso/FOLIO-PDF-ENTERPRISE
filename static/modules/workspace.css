@@ -1,0 +1,312 @@
+/* Estilos unificados para espacios V2 (Pipeline, Canvas, Vault y Drawer de Editor) */
+
+.v2-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.v2-nav-links a {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--surface);
+}
+
+.v2-nav-links a:hover,
+.v2-nav-links a[aria-current="page"] {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--accent);
+}
+
+.v2-workspace-main {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+  display: grid;
+  gap: 20px;
+}
+
+.v2-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 18px;
+}
+
+.v2-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow);
+}
+
+.v2-card h2,
+.v2-card h3 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.v2-card p.hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.v2-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.v2-field input,
+.v2-field select,
+.v2-field textarea {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.v2-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.v2-row-grow {
+  flex: 1 1 180px;
+}
+
+.v2-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.v2-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--soft);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+
+.v2-output-pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.v2-status-bar {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--soft);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.v2-status-bar.error {
+  background: var(--error-soft);
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.v2-status-bar.ok {
+  background: var(--success-bg);
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.v2-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v2-list-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--bg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+/* Canvas Infinito */
+.canvas-shell {
+  display: grid;
+  grid-template-columns: 310px 1fr;
+  min-height: calc(100vh - 64px);
+}
+
+.canvas-sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.canvas-stage-wrap {
+  position: relative;
+  overflow: hidden;
+  background: var(--viewport);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+  background-size: 24px 24px;
+  cursor: grab;
+}
+
+.canvas-stage-wrap.panning {
+  cursor: grabbing;
+}
+
+.canvas-world {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+
+.canvas-svg-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3000px;
+  height: 2200px;
+  pointer-events: none;
+}
+
+.canvas-node {
+  position: absolute;
+  width: 260px;
+  background: var(--surface);
+  color: var(--text);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  user-select: none;
+  cursor: move;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.canvas-node.selected {
+  border-color: var(--accent);
+}
+
+.canvas-node.drifted {
+  border-color: var(--warning);
+}
+
+.canvas-node-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.canvas-node-body {
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 110px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.canvas-thumb {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+/* Editor V2 Drawer */
+.acro-v2-drawer {
+  width: 330px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.acro-v2-drawer[hidden] {
+  display: none;
+}
+
+.v2-math-box {
+  min-height: 58px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+.v2-thumb-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.v2-thumb-grid img {
+  max-width: 135px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+@media (max-width: 900px) {
+  .canvas-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 460px;
+  }
+}

@@ -1,63 +1,79 @@
 "use strict";
 const BUILD = document.querySelector('meta[name="client-build"]').content;
 const $ = (id) => document.getElementById(id);
+const LEVEL_LABELS = {basic:"Edición básica",advanced:"Edición avanzada",professional:"Edición profesional"};
 const tools = [
-  {id:"merge",name:"Unir PDF",icon:"⊕",category:"organize",desc:"Varios documentos, un solo PDF. En el orden que tú elijas.",multiple:true},
-  {id:"split",name:"Dividir PDF",icon:"⊟",category:"organize",desc:"Separa páginas o crea grupos para descargar en un ZIP."},
-  {id:"organize",name:"Organizar páginas",icon:"▤",category:"organize",desc:"Reordena, extrae y elimina páginas con una sola selección."},
-  {id:"rotate",name:"Rotar PDF",icon:"↻",category:"organize",desc:"Pon cada página en su posición. Gira 90°, 180° o 270°."},
-  {id:"compress",name:"Comprimir PDF",icon:"↙",category:"optimize",desc:"Menos peso, más facilidad para compartir. Elige el nivel."},
-  {id:"ocr",name:"Reconocer texto · OCR",icon:"A",category:"optimize",desc:"Convierte escaneos en PDF con texto que puedes buscar.",requires:"ocr"},
-  {id:"office_to_pdf",name:"Office a PDF",icon:"W",category:"convert",desc:"Convierte Word, Excel, PowerPoint y OpenDocument.",requires:"office",accept:".docx,.xlsx,.pptx,.odt,.ods,.odp"},
-  {id:"pdf_to_docx",name:"PDF a Word",icon:"W",category:"convert",desc:"Recupera texto con estilos, tablas e imágenes.",warning:"Coloca texto y tablas editables en su posición original sobre un fondo con logos, firmas y bordes; mantiene la paginación. Disposición fija: los textos nuevos largos no reacomodan la página; revisa fuentes. Las páginas escaneadas o giradas se conservan como imagen; usa OCR para recuperar texto."},
-  {id:"pdf_to_xlsx",name:"PDF a Excel",icon:"X",category:"convert",desc:"Tablas con formato, texto y referencia visual del original.",warning:"Conserva tablas detectadas, celdas combinadas, estilos y texto fuera de tablas. Cada hoja Original contiene la página como imagen. No infiere fórmulas ni datos de escaneos; revisa la estructura detectada."},
-  {id:"pdf_to_pptx",name:"PDF a PowerPoint",icon:"P",category:"convert",desc:"Diapositivas con texto y tablas editables.",warning:"Reconstruye texto horizontal y tablas sobre un fondo que conserva imágenes y gráficos no editables. Fuentes y espaciado pueden variar. Las páginas escaneadas o giradas se mantienen como imagen; revisa el resultado."},
-  {id:"images_to_pdf",name:"Imágenes a PDF",icon:"▧",category:"convert",desc:"Reúne fotos e imágenes, incluidas HEIC/HEIF, en un PDF.",multiple:true,accept:".png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif"},
-  {id:"pdf_to_images",name:"PDF a imágenes",icon:"▣",category:"convert",desc:"Exporta tus páginas como imágenes PNG en un ZIP."},
-  {id:"extract_text",name:"Extraer texto",icon:"T",category:"convert",desc:"Llévate el contenido de tu PDF a un archivo de texto."},
-  {id:"edit",name:"Editor Acrobat · Editar PDF",icon:"✎",category:"edit",desc:"Reemplaza texto, cambia su formato, anota y censura. Escaneos: reconstrucción local de palabras sobre fondos simples; las zonas complejas se bloquean.",standaloneTab:true},
-  {id:"watermark",name:"Marca de agua",icon:"◈",category:"edit",desc:"Añade una marca de texto sobre las páginas que elijas."},
-  {id:"protect",name:"Proteger PDF",icon:"⌑",category:"edit",desc:"Controla su apertura con una contraseña y cifrado AES-256."},
-  {id:"unlock",name:"Desbloquear PDF",icon:"⌕",category:"edit",desc:"Retira la contraseña de un PDF que te pertenece.",warning:"Necesitas conocer la contraseña actual. Esta herramienta no recupera ni adivina contraseñas."},
-  {id:"extract_pages",name:"Extraer páginas",icon:"▤",category:"organize",desc:"Descarga únicamente las páginas que necesitas."},
-  {id:"delete_pages",name:"Eliminar páginas",icon:"−",category:"organize",desc:"Elimina una selección explícita; conserva las demás."},
-  {id:"number_pages",name:"Numerar páginas",icon:"123",category:"edit",desc:"Añade números arriba o abajo, con inicio configurable."},
-  {id:"extract_images",name:"Extraer imágenes",icon:"▧",category:"convert",desc:"Recupera imágenes incrustadas, no capturas de páginas."},
-  {id:"crop",name:"Recortar PDF",icon:"⌗",category:"edit",desc:"Ajusta la región visible usando porcentajes de la página.",warning:"Recorte visual: lo oculto puede seguir en el archivo. Para eliminar información usa Censurar PDF."},
-  {id:"resize",name:"Cambiar tamaño",icon:"↔",category:"organize",desc:"Ajusta páginas a A4, carta u oficio conservando proporciones.",warning:"Conserva apariencia vectorial, no formularios, anotaciones ni enlaces interactivos."},
-  {id:"nup",name:"Varias páginas por hoja",icon:"▦",category:"organize",desc:"Prepara 2 o 4 páginas por hoja para imprimir.",warning:"No conserva formularios, anotaciones ni enlaces interactivos."},
-  {id:"overlay",name:"Superponer PDF",icon:"▱",category:"edit",desc:"Aplica un membrete o plantilla sobre un documento.",multiple:true,warning:"Primero el documento, luego la plantilla PDF. La plantilla debe tener una página o igual cantidad de páginas que el documento."},
-  {id:"compare",name:"Comparar PDF",icon:"≠",category:"organize",desc:"Informe, diferencias de texto y mapas visuales en un ZIP.",multiple:true,warning:"Selecciona exactamente dos PDF. Compara apariencia a 96 DPI y texto extraído; no certifica equivalencia ni firmas."},
-  {id:"stamp",name:"Firma visual e imágenes",icon:"✍",category:"edit",desc:"Dibuja tu firma o inserta una imagen de firma, sello o logo.",multiple:true,accept:".pdf,.png,.jpg,.jpeg",warning:"Primero el PDF y después una imagen PNG/JPEG. Es una firma visual, no firma digital con certificado. Las coordenadas son porcentajes; quite antes cualquier rotación."},
-  {id:"annotate",name:"Anotar PDF",icon:"✎",category:"edit",desc:"Resalta zonas, dibuja rectángulos y agrega notas en el editor Acrobat.",standaloneTab:true},
-  {id:"redact",name:"Censurar PDF",icon:"■",category:"edit",desc:"Elimina contenido de zonas seleccionadas con censura real en el editor Acrobat.",standaloneTab:true,warning:"Revisa todas las páginas, anotaciones y datos sensibles antes de compartir. No es un saneamiento forense automático."},
-  {id:"remove_metadata",name:"Eliminar metadatos",icon:"ⓘ",category:"edit",desc:"Limpia autor, título y metadatos Info/XMP del documento.",warning:"No elimina adjuntos, comentarios, texto ni datos personales dentro del contenido."},
-  {id:"grayscale",name:"Escala de grises",icon:"◐",category:"optimize",desc:"Crea una copia monocromática rasterizada.",warning:"Pierde texto seleccionable, estructura accesible, enlaces y campos interactivos."},
-  {id:"rasterize",name:"Rasterizar PDF",icon:"▦",category:"convert",desc:"Convierte las páginas en imágenes dentro de un nuevo PDF.",warning:"Pierde texto seleccionable, estructura accesible, enlaces y campos interactivos."},
-  {id:"flatten",name:"Aplanar PDF",icon:"▰",category:"edit",desc:"Integra visualmente anotaciones y campos de formulario.",warning:"Verifica que todos los campos y anotaciones mantengan su apariencia."},
-  {id:"repair",name:"Reparar estructura",icon:"⚒",category:"optimize",desc:"Recupera y reescribe estructuras PDF que qpdf pueda leer.",warning:"No recupera contenido perdido ni certifica integridad visual. Si persisten errores estructurales se rechaza."},
-  {id:"web_optimize",name:"Optimizar para web",icon:"↗",category:"optimize",desc:"Linealiza el PDF para permitir lectura progresiva.",warning:"No garantiza menor tamaño ni cambia la política de borrado de EVA PDF Enterprise."},
-  {id:"blank_report",name:"Detectar páginas en blanco",icon:"□",category:"organize",desc:"Genera una lista JSON de candidatas para revisión.",warning:"Heurística conservadora: verifica visualmente sellos, firmas tenues y páginas escaneadas antes de eliminar."},
-  {id:"remove_blank",name:"Eliminar blancos revisados",icon:"⊟",category:"organize",desc:"Elimina páginas confirmadas que pasan la comprobación de blanco.",warning:"Primero usa Detectar páginas en blanco. Indica explícitamente los números revisados; nunca se eliminan todas las páginas."},
-  {id:"form_fields",name:"Consultar formulario",icon:"☷",category:"edit",desc:"Descarga nombres, tipos y valores de campos AcroForm.",warning:"No admite formularios XFA. El informe puede contener datos sensibles: se descarga a tu equipo."},
-  {id:"fill_form",name:"Rellenar formulario",icon:"☑",category:"edit",desc:"Completa campos AcroForm por sus nombres.",warning:"Consulta primero los nombres de campos. No ejecuta JavaScript ni firma certificados; no admite XFA ni botones radio."},
-  {id:"dossier",name:"Armar expediente",icon:"▣",category:"organize",desc:"Reúne anexos PDF en el orden elegido, con portada opcional.",multiple:true},
-  {id:"html_to_pdf",name:"HTML local a PDF",icon:"<>",category:"convert",desc:"Extrae el texto de un archivo HTML UTF-8 sin conexiones externas.",accept:".html,.htm",warning:"Conversión de texto, no captura de una página web: ignora diseño, CSS, imágenes y scripts. Máximo 2 MB. No acepta URLs."},
-  {id:"pdf_to_svg",name:"PDF a SVG",icon:"◇",category:"convert",desc:"Exporta páginas como gráficos SVG con texto convertido en trazados."},
-  {id:"heic_to_jpg",name:"HEIC a JPEG",icon:"▧",category:"convert",desc:"Convierte una foto HEIC o HEIF de un fotograma a JPEG.",accept:".heic,.heif",warning:"JPEG con pérdida. No conserva HDR ni metadatos originales; máximo de píxeles igual que las demás imágenes."},
-  {id:"epub_to_pdf",name:"EPUB a PDF",icon:"E",category:"convert",desc:"Convierte un libro EPUB sin DRM a páginas A4.",accept:".epub",warning:"Refluye el libro; revisa imágenes, tipografía y saltos. No elimina DRM ni conserva interactividad."},
-  {id:"pdf_to_epub",name:"PDF a EPUB de texto",icon:"E",category:"convert",desc:"Crea un libro de texto con una sección por página.",warning:"Solo texto extraíble, sin reconstruir diseño, tablas ni imágenes. Usa OCR primero si es un escaneo."},
-  {id:"verify_signatures",name:"Comprobar firmas · offline",icon:"✓",category:"edit",desc:"Informe de integridad criptográfica y cobertura de firmas PDF.",warning:"No certifica identidad, confianza, revocación ni validez legal. Sin consultas OCSP/CRL/TSA. Revisa cobertura y cambios: una firma correcta puede cubrir una versión anterior. No admite PDF cifrados ni crea firmas."},
+  {id:"merge",name:"Unir PDF",icon:"⊕",category:"organize",level:"basic",desc:"Varios documentos, un solo PDF. En el orden que tú elijas.",detail:"Combina dos o más PDF en el orden exacto que definas en la lista antes de descargar un único PDF unificado.",io:"Entrada: varios .pdf · Salida: PDF unido",multiple:true},
+  {id:"split",name:"Dividir PDF",icon:"⊟",category:"organize",level:"basic",desc:"Separa páginas o crea grupos para descargar en un ZIP.",detail:"Divide un PDF por cada página individual o según rangos personalizados (ej. 1-3;4-6) dentro de un paquete ZIP.",io:"Entrada: .pdf · Salida: archivo .zip"},
+  {id:"organize",name:"Organizar páginas",icon:"▤",category:"organize",level:"basic",desc:"Reordena, extrae y elimina páginas con una sola selección.",detail:"Indica el orden o rango exacto (p. ej. 3,1,5-2); las páginas omitidas quedan fuera del documento final.",io:"Entrada: .pdf · Salida: PDF reorganizado"},
+  {id:"rotate",name:"Rotar PDF",icon:"↻",category:"organize",level:"basic",desc:"Pon cada página en su posición. Gira 90°, 180° o 270°.",detail:"Endereza páginas escaneadas de lado o boca abajo seleccionando páginas concretas y el ángulo de giro exacto.",io:"Entrada: .pdf · Salida: PDF rotado"},
+  {id:"compress",name:"Comprimir PDF",icon:"↙",category:"optimize",level:"basic",desc:"Menos peso, más facilidad para compartir. Elige el nivel.",detail:"Reduce el tamaño en modo estructural sin pérdida (conserva texto/vectores) o en modo visual más ligero.",io:"Entrada: .pdf · Salida: PDF optimizado"},
+  {id:"extract_pages",name:"Extraer páginas",icon:"▤",category:"organize",level:"basic",desc:"Descarga únicamente las páginas que necesitas.",detail:"Crea un nuevo PDF conservando únicamente los números y rangos de página que especifiques.",io:"Entrada: .pdf · Salida: PDF extraído"},
+  {id:"delete_pages",name:"Eliminar páginas",icon:"−",category:"organize",level:"basic",desc:"Elimina una selección explícita; conserva las demás.",detail:"Quita de forma permanente las páginas indicadas conservando intacto el resto del documento.",io:"Entrada: .pdf · Salida: PDF depurado"},
+  {id:"number_pages",name:"Numerar páginas",icon:"123",category:"edit",level:"basic",desc:"Añade números arriba o abajo, con inicio configurable.",detail:"Inserta numeración limpia en encabezado o pie de página eligiendo tamaño tipográfico y número inicial.",io:"Entrada: .pdf · Salida: PDF numerado"},
+  {id:"watermark",name:"Marca de agua",icon:"◈",category:"edit",level:"basic",desc:"Añade una marca de texto sobre las páginas que elijas.",detail:"Estampa un rótulo semitransparente (p. ej. CONFIDENCIAL o COPIA) centrado sobre las páginas seleccionadas.",io:"Entrada: .pdf · Salida: PDF marcado"},
+  {id:"protect",name:"Proteger PDF",icon:"⌑",category:"edit",level:"basic",desc:"Controla su apertura con una contraseña y cifrado AES-256.",detail:"Cifra el documento completo con clave de apertura AES-256 sin guardar la contraseña en el servidor.",io:"Entrada: .pdf · Salida: PDF cifrado AES-256"},
+  {id:"unlock",name:"Desbloquear PDF",icon:"⌕",category:"edit",level:"basic",desc:"Retira la contraseña de un PDF que te pertenece.",detail:"Genera una copia sin clave a partir de un PDF protegido cuya contraseña actual conoces e introduces.",io:"Entrada: .pdf protegido · Salida: PDF sin clave",warning:"Necesitas conocer la contraseña actual. Esta herramienta no recupera ni adivina contraseñas."},
+  {id:"images_to_pdf",name:"Imágenes a PDF",icon:"▧",category:"convert",level:"basic",desc:"Reúne fotos e imágenes, incluidas HEIC/HEIF, en un PDF.",detail:"Convierte lotes de fotografías o capturas PNG, JPEG, TIFF, WebP o HEIC en un PDF multipágina manteniendo el orden.",io:"Entrada: imágenes · Salida: PDF multipágina",multiple:true,accept:".png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif"},
+  {id:"pdf_to_images",name:"PDF a imágenes",icon:"▣",category:"convert",level:"basic",desc:"Exporta tus páginas como imágenes PNG en un ZIP.",detail:"Renderiza las páginas seleccionadas a PNG, JPEG o TIFF con DPI elegible (72-300) dentro de un ZIP.",io:"Entrada: .pdf · Salida: ZIP con imágenes"},
+  {id:"extract_text",name:"Extraer texto",icon:"T",category:"convert",level:"basic",desc:"Llévate el contenido de tu PDF a un archivo de texto.",detail:"Extrae el texto nativo u OCR existente manteniendo orden de lectura en un archivo .txt UTF-8.",io:"Entrada: .pdf · Salida: archivo .txt"},
+  {id:"extract_images",name:"Extraer imágenes",icon:"▧",category:"convert",level:"basic",desc:"Recupera imágenes incrustadas, no capturas de páginas.",detail:"Extrae directamente las fotos o gráficos raster embebidos dentro del PDF tal como están almacenados.",io:"Entrada: .pdf · Salida: ZIP con imágenes"},
+  {id:"heic_to_jpg",name:"HEIC a JPEG",icon:"▧",category:"convert",level:"basic",desc:"Convierte una foto HEIC o HEIF de un fotograma a JPEG.",detail:"Transforma fotos Apple/móviles HEIC/HEIF en archivos JPEG compatibles listos para compartir.",io:"Entrada: .heic/.heif · Salida: imagen .jpg",accept:".heic,.heif",warning:"JPEG con pérdida. No conserva HDR ni metadatos originales; máximo de píxeles igual que las demás imágenes."},
+  {id:"remove_metadata",name:"Eliminar metadatos",icon:"ⓘ",category:"edit",level:"basic",desc:"Limpia autor, título y metadatos Info/XMP del documento.",detail:"Borra campos de autoría, software creador, fechas y paquetes XMP antes de distribuir el archivo.",io:"Entrada: .pdf · Salida: PDF sin metadatos",warning:"No elimina adjuntos, comentarios, texto ni datos personales dentro del contenido."},
+  {id:"dossier",name:"Armar expediente",icon:"▣",category:"organize",level:"basic",desc:"Reúne anexos PDF en el orden elegido, con portada opcional.",detail:"Une varios anexos PDF generando automáticamente una página de portada inicial titulada para entrega formal.",io:"Entrada: varios .pdf · Salida: expediente PDF",multiple:true},
+  {id:"edit",name:"Editor Acrobat · Editar PDF",icon:"✎",category:"edit",level:"advanced",desc:"Reemplaza texto, cambia su formato, anota y censura. Escaneos: reconstrucción local de palabras sobre fondos simples; las zonas complejas se bloquean.",detail:"Abre el editor visual interactivo para editar texto in-situ sin parches blancos, cambiar fuentes/color, anotar y censurar.",io:"Entrada: .pdf · Salida: editor visual + PDF",standaloneTab:true},
+  {id:"annotate",name:"Anotar PDF",icon:"✎",category:"edit",level:"advanced",desc:"Resalta zonas, dibuja rectángulos y agrega notas en el editor Acrobat.",detail:"Inicia el lienzo Acrobat enfocado en herramientas de resaltado, recuadros de énfasis y notas adhesivas.",io:"Entrada: .pdf · Salida: PDF anotado",standaloneTab:true},
+  {id:"redact",name:"Censurar PDF",icon:"■",category:"edit",level:"advanced",desc:"Elimina contenido de zonas seleccionadas con censura real en el editor Acrobat.",detail:"Destruye texto, imágenes y metadatos dentro de las regiones marcadas de forma irreversible sobre el archivo final.",io:"Entrada: .pdf · Salida: PDF censurado",standaloneTab:true,warning:"Revisa todas las páginas, anotaciones y datos sensibles antes de compartir. No es un saneamiento forense automático."},
+  {id:"ocr",name:"Reconocer texto · OCR",icon:"A",category:"optimize",level:"advanced",desc:"Convierte escaneos en PDF con texto que puedes buscar.",detail:"Aplica reconocimiento óptico Tesseract local (español/inglés) con enderezado opcional de hasta 5° y limpieza de papel.",io:"Entrada: PDF escaneado · Salida: PDF buscable",requires:"ocr"},
+  {id:"office_to_pdf",name:"Office a PDF",icon:"W",category:"convert",level:"advanced",desc:"Convierte Word, Excel, PowerPoint y OpenDocument.",detail:"Transforma documentos Office y OpenDocument mediante LibreOffice local, con opción para vectorizar capturas incrustadas.",io:"Entrada: .docx/.xlsx/.pptx/.odt · Salida: PDF",requires:"office",accept:".docx,.xlsx,.pptx,.odt,.ods,.odp"},
+  {id:"pdf_to_docx",name:"PDF a Word",icon:"W",category:"convert",level:"advanced",desc:"Recupera texto con estilos, tablas e imágenes.",detail:"Exporta texto editable, tablas y formato a .docx; si contiene escaneos, activa OCR + reconstrucción vectorial automática.",io:"Entrada: .pdf · Salida: documento .docx",warning:"Coloca texto y tablas editables en su posición original sobre un fondo con logos, firmas y bordes; mantiene la paginación. Disposición fija: los textos nuevos largos no reacomodan la página; revisa fuentes. Las páginas escaneadas o giradas se conservan como imagen; usa OCR para recuperar texto."},
+  {id:"pdf_to_xlsx",name:"PDF a Excel",icon:"X",category:"convert",level:"advanced",desc:"Tablas con formato, texto y referencia visual del original.",detail:"Extrae tablas hacia hojas de cálculo Excel conservando celdas combinadas y una hoja visual de referencia por página.",io:"Entrada: .pdf · Salida: libro .xlsx",warning:"Conserva tablas detectadas, celdas combinadas, estilos y texto fuera de tablas. Cada hoja Original contiene la página como imagen. No infiere fórmulas ni datos de escaneos; revisa la estructura detectada."},
+  {id:"pdf_to_pptx",name:"PDF a PowerPoint",icon:"P",category:"convert",level:"advanced",desc:"Diapositivas con texto y tablas editables.",detail:"Genera diapositivas .pptx editables por cada página del PDF, incluyendo reconstrucción OCR/vectorial de diagramas en escaneos.",io:"Entrada: .pdf · Salida: presentación .pptx",warning:"Reconstruye texto horizontal y tablas sobre un fondo limpio; activa el modo escaneo OCR + vectores para páginas escaneadas o diagramas."},
+  {id:"crop",name:"Recortar PDF",icon:"⌗",category:"edit",level:"advanced",desc:"Ajusta la región visible usando porcentajes de la página.",detail:"Dibuja visualmente sobre la vista previa o define márgenes porcentuales exactos para recortar bordes no deseados.",io:"Entrada: .pdf · Salida: PDF recortado",warning:"Recorte visual: lo oculto puede seguir en el archivo. Para eliminar información usa Censurar PDF."},
+  {id:"resize",name:"Cambiar tamaño",icon:"↔",category:"organize",level:"advanced",desc:"Ajusta páginas a A4, carta u oficio conservando proporciones.",detail:"Estandariza documentos con hojas mixtas hacia dimensiones uniformes A4, Carta u Oficio preservando nitidez vectorial.",io:"Entrada: .pdf · Salida: PDF estandarizado",warning:"Conserva apariencia vectorial, no formularios, anotaciones ni enlaces interactivos."},
+  {id:"nup",name:"Varias páginas por hoja",icon:"▦",category:"organize",level:"advanced",desc:"Prepara 2 o 4 páginas por hoja para imprimir.",detail:"Reagrupa 2 o 4 páginas originales en una sola hoja A4, Carta u Oficio para ahorrar papel o revisar borradores.",io:"Entrada: .pdf · Salida: PDF multipágina (2 o 4-up)",warning:"No conserva formularios, anotaciones ni enlaces interactivos."},
+  {id:"overlay",name:"Superponer PDF",icon:"▱",category:"edit",level:"advanced",desc:"Aplica un membrete o plantilla sobre un documento.",detail:"Combina tu PDF principal encima o debajo de un segundo PDF plantilla/membrete respetando transparencias.",io:"Entrada: 2 archivos .pdf · Salida: PDF fusionado",multiple:true,warning:"Primero el documento, luego la plantilla PDF. La plantilla debe tener una página o igual cantidad de páginas que el documento."},
+  {id:"compare",name:"Comparar PDF",icon:"≠",category:"organize",level:"advanced",desc:"Informe, diferencias de texto y mapas visuales en un ZIP.",detail:"Coteja dos versiones PDF página a página para localizar cambios textuales y mapas visuales resaltados.",io:"Entrada: 2 archivos .pdf · Salida: ZIP con informe",multiple:true,warning:"Selecciona exactamente dos PDF. Compara apariencia a 96 DPI y texto extraído; no certifica equivalencia ni firmas."},
+  {id:"stamp",name:"Firma visual e imágenes",icon:"✍",category:"edit",level:"advanced",desc:"Dibuja tu firma o inserta una imagen de firma, sello o logo.",detail:"Permite trazar una firma manuscrita en pantalla o cargar un sello PNG/JPEG y ubicarlo por coordenadas sobre el PDF.",io:"Entrada: PDF + PNG/JPEG · Salida: PDF estampado",multiple:true,accept:".pdf,.png,.jpg,.jpeg",warning:"Primero el PDF y después una imagen PNG/JPEG. Es una firma visual, no firma digital con certificado. Las coordenadas son porcentajes; quite antes cualquier rotación."},
+  {id:"grayscale",name:"Escala de grises",icon:"◐",category:"optimize",level:"advanced",desc:"Crea una copia monocromática rasterizada.",detail:"Convierte páginas en color a escala de grises uniforme con DPI configurable útil para impresión en blanco y negro.",io:"Entrada: .pdf · Salida: PDF monocromático",warning:"Pierde texto seleccionable, estructura accesible, enlaces y campos interactivos."},
+  {id:"rasterize",name:"Rasterizar PDF",icon:"▦",category:"convert",level:"advanced",desc:"Convierte las páginas en imágenes dentro de un nuevo PDF.",detail:"Aplana cada página como fotografía a una resolución fija impidiendo copiar o editar fuentes y trazos vectoriales.",io:"Entrada: .pdf · Salida: PDF rasterizado",warning:"Pierde texto seleccionable, estructura accesible, enlaces y campos interactivos."},
+  {id:"flatten",name:"Aplanar PDF",icon:"▰",category:"edit",level:"advanced",desc:"Integra visualmente anotaciones y campos de formulario.",detail:"Consolida campos rellenados, sellos y comentarios en el flujo visual estático de la página para evitar cambios.",io:"Entrada: .pdf · Salida: PDF aplanado",warning:"Verifica que todos los campos y anotaciones mantengan su apariencia."},
+  {id:"repair",name:"Reparar estructura",icon:"⚒",category:"optimize",level:"advanced",desc:"Recupera y reescribe estructuras PDF que qpdf pueda leer.",detail:"Reconstruye tablas de referencias cruzadas y objetos dañados en archivos PDF corruptos o mal exportados.",io:"Entrada: .pdf dañado · Salida: PDF reparado",warning:"No recupera contenido perdido ni certifica integridad visual. Si persisten errores estructurales se rechaza."},
+  {id:"web_optimize",name:"Optimizar para web",icon:"↗",category:"optimize",level:"advanced",desc:"Linealiza el PDF para permitir lectura progresiva.",detail:"Reordena los objetos del archivo (Fast Web View) para acelerar la carga página a página en navegadores y servidores.",io:"Entrada: .pdf · Salida: PDF linealizado",warning:"No garantiza menor tamaño ni cambia la política de borrado de EVA PDF Enterprise."},
+  {id:"blank_report",name:"Detectar páginas en blanco",icon:"□",category:"organize",level:"advanced",desc:"Genera una lista JSON de candidatas para revisión.",detail:"Analiza tinta, densidad de píxeles y texto de cada página para detectar hojas en blanco sospechosas antes de borrar.",io:"Entrada: .pdf · Salida: informe .json",warning:"Heurística conservadora: verifica visualmente sellos, firmas tenues y páginas escaneadas antes de eliminar."},
+  {id:"remove_blank",name:"Eliminar blancos revisados",icon:"⊟",category:"organize",level:"advanced",desc:"Elimina páginas confirmadas que pasan la comprobación de blanco.",detail:"Borra únicamente las páginas en blanco que tú confirmas explícitamente tras revisar el informe previo.",io:"Entrada: .pdf · Salida: PDF sin hojas blancas",warning:"Primero usa Detectar páginas en blanco. Indica explícitamente los números revisados; nunca se eliminan todas las páginas."},
+  {id:"form_fields",name:"Consultar formulario",icon:"☷",category:"edit",level:"advanced",desc:"Descarga nombres, tipos y valores de campos AcroForm.",detail:"Lista todos los nombres técnicos y valores actuales de los campos AcroForm del PDF en JSON para automatizar rellenos.",io:"Entrada: .pdf con formulario · Salida: esquema .json",warning:"No admite formularios XFA. El informe puede contener datos sensibles: se descarga a tu equipo."},
+  {id:"fill_form",name:"Rellenar formulario",icon:"☑",category:"edit",level:"advanced",desc:"Completa campos AcroForm por sus nombres.",detail:"Inyecta texto y estados en campos de formulario AcroForm enviando un diccionario JSON de clave-valor.",io:"Entrada: .pdf + JSON · Salida: formulario relleno",warning:"Consulta primero los nombres de campos. No ejecuta JavaScript ni firma certificados; no admite XFA ni botones radio."},
+  {id:"html_to_pdf",name:"HTML local a PDF",icon:"<>",category:"convert",level:"advanced",desc:"Extrae el texto de un archivo HTML UTF-8 sin conexiones externas.",detail:"Convierte un documento HTML local aislado a PDF limpio leyendo solo su texto y estructura sin cargar scripts ni enlaces.",io:"Entrada: .html/.htm · Salida: PDF de texto",accept:".html,.htm",warning:"Conversión de texto, no captura de una página web: ignora diseño, CSS, imágenes y scripts. Máximo 2 MB. No acepta URLs."},
+  {id:"pdf_to_svg",name:"PDF a SVG",icon:"◇",category:"convert",level:"advanced",desc:"Exporta páginas como gráficos SVG con texto convertido en trazados.",detail:"Convierte páginas seleccionadas a archivos vectoriales SVG individuales listos para software de diseño e ilustración.",io:"Entrada: .pdf · Salida: SVG o ZIP con SVGs"},
+  {id:"epub_to_pdf",name:"EPUB a PDF",icon:"E",category:"convert",level:"advanced",desc:"Convierte un libro EPUB sin DRM a páginas A4.",detail:"Maqueta automáticamente capítulos e imágenes de un libro electrónico .epub hacia un PDF paginado en A4.",io:"Entrada: .epub sin DRM · Salida: PDF A4",accept:".epub",warning:"Refluye el libro; revisa imágenes, tipografía y saltos. No elimina DRM ni conserva interactividad."},
+  {id:"pdf_to_epub",name:"PDF a EPUB de texto",icon:"E",category:"convert",level:"advanced",desc:"Crea un libro de texto con una sección por página.",detail:"Extrae el contenido textual de un PDF en capítulos estructurados para lectores de libros electrónicos .epub.",io:"Entrada: .pdf · Salida: libro .epub",warning:"Solo texto extraíble, sin reconstruir diseño, tablas ni imágenes. Usa OCR primero si es un escaneo."},
+  {id:"anti_track",name:"Purga Anti-Rastreo",icon:"🛡",category:"edit",level:"advanced",isV2:true,desc:"Elimina JavaScript, píxeles baliza ocultos y parámetros utm/tracking de enlaces PDF.",detail:"Desactiva acciones JavaScript OpenAction/Names, elimina enlaces baliza 1x1 y limpia parámetros utm/fbclid/gclid de URLs.",io:"Entrada: .pdf · Salida: PDF saneado"},
+  {id:"scan_to_office",name:"PDF Escaneado a Office Editable",icon:"✨",category:"convert",level:"professional",isV2:true,desc:"Estilo Acrobat Pro: OCR local de texto + vectorización de tablas, cajas, flechas y diagramas hacia PowerPoint, Word, Excel o PDF.",detail:"Reconoce por OCR texto con color y formato, reconstruye tablas (con/sin bordes y celdas combinadas), vectoriza cajas/flechas de diagramas y limpia texto fantasma del fondo.",io:"Entrada: PDF escaneado o imagen · Salida: .pptx/.docx/.xlsx/.pdf",keywords:"office pdf powerpoint word excel escaneo ocr vectores diagramas acrobat pptx docx xlsx",multiple:true,accept:".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp",warning:"Reconstruye texto OCR con estilo/color, tablas editables (con y sin bordes), formas vectoriales y conectores; borra texto/tablas duplicadas del fondo."},
+  {id:"verify_signatures",name:"Comprobar firmas · offline",icon:"✓",category:"edit",level:"professional",desc:"Informe de integridad criptográfica y cobertura de firmas PDF.",detail:"Audita firmas digitales PAdES/PKCS#7 sin red externa para verificar si el hash permanece íntegro o hubo modificaciones posteriores.",io:"Entrada: .pdf firmado · Salida: informe técnico",warning:"No certifica identidad, confianza, revocación ni validez legal. Sin consultas OCSP/CRL/TSA. Revisa cobertura y cambios: una firma correcta puede cubrir una versión anterior. No admite PDF cifrados ni crea firmas."},
+  {id:"forensic_sanitize",name:"Desinfección Forense Profunda",icon:"🧹",category:"edit",level:"professional",isV2:true,desc:"Reconstruye el árbol COS a revisión única (%%EOF=1) eliminando rastros e historial oculto.",detail:"Aplica redacción por patrón y recompila la estructura COS en una única revisión limpia eliminando historial incremental, capas y texto oculto.",io:"Entrada: .pdf · Salida: PDF + reporte forense",warning:"Elimina historial incremental, texto invisible, adjuntos, PieceInfo y capas ocultas."},
+  {id:"extract_vectors_svg",name:"Cosechador Vectorial SVG/EPS",icon:"📐",category:"convert",level:"professional",isV2:true,desc:"Extrae gráficos y diagramas vectoriales en SVG editables separados en capas (#vectors/#labels).",detail:"Separa los trazados geométricos de las etiquetas textuales en grupos SVG (#vectors y #labels) con exportación opcional a EPS.",io:"Entrada: .pdf · Salida: ZIP con SVG/EPS"},
+  {id:"table_bridge_extract",name:"Puente Tabular Tipado (.xlsx)",icon:"📊",category:"convert",level:"professional",isV2:true,desc:"Extrae tablas con y sin bordes con tipado automático (divisas, fechas, %) y coordenadas de retorno.",detail:"Convierte tablas en Excel con formato real (números, monedas, porcentajes) y hoja oculta _EVA_COORDS para reinyectar cambios al PDF.",io:"Entrada: .pdf · Salida: .xlsx/.json/.zip"},
+  {id:"scan_enhance_3d",name:"De-warping 3D y MRC",icon:"📷",category:"optimize",level:"professional",isV2:true,desc:"Corrige perspectiva de cámara, curvatura de lomo, sombras y comprime en capas MRC lossless.",detail:"Endereza fotografías oblicuas de documentos, ilumina papel sombreado y separa texto de fondo fotográfico (MRC).",io:"Entrada: PDF o imagen · Salida: PDF mejorado",multiple:true,accept:".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif"},
+  {id:"edit_reflow",name:"Motor Reflujo Inteligente",icon:"¶",category:"optimize",level:"professional",isV2:true,desc:"Reordena columnas mediante XY-Cut y repagina el texto conservando ilustraciones sin solapamientos.",detail:"Detecta columnas reales con XY-Cut y refluye texto actualizado en párrafos adaptables preservando figuras incrustadas.",io:"Entrada: .pdf · Salida: PDF refluido"},
+  {id:"liquid_compile",name:"Compilador Liquid PDF",icon:"📱",category:"convert",level:"professional",isV2:true,desc:"Adapta el flujo del PDF a lectores Kindle 6\", móviles o tabletas como HTML5/PDF líquido.",detail:"Recompila documentos densos para pantallas pequeñas (Kindle 6\", móvil 320px, tablet 16:9) conservando lectura continua.",io:"Entrada: .pdf · Salida: PDF líquido o HTML5"},
+  {id:"accessibility_tagger",name:"Normalizador WCAG / Audio-Tags",icon:"♿",category:"optimize",level:"professional",isV2:true,desc:"Genera /StructTreeRoot PDF/UA completo, textos alternativos y guion offline Web Speech.",detail:"Construye jerarquía lógica PDF/UA (/H1, /H2, /P, /Figure), audita accesibilidad y genera guion narrable offline.",io:"Entrada: .pdf · Salida: paquete WCAG ZIP/.pdf"},
+  {id:"translate_layout",name:"Traductor Vectorial In-Situ",icon:"🌐",category:"convert",level:"professional",isV2:true,desc:"Traduce bloques preservando las cajas de coordenadas y geometría original del documento.",detail:"Traduce español ↔ inglés con red neuronal CTranslate2 100% offline sobre párrafos completos y escaneos OCR sin mover el diseño.",io:"Entrada: .pdf (nativo o escaneado) · Salida: PDF traducido"},
+  {id:"research_link",name:"Enlazador Académico BibTeX/DOI",icon:"🎓",category:"convert",level:"professional",isV2:true,desc:"Vincula citas internas/cruzadas entre PDFs y genera paquetes .bib, .ris y CSL APA7.",detail:"Detecta DOIs y referencias [1] entre múltiples artículos PDF creando hipervínculos internos/cruzados y bibliografía estructurada.",io:"Entrada: varios .pdf/.bib · Salida: ZIP con PDFs + .bib/.ris",multiple:true,accept:".pdf,.bib"},
+  {id:"forensic_audit",name:"Auditor Custodia y Corpus Local",icon:"⚖",category:"edit",level:"professional",isV2:true,desc:"Analiza historial %%EOF, firmas offline pyHanko, citas huérfanas y similitud de corpus local.",detail:"Audita revisiones incrementales, firmas digitales, referencias sin bibliografía y coincidencia textual comparada localmente.",io:"Entrada: PDF(s) y .txt · Salida: ZIP/JSON forense",multiple:true,accept:".pdf,.txt"},
+  {id:"v2_pipeline_studio",name:"Pipeline Batch Sin Código →",icon:"⚙",category:"organize",level:"professional",isV2:true,desc:"Divide PDFs por regex, enruta carpetas, nombra contextualmente y compila plantillas CSV.",detail:"Abre el estudio visual sin código para encadenar reglas de división por regex, enrutamiento de carpetas y plantillas CSV masivas.",io:"Estudio dedicado: /pipeline",workspaceUrl:"/pipeline"},
+  {id:"v2_canvas_studio",name:"Canvas Infinito Multidocumento →",icon:"🗺",category:"organize",level:"professional",isV2:true,desc:"Tablero de investigación con extractos sincronizados, enlaces visuales y comparador V1/V2.",detail:"Abre el tablero interactivo para fijar extractos SHA-256 de múltiples PDFs, trazar conexiones y detectar cambios entre versiones.",io:"Estudio dedicado: /canvas",workspaceUrl:"/canvas"},
+  {id:"v2_vault_studio",name:"Bóveda Cripto Multi-Rol (.evacrypt) →",icon:"🔐",category:"edit",level:"professional",isV2:true,desc:"Compila contenedores duales AES-256-GCM por rol con descifrado 100% cliente en navegador.",detail:"Empaqueta un PDF en bóveda dual AES-256-GCM con vistas censuradas distintas por cada rol (Auditor, Dirección, Legal, etc.).",io:"Estudio dedicado: /vault",workspaceUrl:"/vault"},
 ];
 // Herramientas por lote: tantos PDF como quepan en la cuota de peso; cada uno se procesa por separado.
 const BATCH_TOOLS=new Set(["split","compress","pdf_to_images","extract_text","pdf_to_docx","pdf_to_xlsx","pdf_to_pptx","pdf_to_svg","extract_images","pdf_to_epub"]);
-const BULK_TOOLS=new Set([...BATCH_TOOLS,"merge","images_to_pdf","dossier"]);
+const BULK_TOOLS=new Set([...BATCH_TOOLS,"merge","images_to_pdf","dossier","semantic_replace","pipeline_run","research_link","forensic_audit"]);
 const SESSION_TOOL_IDS=new Set([
   "edit","organize","rotate","compress","ocr","watermark","protect","unlock","extract_pages","delete_pages",
   "number_pages","crop","resize","nup","annotate","redact","remove_metadata","grayscale","rasterize",
   "flatten","repair","web_optimize","remove_blank","fill_form",
 ]);
-const MULTI_EDIT_START={id:"multi_edit",name:"Edición múltiple",icon:"✎",category:"edit",
+const MULTI_EDIT_START={id:"multi_edit",name:"Edición múltiple",icon:"✎",category:"edit",level:"advanced",
   desc:"Carga un PDF y elige en la barra lateral las acciones compatibles para modificarlo en esta sesión.",
   accept:".pdf"};
 tools.forEach(tool=>{
@@ -69,6 +85,7 @@ let caps = null, activeCategory = "all", current = null, files = [], edits = [];
 let busy = false, resultUrl = null, pageNumber = 1, pageCount = 1, previewImage = null;
 let pointerStart = null, viewController = null, previewFile = null;
 let sessionActive = false, sessionBaseName = "";
+let tooltipTimer = null, tooltipTargetCard = null;
 const theme = localStorage.getItem("folio-theme");
 if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
 $("theme").addEventListener("click", () => {
@@ -77,22 +94,112 @@ $("theme").addEventListener("click", () => {
   localStorage.setItem("folio-theme", next);
 });
 function normalized(value) { return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); }
+function unavailableInBackend(tool) {
+  if (!caps || !tool || tool.workspaceUrl || tool.standaloneTab) return false;
+  const isV2 = Boolean(tool.isV2 || tool.category === "v2" || (Array.isArray(tool.categories) && tool.categories.includes("v2")));
+  if (!isV2 || !Array.isArray(caps.v2_operations)) return false;
+  return !caps.v2_operations.some(op => op.id === tool.id);
+}
+function hideToolTooltip() {
+  if (tooltipTimer) { clearTimeout(tooltipTimer); tooltipTimer = null; }
+  tooltipTargetCard = null;
+  const tip = $("tool-tooltip");
+  if (!tip) return;
+  tip.classList.remove("visible");
+  tip.hidden = true;
+  tip.setAttribute("aria-hidden", "true");
+}
+function positionToolTooltip(card, tip) {
+  const rect = card.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  tip.style.left = "12px";
+  tip.style.top = "12px";
+  tip.hidden = false;
+  const tipRect = tip.getBoundingClientRect();
+  const gap = 10;
+  let top = rect.bottom + gap;
+  if (top + tipRect.height > vh - 12 && rect.top - gap - tipRect.height >= 12) {
+    top = rect.top - gap - tipRect.height;
+  } else {
+    top = Math.max(12, Math.min(vh - tipRect.height - 12, top));
+  }
+  let left = rect.left + (rect.width - tipRect.width) / 2;
+  left = Math.max(12, Math.min(vw - tipRect.width - 12, left));
+  tip.style.left = `${Math.round(left)}px`;
+  tip.style.top = `${Math.round(top)}px`;
+}
+function showToolTooltip(tool, card) {
+  const tip = $("tool-tooltip");
+  if (!tip || !card.isConnected) return;
+  tooltipTargetCard = card;
+  tip.replaceChildren();
+  const head = document.createElement("div"); head.className = "tool-tooltip-head";
+  const ico = document.createElement("span"); ico.className = "tool-tooltip-icon"; ico.textContent = tool.icon; ico.setAttribute("aria-hidden", "true");
+  const title = document.createElement("span"); title.className = "tool-tooltip-title"; title.textContent = tool.name;
+  const tier = document.createElement("span"); tier.className = "tool-tooltip-tier"; tier.textContent = LEVEL_LABELS[tool.level] || "Local";
+  head.append(ico, title, tier);
+  const body = document.createElement("p"); body.className = "tool-tooltip-body"; body.textContent = tool.detail || tool.desc;
+  tip.append(head, body);
+  if (tool.io || tool.requires) {
+    const meta = document.createElement("p"); meta.className = "tool-tooltip-meta";
+    const parts = [];
+    if (tool.io) parts.push(tool.io);
+    if (tool.id === "translate_layout" && caps?.addons) {
+      parts.push(caps.addons.nmt_offline ? "NMT neuronal offline ES↔EN listo" : "Requiere modelo NMT u Opciones IA");
+    } else if (tool.requires && caps && !caps[tool.requires]) {
+      parts.push("Requiere instalar motor local adicional");
+    }
+    meta.textContent = parts.join(" · ");
+    tip.append(meta);
+  }
+  tip.setAttribute("aria-hidden", "false");
+  positionToolTooltip(card, tip);
+  requestAnimationFrame(() => { if (tooltipTargetCard === card && !tip.hidden) tip.classList.add("visible"); });
+}
+function scheduleToolTooltip(tool, card, delay = 220) {
+  if ($("workspace")?.open) return;
+  if (tooltipTimer) clearTimeout(tooltipTimer);
+  tooltipTargetCard = card;
+  tooltipTimer = setTimeout(() => {
+    tooltipTimer = null;
+    if (tooltipTargetCard === card) showToolTooltip(tool, card);
+  }, delay);
+}
+window.addEventListener("scroll", hideToolTooltip, {passive:true});
+window.addEventListener("resize", hideToolTooltip);
+document.addEventListener("keydown", e => { if (e.key === "Escape") hideToolTooltip(); });
 function renderTools() {
+  hideToolTooltip();
   const query = normalized($("search").value);
   $("tool-grid").replaceChildren();
-  const visible = tools.filter(t => (activeCategory === "all" || t.category === activeCategory) && normalized(t.name+" "+t.desc).includes(query));
+  const visible = tools.filter(t => (activeCategory === "all" || t.level === activeCategory) && normalized(t.name+" "+t.desc+" "+(t.detail||"")+" "+(t.keywords||"")+" "+(LEVEL_LABELS[t.level]||"")).includes(query));
   for (const tool of visible) {
     const card = document.createElement("button");
-    card.className = "tool-card"; card.dataset.category = tool.category;
+    card.className = "tool-card"; card.dataset.category = tool.category; card.dataset.level = tool.level || "basic";
     const icon = document.createElement("span"); icon.className="tool-icon"; icon.textContent=tool.icon; icon.setAttribute("aria-hidden","true");
     const title = document.createElement("h3"); title.textContent=tool.name;
     const desc = document.createElement("p"); desc.textContent=tool.desc;
+    const levelPill = document.createElement("span"); levelPill.className="tool-level"; levelPill.dataset.level=tool.level || "basic"; levelPill.textContent=LEVEL_LABELS[tool.level] || "Local";
     const arrow = document.createElement("span"); arrow.className="card-arrow"; arrow.textContent="↗"; arrow.setAttribute("aria-hidden","true");
-    card.append(icon, title, desc, arrow);
-    if (caps && tool.requires && !caps[tool.requires]) {
+    card.append(icon, title, desc, levelPill, arrow);
+    if (unavailableInBackend(tool)) {
+      const badge = document.createElement("span"); badge.className="badge"; badge.textContent="REINICIAR SERVIDOR"; card.append(badge);
+    } else if (caps && tool.requires && !caps[tool.requires]) {
       const badge = document.createElement("span"); badge.className="badge"; badge.textContent="MOTOR PENDIENTE"; card.append(badge);
     }
-    card.addEventListener("click", () => openTool(tool));
+    card.addEventListener("pointerenter", e => { if (e.pointerType !== "touch") scheduleToolTooltip(tool, card); });
+    card.addEventListener("pointerleave", hideToolTooltip);
+    card.addEventListener("pointerdown", hideToolTooltip);
+    card.addEventListener("focus", () => { if (card.matches(":focus-visible")) scheduleToolTooltip(tool, card, 60); });
+    card.addEventListener("blur", hideToolTooltip);
+    card.addEventListener("click", () => {
+      hideToolTooltip();
+      if (tool.workspaceUrl) {
+        window.location.href = tool.workspaceUrl;
+        return;
+      }
+      openTool(tool);
+    });
     $("tool-grid").append(card);
   }
   $("empty").hidden = visible.length > 0;
@@ -202,14 +309,22 @@ function openTool(tool,{keepSessionFile=false}={}) {
       ? "EDICIÓN MÚLTIPLE · UNA SESIÓN · SIN HISTORIAL"
       : "ESPACIO TEMPORAL · SIN HISTORIAL";
   $("workspace-title").textContent=tool.name; $("tool-description").textContent=tool.desc;
+  const staleBackend=unavailableInBackend(tool);
   const missing=caps && tool.requires && !caps[tool.requires];
-  $("tool-warning").hidden=!tool.warning && !missing;
-  $("tool-warning").textContent=missing ? "Este motor aún no está disponible. Contacta al administrador para completar su instalación local." : (tool.warning || "");
+  const missingNmt=tool.id==="translate_layout" && caps && !caps.addons?.nmt_offline && !caps.addons?.loopback_slm && !caps.addons?.edge_ai_opt_in;
+  $("tool-warning").hidden=!tool.warning && !missing && !staleBackend && !missingNmt;
+  $("tool-warning").textContent=staleBackend
+    ? "El servidor EVA PDF en ejecución tiene una versión anterior en memoria que aún no registra esta herramienta. Cierra y reinicia 'servidor local.bat' (o run-lan.ps1) y recarga esta página (Ctrl+F5)."
+    : missing
+      ? "Este motor aún no está disponible. Contacta al administrador para completar su instalación local."
+      : missingNmt
+        ? "Modelos neuronales NMT offline (addons/pack-nmt) no detectados: se usará el glosario básico. Ejecuta deploy\\install-nmt.ps1 para traducción completa ES↔EN."
+        : (tool.warning || "");
   $("files").accept=tool.accept || ".pdf"; $("files").multiple=Boolean(tool.multiple && !keepSessionFile);
   $("upload-limits").textContent=uploadLimits(tool);
   if (!["multi_edit","images_to_pdf","office_to_pdf","html_to_pdf","heic_to_jpg","epub_to_pdf","verify_signatures"].includes(tool.id)) field("password","Contraseña actual (si el PDF tiene)",{type:"password"});
-  if (["organize","rotate","pdf_to_images","extract_text","watermark","pdf_to_docx","pdf_to_xlsx","pdf_to_pptx"].includes(tool.id))
-    field("pages",tool.id === "organize" ? "Páginas en el orden deseado" : "Páginas a procesar",{placeholder:"Ej. 1,3,5-8",hint:tool.id === "organize" ? "Las páginas omitidas se eliminan. Puedes invertir rangos: 5-1." : "Vacío: todas las páginas."});
+  if (["organize","rotate","pdf_to_images","extract_text","watermark","pdf_to_docx","pdf_to_xlsx","pdf_to_pptx","scan_to_office"].includes(tool.id))
+    field("pages",tool.id === "organize" ? "Páginas en el orden deseado" : "Páginas a procesar",{placeholder:"Ej. 1,3,5-8",hint:tool.id === "organize" ? "Las páginas omitidas se eliminan. Puedes invertir rangos: 5-1." : "Vacío: todas las páginas (o todas las imágenes cargadas)."});
   if(tool.id==="split") field("groups","Grupos de páginas",{placeholder:"Ej. 1-3;4-6;7",hint:"Separa grupos con punto y coma. Vacío: un PDF por página."});
   if(tool.id==="rotate") field("angle","Ángulo de giro",{choices:[["90","90° a la derecha"],["180","180°"],["270","90° a la izquierda"]],value:"90"});
   if(tool.id==="compress") {
@@ -242,6 +357,47 @@ function openTool(tool,{keepSessionFile=false}={}) {
   if(tool.id==="fill_form") field("fields","Campos y valores (JSON)",{type:"textarea",value:'{"nombre_del_campo": "valor"}',hint:"Los valores son textos; para casillas usa Off o su estado activo."});
   if(["grayscale","rasterize"].includes(tool.id)) field("dpi","Resolución (DPI)",{type:"number",value:"144",min:72,max:300});
   if(tool.id==="pdf_to_images") field("image_format","Formato",{choices:[["png","PNG"],["jpg","JPEG"],["tiff","TIFF por página"]],value:"png"});
+  if(tool.id==="scan_to_office") {
+    field("target_format","Formato exportado editable",{choices:[["pptx","PowerPoint editable (.pptx) · Modo Acrobat Pro"],["docx","Word editable (.docx)"],["xlsx","Excel editable (.xlsx)"],["pdf","PDF vectorial + OCR limpio (.pdf)"]],value:"pptx"});
+    field("ocr_dpi","Resolución de análisis y OCR",{choices:[["150","150 DPI · Rápido"],["200","200 DPI · Recomendado"],["300","300 DPI · Alta precisión"]],value:"200"});
+    field("preprocess","Limpieza previa de escaneo",{choices:[["auto","Automático (enderezado si requiere)"],["deskew","Enderezar inclinación (hasta 5°)"],["clean","Enderezar y limpiar sombras/papel"],["none","Sin preprocesamiento"]],value:"auto"});
+    const vt=field("vectorize_tables","Reconocer y reconstruir tablas editables (con y sin bordes)",{type:"checkbox"}); vt.checked=true;
+    const vd=field("vectorize_diagrams","Vectorizar formas, cajas y flechas de diagramas",{type:"checkbox"}); vd.checked=true;
+    field("ocr_mode","Lectura de texto OCR",{choices:[["auto","Automático (OCR local si es escaneo)"],["force","Forzar nueva lectura OCR en todas las páginas"],["existing_only","Solo capa OCR oculta existente"]],value:"auto"});
+  }
+  if(["pdf_to_pptx","pdf_to_docx","pdf_to_xlsx"].includes(tool.id)) {
+    const sem=field("scan_editable_mode","Refinar escaneos (OCR + vectores de tablas y diagramas · estilo Acrobat Pro)",{type:"checkbox",hint:"Cuando una página sea un escaneo o esté girada, ejecuta OCR local, reconstruye tablas y diagramas vectoriales editables y limpia texto fantasma del fondo."});
+    sem.checked=true;
+    const vd=field("vectorize_diagrams","Vectorizar cajas, conectores y diagramas en páginas escaneadas",{type:"checkbox"}); vd.checked=true;
+    field("ocr_dpi","DPI de reconocimiento (solo si es escaneo)",{choices:[["150","150 DPI"],["200","200 DPI (Recomendado)"],["300","300 DPI"]],value:"200"});
+    field("preprocess","Preprocesamiento de escaneo",{choices:[["auto","Automático"],["deskew","Enderezar"],["clean","Enderezar + limpiar fondo"],["none","Sin cambios"]],value:"auto"});
+    sem.addEventListener("change",()=>{
+      const on=sem.checked;
+      vd.disabled=!on;
+      $("option-ocr_dpi").disabled=!on;
+      $("option-preprocess").disabled=!on;
+    });
+  }
+  if(tool.id==="office_to_pdf") {
+    field("refine_scans","Refinar imágenes escaneadas incrustadas (OCR buscable + vectorizar tablas/diagramas)",{type:"checkbox",hint:"Opcional: si tu archivo de Office contiene capturas o escaneos pegados, intenta reconstruir tablas/diagramas vectoriales y capa de texto buscable en el PDF."});
+  }
+  if(tool.id==="liquid_compile") field("preset","Tamaño de pantalla objetivo",{choices:[["kindle_6","Kindle 6\""],["mobile","Móvil (320px)"],["tablet_16_9","Tablet 16:9"],["a4","A4"],["letter","Carta"]],value:"kindle_6"});
+  if(tool.id==="translate_layout") {
+    field("source_lang","Idioma origen",{choices:[["es","Español"],["en","Inglés"]],value:"es"});
+    const nmtReady=Boolean(caps?.addons?.nmt_offline);
+    const pairs=Array.isArray(caps?.addons?.nmt_pairs) && caps.addons.nmt_pairs.length
+      ? caps.addons.nmt_pairs.map(p=>p.replace("_","→").toUpperCase()).join(", ")
+      : "ES↔EN";
+    field("target_lang","Idioma destino",{
+      choices:[["en","Inglés"],["es","Español"]],
+      value:"en",
+      hint:nmtReady
+        ? `Motor neuronal CTranslate2 100% offline activo (${pairs}). Incluye OCR automático si el PDF es un escaneo.`
+        : "Modo glosario básico (instala addons/pack-nmt con deploy\\install-nmt.ps1 para traducción neuronal completa)."
+    });
+  }
+  if(tool.id==="accessibility_tagger") field("lang","Idioma del árbol PDF/UA",{value:"es-ES"});
+  if(tool.id==="anti_track") field("strip_external_uris","Eliminar también enlaces externos http/https",{type:"checkbox"});
   $("editor").hidden=tool.id!=="crop";
   $("signature-editor").hidden=tool.id!=="stamp";
   clearSignature();
@@ -261,7 +417,7 @@ function openTool(tool,{keepSessionFile=false}={}) {
   } else {
     $("process").innerHTML='Procesar documento <span aria-hidden="true">→</span>';
   }
-  $("process").disabled=Boolean(missing) || !caps;
+  $("process").disabled=Boolean(missing || staleBackend) || !caps;
   renderFiles(); renderEdits(); drawPreview(); renderSessionTools();
   if(!$("workspace").open) $("workspace").showModal();
 }
@@ -398,7 +554,7 @@ function setBusy(value) {
   busy=value; $("process-form").setAttribute("aria-busy",String(value));
   $("process-form").querySelectorAll("button,input,select,textarea").forEach(element=>element.disabled=value);
   if(!value) {
-    $("process").disabled=!caps || Boolean(current.requires && !caps[current.requires]); renderFiles();
+    $("process").disabled=!caps || Boolean(current.requires && !caps[current.requires]) || unavailableInBackend(current); renderFiles();
   }
   renderSessionTools();
   if(value) $("process").textContent="Procesando…";
@@ -502,13 +658,15 @@ function renderEdits() {
 window.addEventListener("pagehide",()=>{clearResult();files=[];edits=[];previewImage=null;previewFile=null;stopCamera();clearSignature();});
 renderTools();
 fetch("/api/capabilities").then(response=>{if(!response.ok)throw new Error();return response.json();}).then(data=>{
-  caps=data; const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente"];
+  caps=data; const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente",data.addons?.nmt_offline?"Traducción ES↔EN offline lista":"Traducción NMT pendiente"];
   if (data.scanners && data.scanners.available) engines.push(`Escáner listo (${data.scanners.count})`);
-  $("connection").textContent=`Motor local conectado · ${engines.join(" · ")} · ${limitLabel(data.max_upload_mb)} por sesión`;
+  const hasStaleTools=tools.some(unavailableInBackend);
+  $("connection").textContent=`Motor local conectado · ${engines.join(" · ")} · ${limitLabel(data.max_upload_mb)} por sesión` +
+    (hasStaleTools ? " · ⚠ Servidor en memoria desactualizado: reinicia 'servidor local.bat' y recarga (Ctrl+F5)." : "");
   renderTools();
   applyDesktopCapabilities(data);
   if($("workspace").open && current) {
-    $("process").disabled=Boolean(current.requires && !caps[current.requires]);
+    $("process").disabled=Boolean(current.requires && !caps[current.requires]) || unavailableInBackend(current);
     $("upload-limits").textContent=uploadLimits(current);
   }
 }).catch(()=>{$("connection").textContent="Sin conexión con el motor. Recarga la página cuando el servidor esté disponible.";});

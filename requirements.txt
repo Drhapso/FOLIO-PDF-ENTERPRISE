@@ -9,3 +9,7 @@ pikepdf>=10,<11
 opencv-python-headless>=4.10,<5
 pillow-heif>=1,<2
 pyHanko>=0.31,<0.35
+ctranslate2>=4.6,<5
+sentencepiece>=0.2,<1
+subword-nmt>=0.3.8,<1
+sacremoses>=0.1.1,<1

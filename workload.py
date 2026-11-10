@@ -4,11 +4,14 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-HEAVY_OPERATIONS = frozenset({
+from engines.registry import AI_HEAVY_OPERATIONS, HEAVY_V2_OPERATIONS
+
+LEGACY_HEAVY_OPERATIONS = frozenset({
     "ocr", "rasterize", "grayscale", "pdf_to_images", "office_to_pdf",
     "pdf_to_docx", "pdf_to_xlsx", "pdf_to_pptx", "html_to_pdf",
     "heic_to_jpg", "epub_to_pdf", "pdf_to_epub",
 })
+HEAVY_OPERATIONS = LEGACY_HEAVY_OPERATIONS | HEAVY_V2_OPERATIONS
 MB = 1024 * 1024
 
 
@@ -25,6 +28,7 @@ class Ticket:
     heavy: bool
     entered: float = field(default_factory=time.monotonic)
     state: str = "queued"
+    ai_heavy: bool = False
 
 
 class WorkloadQueue:
@@ -43,13 +47,19 @@ class WorkloadQueue:
             len(self.active) < self.config["max_parallel_jobs"]
             and (not ticket.heavy or sum(item.heavy for item in self.active.values())
                  < self.config["max_heavy_jobs"])
+            and (not ticket.ai_heavy or sum(item.ai_heavy for item in self.active.values())
+                 < self.config.get("max_ai_jobs", 1))
             and sum(item.size for item in self.active.values()) + ticket.size
             <= self.config["max_active_upload_mb"] * MB
         )
 
     def enter(self, token: str, operation: str, size: int) -> Ticket:
-        ticket = Ticket(token, size, operation in HEAVY_OPERATIONS
-                        or size >= self.config["heavy_upload_mb"] * MB)
+        ticket = Ticket(
+            token,
+            size,
+            operation in HEAVY_OPERATIONS or size >= self.config["heavy_upload_mb"] * MB,
+            ai_heavy=operation in AI_HEAVY_OPERATIONS,
+        )
         with self.condition:
             if self.closed:
                 raise AdmissionError("Procesamiento detenido por fallo de limpieza.", 503)

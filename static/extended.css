@@ -24,3 +24,24 @@ dialog.multi-edit-workspace .session-tool{font-size:12px;padding:9px 10px}
   dialog.multi-edit-workspace{width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;padding:16px}
   dialog.multi-edit-workspace .workspace-body.has-session-tools{height:calc(100dvh - 230px)}
 }
+
+.tool-card p{margin-bottom:12px}
+.tool-level{align-self:flex-start;margin-top:auto;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:.25px}
+.tool-level[data-level="basic"]{background:var(--success-bg);color:var(--success)}
+.tool-level[data-level="advanced"]{background:var(--convert-bg);color:var(--convert)}
+.tool-level[data-level="professional"]{background:var(--soft);color:var(--accent);border:1px solid var(--border)}
+
+.tool-tooltip{position:fixed;z-index:80;width:min(315px,calc(100vw - 24px));pointer-events:none;background:var(--surface);color:var(--text);border:1px solid var(--border);border-top:2px solid var(--accent);border-radius:11px;padding:12px 14px;box-shadow:0 14px 34px rgba(18,12,26,.18),var(--shadow);opacity:0;transform:translateY(4px) scale(.985);transition:opacity .15s ease,transform .15s ease}
+.tool-tooltip.visible{opacity:1;transform:translateY(0) scale(1)}
+.tool-tooltip-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.tool-tooltip-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:6px;background:var(--soft);color:var(--accent);font-size:13px;font-weight:700;flex-shrink:0}
+.tool-tooltip-title{font-size:13px;font-weight:700;color:var(--text);line-height:1.25;flex:1}
+.tool-tooltip-tier{font-size:9px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--soft);color:var(--accent);white-space:nowrap}
+.tool-tooltip-body{margin:0;font-size:11.5px;line-height:1.5;color:var(--text)}
+.tool-tooltip-meta{margin:7px 0 0;padding-top:6px;border-top:1px solid var(--border);font-size:10px;line-height:1.4;color:var(--muted)}
+.header-privacy-link{font-size:14px;color:var(--muted);transition:color .15s;white-space:nowrap}
+.header-privacy-link:hover{color:var(--accent)}
+@media(max-width:700px){
+  .header-privacy-link{font-size:12px}
+}
+@media (hover:none),(pointer:coarse){.tool-tooltip{display:none!important}}

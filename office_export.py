@@ -270,10 +270,10 @@ def word_frame(paragraph, bbox, page_width: float) -> None:
     paragraph._p.get_or_add_pPr().append(frame)
 
 
-def word_table(result, content: dict, lines: list[dict]) -> None:
+def word_table(result, content: dict, lines: list[dict], *, drawings: list[dict] | None = None, show_borders: bool = False) -> None:
     from docx.enum.table import WD_ROW_HEIGHT_RULE
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement, parse_xml
+    from docx.oxml.ns import nsdecls, qn
     from docx.shared import Pt
 
     xs, ys = content["xs"], content["ys"]
@@ -295,19 +295,35 @@ def word_table(result, content: dict, lines: list[dict]) -> None:
         margin.set(qn("w:w"), "0")
         margin.set(qn("w:type"), "dxa")
         margins.append(margin)
+    border_val = "single" if (show_borders and content.get("mode") != "borderless") else "nil"
+    border_color = content.get("border_rgb", "444444")
     for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
         border = OxmlElement("w:" + edge)
-        border.set(qn("w:val"), "nil")
+        border.set(qn("w:val"), border_val)
+        if border_val == "single":
+            border.set(qn("w:sz"), "4")
+            border.set(qn("w:space"), "0")
+            border.set(qn("w:color"), border_color)
         borders.append(border)
     properties.append(margins)
     properties.append(borders)
     for column, width in zip(table.columns, [b - a for a, b in zip(xs, xs[1:])]):
         column.width = Pt(width)
+    fills_map = content.get("fills", {})
     for row, start, end_row, end_col, rect in content["cells"]:
         cell = table.cell(row, start)
         if end_row != row or end_col != start:
             cell = cell.merge(table.cell(end_row, end_col))
         cell.width = Pt(rect[2] - rect[0])
+        fill_hex = fills_map.get((row, start))
+        if fill_hex is None and drawings:
+            sampled = cell_fill(drawings, rect)
+            if sampled != "FFFFFF":
+                fill_hex = sampled
+        if fill_hex:
+            cell._tc.get_or_add_tcPr().append(
+                parse_xml(f'<w:shd {nsdecls("w")} w:fill="{fill_hex}"/>')
+            )
         cell_lines = sorted(lines_in(lines, rect), key=lambda line: (line["bbox"][1], line["bbox"][0]))
         bottom = rect[1]
         for index, line in enumerate(cell_lines):
@@ -330,11 +346,78 @@ def word_table(result, content: dict, lines: list[dict]) -> None:
         row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
 
 
-def word_document(doc: pdf.Document, selected: list[int], output: Path, config: dict) -> int:
+def _render_diagrams_backdrop_for_word(analysis: dict, config: dict) -> bytes | None:
+    """Genera capa visual limpia combinando fondo residual + diagramas vectorizados para DOCX."""
+    diagrams = analysis.get("diagrams", [])
+    connectors = analysis.get("connectors", [])
+    backdrop = analysis.get("backdrop_png")
+    if not diagrams and not connectors:
+        return backdrop
+    with pdf.open() as tmp:
+        w, h = analysis["width_pt"], analysis["height_pt"]
+        pg = tmp.new_page(width=w, height=h)
+        bg = pg.new_shape()
+        bg.draw_rect(pg.rect)
+        pc = analysis.get("paper_rgb", "FFFFFF")
+        bg.finish(color=None, fill=(int(pc[0:2], 16) / 255.0, int(pc[2:4], 16) / 255.0, int(pc[4:6], 16) / 255.0))
+        bg.commit()
+        if backdrop:
+            pg.insert_image(pg.rect, stream=backdrop, overlay=True)
+        for sh in diagrams:
+            sp = pg.new_shape()
+            rect = pdf.Rect(sh["bbox"])
+            fu = tuple(int(sh["fill_rgb"][i : i + 2], 16) / 255.0 for i in (0, 2, 4)) if sh.get("fill_rgb") else None
+            su = tuple(int(sh["stroke_rgb"][i : i + 2], 16) / 255.0 for i in (0, 2, 4)) if sh.get("stroke_rgb") else None
+            if sh["kind"] == "oval":
+                sp.draw_oval(rect)
+            elif sh["kind"] == "round_rect":
+                sp.draw_rect(rect, radius=0.12)
+            elif sh["kind"] in ("diamond", "polygon") and len(sh.get("points_pt", [])) >= 3:
+                sp.draw_polyline([pdf.Point(x, y) for x, y in sh["points_pt"]])
+                sp.finish(color=su, fill=fu, width=sh.get("stroke_pt", 1.25), closePath=True)
+                sp.commit()
+                continue
+            else:
+                sp.draw_rect(rect)
+            sp.finish(color=su, fill=fu, width=sh.get("stroke_pt", 1.25))
+            sp.commit()
+        for conn in connectors:
+            sp = pg.new_shape()
+            p1, p2 = pdf.Point(*conn["p1"]), pdf.Point(*conn["p2"])
+            sp.draw_line(p1, p2)
+            su = tuple(int(conn["stroke_rgb"][i : i + 2], 16) / 255.0 for i in (0, 2, 4))
+            sp.finish(color=su, width=conn.get("stroke_pt", 1.5))
+            if conn.get("arrow_end") or conn.get("arrow_start"):
+                import math
+
+                dx, dy = p2.x - p1.x, p2.y - p1.y
+                ln = max(1.0, math.hypot(dx, dy))
+                ux, uy = dx / ln, dy / ln
+                px, py = -uy, ux
+                for tip, dir_s in ([(p2, 1.0)] if conn.get("arrow_end") else []) + ([(p1, -1.0)] if conn.get("arrow_start") else []):
+                    base = pdf.Point(tip.x - 7.0 * ux * dir_s, tip.y - 7.0 * uy * dir_s)
+                    w1 = pdf.Point(base.x + 3.5 * px, base.y + 3.5 * py)
+                    w2 = pdf.Point(base.x - 3.5 * px, base.y - 3.5 * py)
+                    sp.draw_polyline([tip, w1, w2])
+                    sp.finish(color=su, fill=su, closePath=True)
+            sp.commit()
+        from pdf_engine import render
+        return render(pg, 144, config).tobytes("png")
+
+
+def word_document(doc: pdf.Document, selected: list[int], output: Path, config: dict,
+                  *, options: dict | None = None, root: Path | None = None) -> tuple[int, dict]:
     from docx import Document
     from docx.enum.section import WD_SECTION_START
     from docx.shared import Pt
-    from pdf_engine import render
+    from pdf_engine import integer, render
+    from settings import ROOT
+
+    opts = options or {}
+    scan_editable = bool(opts.get("scan_editable_mode", False))
+    raw_dpi = opts.get("ocr_dpi", opts.get("dpi", 200))
+    dpi = integer(200 if raw_dpi in (None, "") else raw_dpi, 100, 300, "DPI")
+    stats = {"refined_pages": 0, "tables": 0, "diagrams": 0, "ocr_used": False}
 
     result = Document()
     fallback = 0
@@ -348,6 +431,47 @@ def word_document(doc: pdf.Document, selected: list[int], output: Path, config: 
         anchor.paragraph_format.space_before = anchor.paragraph_format.space_after = Pt(0)
         anchor.paragraph_format.line_spacing = Pt(1)
         layout = page_layout(page, config)
+        if layout["fallback"] and scan_editable:
+            from engines.scan_office_bridge import analyze_scanned_page_for_office
+
+            scanned = analyze_scanned_page_for_office(
+                page,
+                dpi,
+                config,
+                root or ROOT,
+                preprocess=str(opts.get("preprocess", "auto")),
+                vectorize_tables=bool(opts.get("vectorize_tables", True)),
+                vectorize_diagrams=bool(opts.get("vectorize_diagrams", True)),
+                ocr_mode=str(opts.get("ocr_mode", "auto")),
+            )
+            stats["refined_pages"] += 1
+            stats["tables"] += len(scanned["tables"])
+            stats["diagrams"] += len(scanned["diagrams"]) + len(scanned["connectors"])
+            stats["ocr_used"] = stats["ocr_used"] or scanned["ocr_applied"]
+            sw, sh_pt = scanned["width_pt"], scanned["height_pt"]
+            section.page_width, section.page_height = Pt(sw), Pt(sh_pt)
+            bg_img = _render_diagrams_backdrop_for_word(scanned, config)
+            if bg_img:
+                word_background(anchor, bg_img, sw, sh_pt)
+            lines = list(scanned["lines"])
+            for sh in scanned["diagrams"]:
+                lines.extend(sh.get("embedded_lines", []))
+            for line in sorted(lines, key=lambda item: (item["bbox"][1], item["bbox"][0])):
+                spans = [span for span in line["spans"]
+                         if not any(contains(table["bbox"], span["bbox"]) for table in scanned["tables"])]
+                if not spans:
+                    continue
+                box = pdf.Rect(word_line_box(spans))
+                paragraph = result.add_paragraph()
+                word_frame(paragraph, tuple(box), sw)
+                docx_runs(paragraph, [{**line, "spans": spans}])
+            for table in scanned["tables"]:
+                word_table(result, table, lines, show_borders=True)
+            end = result.add_paragraph()
+            end.paragraph_format.space_after = Pt(0)
+            end.paragraph_format.line_spacing = Pt(1)
+            continue
+
         if layout["fallback"]:
             word_background(anchor, layout["image"], page.rect.width, page.rect.height)
             fallback += 1
@@ -383,15 +507,23 @@ def word_document(doc: pdf.Document, selected: list[int], output: Path, config: 
         end.paragraph_format.space_after = Pt(0)
         end.paragraph_format.line_spacing = Pt(1)
     result.save(output)
-    return fallback
+    return fallback, stats
 
 
-def excel_document(doc: pdf.Document, selected: list[int], output: Path, config: dict) -> int:
+def excel_document(doc: pdf.Document, selected: list[int], output: Path, config: dict,
+                   *, options: dict | None = None, root: Path | None = None) -> tuple[int, dict]:
     from openpyxl import Workbook
     from openpyxl.drawing.image import Image
     from openpyxl.styles import Border, PatternFill, Side
     from openpyxl.utils import get_column_letter
-    from pdf_engine import excel_text, render
+    from pdf_engine import excel_text, integer, render
+    from settings import ROOT
+
+    opts = options or {}
+    scan_editable = bool(opts.get("scan_editable_mode", False))
+    raw_dpi = opts.get("ocr_dpi", opts.get("dpi", 200))
+    dpi = integer(200 if raw_dpi in (None, "") else raw_dpi, 100, 300, "DPI")
+    stats = {"refined_pages": 0, "tables": 0, "diagrams": 0, "ocr_used": False}
 
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -405,15 +537,47 @@ def excel_document(doc: pdf.Document, selected: list[int], output: Path, config:
         image = Image(io.BytesIO(render(page, 144, config).tobytes("png")))
         image.width, image.height = page.rect.width * 96 / 72, page.rect.height * 96 / 72
         reference.add_image(image, "A1")
-        if layout["fallback"]:
+
+        fills_per_table = []
+        drawings = []
+        if layout["fallback"] and scan_editable:
+            from engines.scan_office_bridge import analyze_scanned_page_for_office
+
+            scanned = analyze_scanned_page_for_office(
+                page,
+                dpi,
+                config,
+                root or ROOT,
+                preprocess=str(opts.get("preprocess", "auto")),
+                vectorize_tables=bool(opts.get("vectorize_tables", True)),
+                vectorize_diagrams=bool(opts.get("vectorize_diagrams", True)),
+                ocr_mode=str(opts.get("ocr_mode", "auto")),
+            )
+            stats["refined_pages"] += 1
+            stats["tables"] += len(scanned["tables"])
+            stats["diagrams"] += len(scanned["diagrams"]) + len(scanned["connectors"])
+            stats["ocr_used"] = stats["ocr_used"] or scanned["ocr_applied"]
+            extra_lines = []
+            for sh in scanned["diagrams"]:
+                extra_lines.extend(sh.get("embedded_lines", []))
+            layout = {
+                "fallback": False,
+                "lines": scanned["lines"] + extra_lines,
+                "tables": scanned["tables"],
+                "visuals": [],
+            }
+            fills_per_table = [t.get("fills", {}) for t in scanned["tables"]]
+        elif layout["fallback"]:
             sheet["A1"] = "Pagina conservada como imagen en la hoja Original; use OCR para recuperar texto."
             sheet.column_dimensions["A"].width = 90
             fallback += 1
             continue
+        else:
+            drawings = page.get_drawings()
+
         row_index = 1
-        drawings = page.get_drawings()
         columns = max((len(table["xs"]) - 1 for table in layout["tables"]), default=1)
-        events = [(table["bbox"], "table", table) for table in layout["tables"]]
+        events = [(table["bbox"], "table", (idx, table)) for idx, table in enumerate(layout["tables"])]
         for line in layout["lines"]:
             spans = [span for span in line["spans"]
                      if not any(contains(table["bbox"], span["bbox"]) for table in layout["tables"])]
@@ -424,7 +588,8 @@ def excel_document(doc: pdf.Document, selected: list[int], output: Path, config:
                 spans = content["spans"]
                 cell = sheet.cell(row_index, 1, excel_text(" ".join(span["text"] for span in spans)))
                 style_excel_cell(cell, spans)
-                cell.fill = PatternFill("solid", fgColor=cell_fill(drawings, content["bbox"]))
+                if drawings:
+                    cell.fill = PatternFill("solid", fgColor=cell_fill(drawings, content["bbox"]))
                 sheet.row_dimensions[row_index].height = max(span["size"] for span in spans) * 1.5
                 if columns > 1:
                     sheet.merge_cells(start_row=row_index, start_column=1,
@@ -433,7 +598,9 @@ def excel_document(doc: pdf.Document, selected: list[int], output: Path, config:
                     sheet.column_dimensions["A"].width = 80
                 row_index += 1
             else:
+                t_idx, content = content
                 xs, ys = content["xs"], content["ys"]
+                tbl_fills = fills_per_table[t_idx] if t_idx < len(fills_per_table) else {}
                 for column, width in enumerate([b - a for a, b in zip(xs, xs[1:])], 1):
                     letter = get_column_letter(column)
                     sheet.column_dimensions[letter].width = max(
@@ -445,7 +612,8 @@ def excel_document(doc: pdf.Document, selected: list[int], output: Path, config:
                     cell = sheet.cell(row_index + row, column + 1, excel_text(text))
                     spans = [span for line in cell_lines for span in line["spans"]]
                     style_excel_cell(cell, spans)
-                    cell.fill = PatternFill("solid", fgColor=cell_fill(drawings, rect))
+                    fill_hex = tbl_fills.get((row, column)) or (cell_fill(drawings, rect) if drawings else "FFFFFF")
+                    cell.fill = PatternFill("solid", fgColor=fill_hex)
                     cell.border = Border(*(Side(style="thin", color="808080") for _ in range(4)))
                     if row != end_row or column != end_col:
                         sheet.merge_cells(start_row=row_index + row, start_column=column + 1,
@@ -456,7 +624,7 @@ def excel_document(doc: pdf.Document, selected: list[int], output: Path, config:
         sheet.freeze_panes = "A2"
     workbook.save(output)
     workbook.close()
-    return fallback
+    return fallback, stats
 
 
 def style_excel_cell(cell, spans: list[dict]) -> None:
@@ -469,18 +637,21 @@ def style_excel_cell(cell, spans: list[dict]) -> None:
                          italic=bool(span["flags"] & 2), color=rgb(span))
 
 
-def ppt_runs(frame, lines: list[dict], scale: float) -> None:
+def ppt_runs(frame, lines: list[dict], scale: float, *, word_wrap: bool = False, align_center: bool = False) -> None:
     from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
     from pptx.util import Pt
     from pdf_engine import clean_text
 
     frame.clear()
     frame.margin_left = frame.margin_right = frame.margin_top = frame.margin_bottom = 0
-    frame.word_wrap = False
+    frame.word_wrap = word_wrap
     for index, line in enumerate(lines):
         paragraph = frame.paragraphs[0] if not index else frame.add_paragraph()
         paragraph.space_before = paragraph.space_after = Pt(0)
-        paragraph.line_spacing = 1.0
+        paragraph.line_spacing = 1.08 if word_wrap else 1.0
+        if align_center:
+            paragraph.alignment = PP_ALIGN.CENTER
         previous = None
         for span in line["spans"]:
             run = paragraph.add_run()
@@ -494,24 +665,213 @@ def ppt_runs(frame, lines: list[dict], scale: float) -> None:
             previous = span
 
 
-def powerpoint_document(doc: pdf.Document, selected: list[int], output: Path, config: dict) -> int:
+def _set_ppt_cell_borders(cell, hex_color: str, width_pt: float) -> None:
+    """Inserta bordes ECMA-376 a:lnL/R/T/B antes de FillProperties dentro de a:tcPr."""
+    from lxml import etree
+    from pptx.oxml.ns import qn
+
+    tcPr = cell._tc.get_or_add_tcPr()
+    emu_w = str(max(6350, int(round(width_pt * 12700))))
+    clean_hex = hex_color if len(hex_color) == 6 else "555555"
+    ln_tags = ("a:lnL", "a:lnR", "a:lnT", "a:lnB")
+    existing = [tcPr.find(qn(t)) for t in ln_tags]
+    for node in existing:
+        if node is not None:
+            tcPr.remove(node)
+    nodes = []
+    for tag in ln_tags:
+        ln = etree.Element(qn(tag))
+        ln.set("w", emu_w)
+        ln.set("cap", "flat")
+        ln.set("cmpd", "sng")
+        ln.set("algn", "ctr")
+        sf = etree.SubElement(ln, qn("a:solidFill"))
+        clr = etree.SubElement(sf, qn("a:srgbClr"))
+        clr.set("val", clean_hex)
+        nodes.append(ln)
+    for node in reversed(nodes):
+        tcPr.insert(0, node)
+
+
+def _add_ppt_diagram_shapes(slide, diagrams: list[dict], connectors: list[dict],
+                            left: int, top: int, ratio: float) -> None:
+    from lxml import etree
+    from pptx.dml.color import RGBColor
+    from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
+    from pptx.enum.text import MSO_ANCHOR
+    from pptx.oxml.ns import qn
+    from pptx.util import Emu, Pt
+
+    kind_map = {
+        "rect": MSO_SHAPE.RECTANGLE,
+        "round_rect": MSO_SHAPE.ROUNDED_RECTANGLE,
+        "oval": MSO_SHAPE.OVAL,
+        "diamond": MSO_SHAPE.DIAMOND,
+    }
+    for sh in diagrams:
+        x0, y0, x1, y1 = sh["bbox"]
+        sx = left + int(x0 * ratio)
+        sy = top + int(y0 * ratio)
+        sw = max(1, int((x1 - x0) * ratio))
+        sh_h = max(1, int((y1 - y0) * ratio))
+        if sh["kind"] == "polygon" and len(sh.get("points_pt", [])) >= 3:
+            pts = sh["points_pt"]
+            fb = slide.shapes.build_freeform(Emu(left + int(pts[0][0] * ratio)), Emu(top + int(pts[0][1] * ratio)))
+            fb.add_line_segments([(Emu(left + int(px * ratio)), Emu(top + int(py * ratio))) for px, py in pts[1:]], close=True)
+            shape = fb.convert_to_shape()
+        else:
+            shape = slide.shapes.add_shape(kind_map.get(sh["kind"], MSO_SHAPE.RECTANGLE), sx, sy, sw, sh_h)
+
+        if sh.get("fill_rgb"):
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = RGBColor.from_string(sh["fill_rgb"])
+        else:
+            shape.fill.background()
+
+        if sh.get("stroke_rgb"):
+            shape.line.color.rgb = RGBColor.from_string(sh["stroke_rgb"])
+            shape.line.width = Pt(max(0.75, float(sh.get("stroke_pt", 1.25))))
+        else:
+            shape.line.fill.background()
+
+        embedded = sh.get("embedded_lines", [])
+        if embedded and shape.has_text_frame:
+            tf = shape.text_frame
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            ppt_runs(tf, embedded, ratio / 12700, word_wrap=True, align_center=True)
+            tf.margin_left = tf.margin_right = Pt(3)
+            tf.margin_top = tf.margin_bottom = Pt(2)
+
+    for conn in connectors:
+        p1x, p1y = conn["p1"]
+        p2x, p2y = conn["p2"]
+        line_shape = slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            Emu(left + int(p1x * ratio)),
+            Emu(top + int(p1y * ratio)),
+            Emu(left + int(p2x * ratio)),
+            Emu(top + int(p2y * ratio)),
+        )
+        line_shape.line.color.rgb = RGBColor.from_string(conn.get("stroke_rgb", "222222"))
+        line_shape.line.width = Pt(max(0.75, float(conn.get("stroke_pt", 1.5))))
+        ln = line_shape.line._get_or_add_ln()
+        if conn.get("arrow_start"):
+            hs = etree.SubElement(ln, qn("a:headEnd"))
+            hs.set("type", "triangle")
+            hs.set("w", "med")
+            hs.set("len", "med")
+        if conn.get("arrow_end"):
+            ts = etree.SubElement(ln, qn("a:tailEnd"))
+            ts.set("type", "triangle")
+            ts.set("w", "med")
+            ts.set("len", "med")
+
+
+def powerpoint_document(doc: pdf.Document, selected: list[int], output: Path, config: dict,
+                        *, options: dict | None = None, root: Path | None = None) -> tuple[int, dict]:
     from pptx import Presentation
     from pptx.dml.color import RGBColor
     from pptx.util import Inches
-    from pdf_engine import render
+    from pdf_engine import integer, render
+    from settings import ROOT
+
+    opts = options or {}
+    scan_editable = bool(opts.get("scan_editable_mode", False))
+    raw_dpi = opts.get("ocr_dpi", opts.get("dpi", 200))
+    dpi = integer(200 if raw_dpi in (None, "") else raw_dpi, 100, 300, "DPI")
+    stats = {"refined_pages": 0, "tables": 0, "diagrams": 0, "ocr_used": False}
 
     presentation = Presentation()
     first = doc[selected[0]].rect
     presentation.slide_width = Inches(10)
     presentation.slide_height = Inches(max(1, min(56, 10 * first.height / first.width)))
     fallback = 0
-    for number in selected:
+    for s_idx, number in enumerate(selected):
         page = doc[number]
         layout = page_layout(page, config)
         slide = presentation.slides.add_slide(presentation.slide_layouts[6])
         width, height = int(presentation.slide_width), int(presentation.slide_height)
         ratio = min(width / page.rect.width, height / page.rect.height)
         left, top = (width - int(page.rect.width * ratio)) // 2, (height - int(page.rect.height * ratio)) // 2
+
+        if layout["fallback"] and scan_editable:
+            from engines.scan_office_bridge import analyze_scanned_page_for_office
+
+            scanned = analyze_scanned_page_for_office(
+                page,
+                dpi,
+                config,
+                root or ROOT,
+                preprocess=str(opts.get("preprocess", "auto")),
+                vectorize_tables=bool(opts.get("vectorize_tables", True)),
+                vectorize_diagrams=bool(opts.get("vectorize_diagrams", True)),
+                ocr_mode=str(opts.get("ocr_mode", "auto")),
+            )
+            stats["refined_pages"] += 1
+            stats["tables"] += len(scanned["tables"])
+            stats["diagrams"] += len(scanned["diagrams"]) + len(scanned["connectors"])
+            stats["ocr_used"] = stats["ocr_used"] or scanned["ocr_applied"]
+
+            sw, sh_pt = scanned["width_pt"], scanned["height_pt"]
+            if s_idx == 0 and (abs(sw - page.rect.width) > 1 or abs(sh_pt - page.rect.height) > 1):
+                presentation.slide_height = Inches(max(1, min(56, 10 * sh_pt / sw)))
+                width, height = int(presentation.slide_width), int(presentation.slide_height)
+            ratio = min(width / sw, height / sh_pt)
+            left, top = (width - int(sw * ratio)) // 2, (height - int(sh_pt * ratio)) // 2
+
+            if scanned["backdrop_png"]:
+                slide.shapes.add_picture(
+                    io.BytesIO(scanned["backdrop_png"]),
+                    left,
+                    top,
+                    width=int(sw * ratio),
+                    height=int(sh_pt * ratio),
+                )
+            else:
+                slide.background.fill.solid()
+                slide.background.fill.fore_color.rgb = RGBColor.from_string(scanned.get("paper_rgb", "FFFFFF"))
+
+            _add_ppt_diagram_shapes(slide, scanned["diagrams"], scanned["connectors"], left, top, ratio)
+
+            all_cell_lines = list(scanned["lines"])
+            for table in scanned["tables"]:
+                xs, ys = table["xs"], table["ys"]
+                shape = slide.shapes.add_table(
+                    len(ys) - 1, len(xs) - 1, left + int(xs[0] * ratio), top + int(ys[0] * ratio),
+                    max(1, int((xs[-1] - xs[0]) * ratio)), max(1, int((ys[-1] - ys[0]) * ratio)),
+                )
+                for column, size in zip(shape.table.columns, [b - a for a, b in zip(xs, xs[1:])]):
+                    column.width = max(1, int(size * ratio))
+                for row, size in zip(shape.table.rows, [b - a for a, b in zip(ys, ys[1:])]):
+                    row.height = max(1, int(size * ratio))
+                fills_map = table.get("fills", {})
+                is_ruled = table.get("mode", "ruled") == "ruled"
+                for row, column, end_row, end_col, rect in table["cells"]:
+                    cell = shape.table.cell(row, column)
+                    if row != end_row or column != end_col:
+                        cell.merge(shape.table.cell(end_row, end_col))
+                    if is_ruled:
+                        _set_ppt_cell_borders(cell, table.get("border_rgb", "555555"), float(table.get("border_pt", 1.0)))
+                    fill_hex = fills_map.get((row, column))
+                    if fill_hex:
+                        cell.fill.solid()
+                        cell.fill.fore_color.rgb = RGBColor.from_string(fill_hex)
+                    else:
+                        cell.fill.background()
+                    ppt_runs(cell.text_frame, lines_in(all_cell_lines, rect), ratio / 12700, word_wrap=True)
+
+            # Parrafos editables agrupados fuera de tablas y diagramas ya embebidos
+            for para in scanned["paragraphs"]:
+                px0, py0, px1, py1 = para["bbox"]
+                shape = slide.shapes.add_textbox(
+                    left + int(px0 * ratio),
+                    top + int(py0 * ratio),
+                    max(1, int((px1 - px0 + 8) * ratio)),
+                    max(1, int((py1 - py0 + 4) * ratio)),
+                )
+                ppt_runs(shape.text_frame, para["lines"], ratio / 12700, word_wrap=len(para["lines"]) > 1)
+            continue
+
         if layout["fallback"]:
             image = layout["image"]
             fallback += 1
@@ -561,11 +921,12 @@ def powerpoint_document(doc: pdf.Document, selected: list[int], output: Path, co
                 )
                 ppt_runs(shape.text_frame, [{**line, "spans": [span]}], ratio / 12700)
     presentation.save(output)
-    return fallback
+    return fallback, stats
 
 
 def export_office(operation: str, doc: pdf.Document, selected: list[int],
-                  folder: Path, config: dict) -> tuple[Path, str]:
+                  folder: Path, config: dict, *, options: dict | None = None,
+                  root: Path | None = None) -> tuple[Path, str]:
     converters = {
         "pdf_to_docx": (word_document, "documento.docx", "Word: texto y tablas editables en su posicion original sobre un fondo con logos, firmas, marcas y bordes. Disposicion fija: textos largos nuevos no reacomodan el resto de la pagina."),
         "pdf_to_xlsx": (excel_document, "tablas.xlsx", "Excel: tablas editables y texto; cada hoja Original conserva la pagina como imagen. Sin formulas inferidas."),
@@ -573,8 +934,15 @@ def export_office(operation: str, doc: pdf.Document, selected: list[int],
     }
     convert, filename, notice = converters[operation]
     output = folder / filename
-    fallback = convert(doc, selected, output, config)
-    if fallback:
+    fallback, stats = convert(doc, selected, output, config, options=options, root=root)
+    if stats.get("refined_pages"):
+        notice = (
+            f"Conversion refinada Acrobat-Pro ({operation.split('_')[-1].upper()}): "
+            f"{stats['refined_pages']} pagina(s) escaneadas reconstruidas con "
+            f"{stats['tables']} tabla(s), {stats['diagrams']} elemento(s) vectoriales y "
+            f"{'OCR local activo' if stats['ocr_used'] else 'texto recuperado'}. Revise fuentes y alineacion."
+        )
+    elif fallback:
         notice += f" {fallback} paginas complejas, escaneadas/sin texto visible o giradas conservadas como imagen; OCR recupera texto, no reconstruye el diseno."
     notice += " Fuentes sustituidas si no estan instaladas; revise columnas, saltos, colores y celdas combinadas. No equivale a Acrobat."
     return output, notice

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="client-build" content="{{ build }}">
+  <meta name="color-scheme" content="light dark">
+  <title>EVA PDF Enterprise | Pipeline Batch &amp; Automatizacion</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg', v=build) }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='extended.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='palette.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='processing_queue.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='modules/workspace.css', v=build) }}">
+  <script src="{{ url_for('static', filename='processing_queue.js', v=build) }}" defer></script>
+  <script src="{{ url_for('static', filename='modules/pipeline.js', v=build) }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+    <nav class="v2-nav-links" aria-label="Espacios V2">
+      <a href="/">Inicio</a>
+      <a href="/editor">Editor Acrobat</a>
+      <a href="/pipeline" aria-current="page">Pipeline Batch</a>
+      <a href="/canvas">Canvas</a>
+      <a href="/vault">Bóveda Forense</a>
+    </nav>
+    <div class="header-actions"><button id="theme" type="button" class="icon-button" aria-label="Cambiar tema">◐</button></div>
+  </header>
+
+  <main class="v2-workspace-main">
+    <section class="v2-card">
+      <div class="v2-row">
+        <div class="v2-row-grow">
+          <span class="v2-badge">FASE 1 &amp; 2 · BATCH &amp; AUTOMATIZACIÓN</span>
+          <h2>Pipeline Batch Sin Código y Lotes Contextuales</h2>
+          <p class="hint">Divide, enruta, limpia rastreo, censura y empaqueta múltiples PDFs en bloques locales sin almacenar historial en disco.</p>
+        </div>
+        <div id="pipe-download" hidden><a id="pipe-download-link" class="primary">Descargar resultado</a></div>
+      </div>
+      <p id="pipe-status" class="v2-status-bar" role="status" aria-live="polite">Listo. Configura las reglas y selecciona los PDF de entrada.</p>
+
+      <div class="v2-grid-2">
+        <div class="v2-field">
+          <label for="pipe-files">Archivos PDF del lote</label>
+          <input id="pipe-files" type="file" accept=".pdf" multiple>
+          <small class="hint">Se procesan localmente manteniendo el tamaño máximo configurado por sesión.</small>
+        </div>
+        <div class="v2-field">
+          <label for="pipe-split-regex">Dividir cada PDF al detectar Regex (opcional)</label>
+          <input id="pipe-split-regex" type="text" placeholder="Ej. FACTURA\s+#?(\w+)">
+          <label class="v2-check">
+            <input id="pipe-contextual-names" type="checkbox">
+            <span>Activar nombres contextuales por subcarpetas (#6a, solo dentro de EVA00.zip)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="v2-row">
+        <label class="v2-check"><input id="tr-anti-track" type="checkbox"><span>Purga Anti-Rastreo</span></label>
+        <label class="v2-check"><input id="tr-sanitize" type="checkbox"><span>Desinfección Forense Profunda</span></label>
+        <label class="v2-check"><input id="tr-compress" type="checkbox"><span>Compresión Sin Pérdida</span></label>
+        <input id="tr-watermark" type="text" placeholder="Marca de agua opcional (ej. PROCESADO)" class="v2-row-grow">
+      </div>
+
+      <div class="v2-card">
+        <h3>Reglas de Enrutamiento Visual</h3>
+        <div class="v2-row">
+          <input id="rule-regex" type="text" placeholder="Regex/Texto disparador (ej. CONTRATO)" class="v2-row-grow">
+          <input id="rule-folder" type="text" placeholder="Carpeta destino (ej. Contratos)">
+          <input id="rule-tpl" type="text" placeholder="Plantilla nombre (ej. {folder}/{doc_id}_{index}.pdf)" class="v2-row-grow">
+          <button id="add-rule" type="button" class="secondary">+ Añadir regla</button>
+        </div>
+        <ul id="rule-list" class="v2-list"></ul>
+        <div class="v2-row">
+          <button id="run-pipeline" type="button" class="primary">Ejecutar Pipeline →</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="v2-grid-2">
+      <section class="v2-card">
+        <span class="v2-badge">#2 PLANTILLA INVERSA VIVA</span>
+        <h3>Detectar Campos y Compilar Lote CSV/JSON</h3>
+        <div class="v2-field">
+          <label for="tpl-pdf">1. Plantilla PDF (con {{variables}} o campos detectables)</label>
+          <input id="tpl-pdf" type="file" accept=".pdf">
+        </div>
+        <div class="v2-field">
+          <label for="tpl-data">2. Archivo CSV o JSON de registros (solo para compilar)</label>
+          <input id="tpl-data" type="file" accept=".csv,.json">
+        </div>
+        <div class="v2-row">
+          <button id="btn-tpl-detect" type="button" class="secondary">Detectar campos (.json)</button>
+          <button id="btn-tpl-compile" type="button" class="primary">Compilar Lote (.zip) →</button>
+        </div>
+        <pre id="tpl-preview" class="v2-output-pre" hidden></pre>
+      </section>
+
+      <section class="v2-card">
+        <span class="v2-badge">#8 REEMPLAZO SEMÁNTICO &amp; DIVISAS</span>
+        <h3>Regex, Fechas y Escalado de Divisas</h3>
+        <div class="v2-field">
+          <label for="sem-files">PDFs objetivo</label>
+          <input id="sem-files" type="file" accept=".pdf" multiple>
+        </div>
+        <div class="v2-row">
+          <select id="sem-kind">
+            <option value="regex">Regex + Grupos</option>
+            <option value="literal">Texto literal</option>
+            <option value="currency">Conversor Divisa</option>
+            <option value="date">Normalizar Fechas</option>
+          </select>
+          <input id="sem-pattern" type="text" placeholder="Patrón/Texto (ej. \b(2025)\b)" class="v2-row-grow">
+          <input id="sem-replace" type="text" placeholder="Reemplazo / Tasa / Formato" class="v2-row-grow">
+        </div>
+        <div class="v2-row">
+          <button id="btn-sem-dryrun" type="button" class="secondary">Vista Previa (Dry-Run)</button>
+          <button id="btn-sem-apply" type="button" class="primary">Aplicar Reemplazo →</button>
+        </div>
+        <pre id="sem-preview" class="v2-output-pre" hidden></pre>
+      </section>
+    </div>
+
+    <div class="v2-grid-2">
+      <section class="v2-card">
+        <span class="v2-badge">#5 PUENTE TABULAR BIDIRECCIONAL</span>
+        <h3>Extraer Tablas Tipadas y Reaplicar Cambios Excel</h3>
+        <div class="v2-field">
+          <label for="tbl-pdf">PDF con tablas (con o sin bordes)</label>
+          <input id="tbl-pdf" type="file" accept=".pdf">
+        </div>
+        <div class="v2-field">
+          <label for="tbl-edited">Libro .xlsx o .json modificado (para reaplicar)</label>
+          <input id="tbl-edited" type="file" accept=".xlsx,.json">
+        </div>
+        <div class="v2-row">
+          <button id="btn-tbl-extract" type="button" class="secondary">Extraer .xlsx tipado</button>
+          <button id="btn-tbl-apply" type="button" class="primary">Aplicar cambios al PDF →</button>
+        </div>
+      </section>
+
+      <section class="v2-card">
+        <span class="v2-badge">#17 &amp; #19 VISIÓN 3D MRC y VECTORES SVG</span>
+        <h3>Cosecha Vectorial SVG/EPS y Escaneo 3D MRC</h3>
+        <div class="v2-field">
+          <label for="vis-files">PDF o Imágenes escaneadas</label>
+          <input id="vis-files" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp,.heic,.heif" multiple>
+        </div>
+        <div class="v2-row">
+          <button id="btn-vec-svg" type="button" class="secondary">Cosechar SVG/EPS (#19)</button>
+          <button id="btn-scan-3d" type="button" class="primary">De-warp 3D + MRC (#17) →</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

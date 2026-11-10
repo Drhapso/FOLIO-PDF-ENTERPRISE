@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+
+os.environ.setdefault("CT2_USE_MKL", "0")
 import warnings
 import zipfile
 from pathlib import Path

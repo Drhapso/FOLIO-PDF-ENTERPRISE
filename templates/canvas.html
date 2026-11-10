@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="client-build" content="{{ build }}">
+  <meta name="color-scheme" content="light dark">
+  <title>EVA PDF Enterprise | Canvas de Análisis Multidocumento</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg', v=build) }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='extended.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='palette.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='processing_queue.css', v=build) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='modules/workspace.css', v=build) }}">
+  <script src="{{ url_for('static', filename='processing_queue.js', v=build) }}" defer></script>
+  <script src="{{ url_for('static', filename='modules/canvas_workspace.js', v=build) }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+    <nav class="v2-nav-links" aria-label="Espacios V2">
+      <a href="/">Inicio</a>
+      <a href="/editor">Editor Acrobat</a>
+      <a href="/pipeline">Pipeline Batch</a>
+      <a href="/canvas" aria-current="page">Canvas</a>
+      <a href="/vault">Bóveda Forense</a>
+    </nav>
+    <div class="header-actions"><span id="canvas-render-mode" class="v2-badge">Motor Canvas</span><button id="theme" type="button" class="icon-button" aria-label="Cambiar tema">◐</button></div>
+  </header>
+
+  <div class="canvas-shell">
+    <aside class="canvas-sidebar" aria-label="Controles de Canvas Infinito">
+      <span class="v2-badge">#20 CANVAS INFINITO · .EVABOARD</span>
+      <p id="canvas-status" class="v2-status-bar" role="status" aria-live="polite">Carga PDFs para fijar páginas y conectar extractos.</p>
+
+      <div class="v2-field">
+        <label for="canvas-pdfs">Documentos PDF (sesión local)</label>
+        <input id="canvas-pdfs" type="file" accept=".pdf,.bib" multiple>
+      </div>
+
+      <div class="v2-row">
+        <select id="canvas-doc-select" class="v2-row-grow" aria-label="Documento activo"></select>
+        <input id="canvas-page-input" type="number" min="1" value="1" aria-label="Número de página">
+      </div>
+      <div class="v2-row">
+        <button id="canvas-pin-page" type="button" class="primary">+ Fijar página al tablero</button>
+        <button id="canvas-add-note" type="button" class="secondary">+ Nota libre</button>
+      </div>
+
+      <hr>
+      <div class="v2-row">
+        <button id="canvas-connect-mode" type="button" class="secondary">Conectar 2 nodos</button>
+        <button id="canvas-sync-btn" type="button" class="secondary">Sincronizar extractos</button>
+      </div>
+
+      <div class="v2-row">
+        <button id="canvas-export-board" type="button" class="secondary">Guardar .evaboard</button>
+        <label class="secondary">Cargar .evaboard
+          <input id="canvas-import-board" type="file" accept=".evaboard,.json" hidden>
+        </label>
+      </div>
+
+      <hr>
+      <span class="v2-badge">#9 &amp; #11 ACADEMIA Y DIFF</span>
+      <div class="v2-row">
+        <button id="canvas-research-link" type="button" class="secondary">Enlazar citas / BibTeX</button>
+        <button id="canvas-compare-v1v2" type="button" class="secondary">Comparar 2 PDFs (V1/V2)</button>
+      </div>
+      <div id="canvas-download" hidden><a id="canvas-download-link" class="primary">Descargar paquete</a></div>
+
+      <div class="v2-row">
+        <button id="canvas-zoom-out" type="button" class="secondary">−</button>
+        <span id="canvas-zoom-label">100%</span>
+        <button id="canvas-zoom-in" type="button" class="secondary">+</button>
+        <button id="canvas-zoom-reset" type="button" class="secondary">Centrar</button>
+      </div>
+    </aside>
+
+    <main id="canvas-stage" class="canvas-stage-wrap" aria-label="Tablero infinito multidocumento">
+      <div id="canvas-world" class="canvas-world">
+        <svg id="canvas-edges" class="canvas-svg-edges"></svg>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

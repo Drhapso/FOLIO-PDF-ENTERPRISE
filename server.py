@@ -19,16 +19,21 @@ from urllib.parse import urlsplit
 from flask import Flask, Request, jsonify, render_template, request, send_file
 from werkzeug.exceptions import HTTPException
 
+from engines.registry import allowed_upload_suffixes
 from isolation import InstanceLock, ProcessTree, worker_command
 from pdf_engine import BULK_OPERATIONS, OPERATIONS, ProcessingError, capabilities, file_limit
 from settings import ROOT, load_settings
 from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
 from recovery_events import install_recovery, report_failure, request_recovery
 
-CLIENT_BUILD = "2026-11-06-desktop-scanner-1"
+CLIENT_BUILD = "2026-11-09-v2-enterprise-6"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
+mimetypes.add_type("application/wasm", ".wasm")
+mimetypes.add_type("application/octet-stream", ".evacrypt")
+mimetypes.add_type("application/json", ".evaboard")
+mimetypes.add_type("application/json", ".evatpl")
 
 
 def remove_job_folder(folder: Path) -> None:
@@ -147,9 +152,16 @@ def create_app(root: Path = ROOT) -> Flask:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
+        script_src = "'self' 'wasm-unsafe-eval'" if config.get("allow_wasm_viewer") else "'self'"
+        worker_src = "worker-src 'self' blob:; " if config.get("allow_wasm_viewer") else ""
+        connect_src = "'self'"
+        if config.get("allow_external_ai") and config.get("ai_edge_endpoint", "").startswith("https://"):
+            edge = urlsplit(config["ai_edge_endpoint"])
+            if edge.scheme == "https" and edge.netloc:
+                connect_src = f"'self' https://{edge.netloc}"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self'; "
-            "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; "
+            f"default-src 'self'; script-src {script_src}; {worker_src}style-src 'self'; "
+            f"img-src 'self' data: blob:; connect-src {connect_src}; object-src 'none'; "
             "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         )
         response.headers["Permissions-Policy"] = "camera=(self), display-capture=(self), microphone=(), geolocation=()"
@@ -170,6 +182,18 @@ def create_app(root: Path = ROOT) -> Flask:
     def editor():
         return render_template("editor.html", build=CLIENT_BUILD)
 
+    @app.get("/pipeline")
+    def pipeline_workspace():
+        return render_template("pipeline.html", build=CLIENT_BUILD)
+
+    @app.get("/canvas")
+    def canvas_workspace():
+        return render_template("canvas.html", build=CLIENT_BUILD)
+
+    @app.get("/vault")
+    def vault_workspace():
+        return render_template("vault.html", build=CLIENT_BUILD)
+
     @app.get("/health")
     def health():
         if app.extensions.get("cleanup_failed"):
@@ -184,6 +208,9 @@ def create_app(root: Path = ROOT) -> Flask:
                        max_files=config["max_files"], max_pages=config["max_pages"],
                        timeout_seconds=config["timeout_seconds"], build=CLIENT_BUILD,
                        performance=config["performance"],
+                       ai_mode=config.get("ai_mode", "disabled"),
+                       wasm_viewer=bool(config.get("allow_wasm_viewer", False)),
+                       max_ai_jobs=config.get("max_ai_jobs", 1),
                        queue={"max_waiting": config["max_queued_jobs"],
                               "max_wait_seconds": config["queue_wait_seconds"],
                               "max_heavy_jobs": config["max_heavy_jobs"],
@@ -282,11 +309,10 @@ def create_app(root: Path = ROOT) -> Flask:
                     f"El peso conjunto de los archivos no puede superar {config['max_upload_mb']} MB.", 413)
             folder = Path(tempfile.mkdtemp(prefix="job-", dir=runtime))
             files = []
+            allowed_suffixes = allowed_upload_suffixes(operation)
             for index, upload in enumerate(uploads):
                 suffix = Path(upload.filename or "").suffix.lower()
-                if suffix not in {".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp",
-                                  ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".html", ".htm",
-                                  ".heic", ".heif", ".epub"}:
+                if suffix not in allowed_suffixes:
                     raise ProcessingError("Extension no admitida.")
                 name = f"entrada-{index:03}{suffix}"
                 upload.save(folder / name)
@@ -299,8 +325,17 @@ def create_app(root: Path = ROOT) -> Flask:
             for key in ("TEMP", "TMP", "TMPDIR"):
                 environment[key] = str(folder)
             environment["OMP_THREAD_LIMIT"] = "1"
+            environment["OPENBLAS_NUM_THREADS"] = "1"
+            environment["MKL_NUM_THREADS"] = "1"
+            environment["NUMEXPR_NUM_THREADS"] = "1"
+            environment["OPENCV_FOR_THREADS_NUM"] = "1"
+            environment["CT2_USE_MKL"] = "0"
             environment["PYTHONDONTWRITEBYTECODE"] = "1"
-            tree = ProcessTree(config["max_job_memory_mb"])
+            job_memory_mb = config["max_job_memory_mb"]
+            if operation == "translate_layout":
+                budget_mb = int(config.get("performance", {}).get("memory_budget_mb", job_memory_mb))
+                job_memory_mb = max(job_memory_mb, min(1536, budget_mb))
+            tree = ProcessTree(job_memory_mb)
             try:
                 with subprocess.Popen(
                     worker_command(folder),

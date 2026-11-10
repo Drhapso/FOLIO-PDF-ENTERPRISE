@@ -1,0 +1,6 @@
+{
+  "name": "EVA Neural MT Offline Pack (ES<->EN)",
+  "version": "1.0.0",
+  "capabilities": ["ctranslate2", "nmt_offline", "es_en", "en_es"],
+  "pairs": ["en_es", "es_en"]
+}

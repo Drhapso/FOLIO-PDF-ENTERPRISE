@@ -1,5 +1,23 @@
 # Cambios
 
+## 2026-11-09 - Barra superior depurada, niveles de edición, traductor NMT offline y conversión escaneada estilo Acrobat Pro
+
+- **Barra superior principal simplificada (`templates/index.html`, `static/extended.css`):**
+  - Retirados los accesos superiores `Herramientas`, `Pipeline Batch`, `Canvas` y `Bóveda Forense` (los estudios `/pipeline`, `/canvas` y `/vault` siguen accesibles desde sus tarjetas en la cuadrícula).
+  - Desplazada la opción `Privacidad` (`#privacidad`) al extremo derecho dentro de `.header-actions`, inmediatamente junto al botón de cambio de tema claro/oscuro.
+- **Reorganización de herramientas por nivel y tooltips (`templates/index.html`, `static/app.js`, `static/extended.css`):**
+  - Retirada la pestaña aislada `Suite V2`; las 61 herramientas de la portada quedan clasificadas en `Edición básica` (18), `Edición avanzada` (28) y `Edición profesional` (15), manteniendo `Edición múltiple`.
+  - Añadido tooltip flotante descriptivo al situar o enfocar cada tarjeta de herramienta.
+- **Traductor Vectorial In-Situ 100 % offline (`engines/typography_and_layout.py`, `deploy/install-nmt.ps1`, `engines/addons.py`):**
+  - Integrado motor neuronal `CTranslate2` (`addons/pack-nmt`, pares `en_es` y `es_en`) con soporte OCR automático en PDFs escaneados y capas `GlyphLessFont`, aislamiento de memoria `CT2_USE_MKL=0` e hilos `OMP_THREAD_LIMIT`, además de fallback determinista a glosario si no hay modelos NMT.
+- **Conversión escaneada refinada estilo Acrobat Pro (`engines/scan_office_bridge.py`, `office_export.py`, `pdf_engine.py`):**
+  - Nueva operación `scan_to_office` y modo editable automático/refinado (`scan_editable_mode` en PDF→Office y `refine_scans` en Office→PDF) con OCR Tesseract, detección de tablas con/sin bordes y celdas combinadas, vectorización de cajas/conectores/flechas y limpieza de fondo sin texto fantasma.
+- **Suite modular V2 (`engines/`, `/pipeline`, `/canvas`, `/vault`, `/editor` drawer):**
+  - Incorporados estudios dedicados `/pipeline`, `/canvas` y `/vault`, además del registro `engines/registry.py` con 25 operaciones V2 y pruebas dedicadas en `tests/test_v2_enterprise.py` y `tests/test_scan_office_bridge.py`.
+- **Documentación para Git (`README.md`, `CHANGELOG.md`, `Cambios de antigravity.txt`):**
+  - Actualizado `README.md` con la arquitectura actual, scripts `deploy\install-ocr.ps1` y `deploy\install-nmt.ps1`, tabla de estructura y exclusiones de `.gitignore`.
+- Build web `2026-11-09-v2-enterprise-6`.
+
 ## 2026-10-21 - README de portada simplificado
 
 - README reducido a caracteristicas generales y funciones mas novedosas.
