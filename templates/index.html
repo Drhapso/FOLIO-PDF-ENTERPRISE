@@ -17,8 +17,10 @@
   <script src="{{ url_for('static', filename='processing_queue.js', v=build) }}" defer></script>
   <script src="{{ url_for('static', filename='app.js', v=build) }}" defer></script>
   <script src="{{ url_for('static', filename='acrobat_editor.js', v=build) }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='fc-transition.css', v=build) }}">
+  <script src="{{ url_for('static', filename='fc-transition.js', v=build) }}" defer></script>
 </head>
-<body>
+<body data-fc-plataforma="eva_pdf" data-fc-sin-entrada="1">
   <dialog id="folio-opening" tabindex="-1" aria-label="Bienvenido a EVA PDF Enterprise" aria-describedby="opening-tagline">
     <div class="opening-stage">
       <div class="opening-dawn" aria-hidden="true"></div>
@@ -73,7 +75,12 @@
   </dialog>
   <header class="topbar">
     <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
-    <div class="header-actions"><span class="network"><span></span> Entorno local</span><a href="#privacidad" class="header-privacy-link">Privacidad</a><button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button></div>
+    <div class="header-actions">
+      <a href="http://127.0.0.1:8000/" class="btn-fc-center" data-fc-retorno id="fcCenterLink" title="Volver al portal central Falcon Center">🏛️ Ir a Falcon Center</a>
+      <span class="network"><span></span> Entorno local</span>
+      <a href="#privacidad" class="header-privacy-link">Privacidad</a>
+      <button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button>
+    </div>
   </header>
   <main>
     <section class="hero">
@@ -186,7 +193,7 @@
       </div>
       <button id="close-desktop-guide" class="icon-button" aria-label="Cerrar guía">✕</button>
     </div>
-    <p id="desktop-detected-list" class="hint" style="color: var(--accent); font-weight: 600;"></p>
+    <p id="desktop-detected-list" class="hint desktop-detected-list"></p>
     <div class="desktop-guide-steps">
       <div class="desktop-guide-card">
         <span class="desktop-guide-icon" aria-hidden="true">🖥️</span>
@@ -210,7 +217,7 @@
         </div>
       </div>
     </div>
-    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+    <div class="desktop-guide-footer">
       <button type="button" id="desktop-guide-ok" class="primary">¡Entendido!</button>
     </div>
   </dialog>

@@ -395,6 +395,16 @@ function openTool(tool,{keepSessionFile=false}={}) {
         ? `Motor neuronal CTranslate2 100% offline activo (${pairs}). Incluye OCR automático si el PDF es un escaneo.`
         : "Modo glosario básico (instala addons/pack-nmt con deploy\\install-nmt.ps1 para traducción neuronal completa)."
     });
+    const srcEl=$("option-source_lang");
+    const dstEl=$("option-target_lang");
+    if(srcEl && dstEl) {
+      srcEl.addEventListener("change", () => {
+        if(dstEl.value===srcEl.value) dstEl.value=srcEl.value==="es"?"en":"es";
+      });
+      dstEl.addEventListener("change", () => {
+        if(srcEl.value===dstEl.value) srcEl.value=dstEl.value==="es"?"en":"es";
+      });
+    }
   }
   if(tool.id==="accessibility_tagger") field("lang","Idioma del árbol PDF/UA",{value:"es-ES"});
   if(tool.id==="anti_track") field("strip_external_uris","Eliminar también enlaces externos http/https",{type:"checkbox"});
@@ -404,8 +414,7 @@ function openTool(tool,{keepSessionFile=false}={}) {
   if(tool.id==="edit" || tool.standaloneTab) {
     const tabBtn=document.createElement("button");
     tabBtn.type="button";
-    tabBtn.className="primary";
-    tabBtn.style.cssText="width:100%; margin:8px 0 14px 0; padding:12px; font-weight:600; text-align:center; cursor:pointer;";
+    tabBtn.className="primary standalone-tab-btn";
     tabBtn.textContent="Abrir editor Acrobat →";
     tabBtn.addEventListener("click", () => {
       try {
@@ -795,12 +804,6 @@ function applyDesktopCapabilities(data) {
   }
   const detectedList = $("desktop-detected-list");
   if (detectedList) detectedList.textContent = `Dispositivos detectados: ${devicesText}`;
-
-  if (!sessionStorage.getItem("eva_desktop_guide_shown")) {
-    sessionStorage.setItem("eva_desktop_guide_shown", "1");
-    const guide = $("desktop-guide-dialog");
-    if (guide && !guide.open) guide.showModal();
-  }
 }
 
 $("desktop-help")?.addEventListener("click", () => {

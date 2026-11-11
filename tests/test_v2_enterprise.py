@@ -653,3 +653,304 @@ class V2EnterpriseTests(unittest.TestCase):
             gloss_out, gloss_mode = _translate_offline_or_ai(["Factura"], "es", "en", {}, cfg, root=work)
             self.assertEqual(gloss_out, ["Invoice"])
             self.assertEqual(gloss_mode, "offline_glossary")
+
+    def test_15_translate_preserves_structure_tables_and_contact_ids(self):
+        from engines.typography_and_layout import (
+            _collect_translatable_units,
+            _should_skip_translation,
+            handle_translate_layout,
+        )
+
+        nmt_dir = ROOT / "addons" / "pack-nmt"
+        if not (nmt_dir / "es_en" / "model" / "model.bin").is_file():
+            self.skipTest("Modelo NMT es_en (pack-nmt) no instalado")
+
+        # 1. Proteccion unitaria: direcciones, correos, webs e identificacion publica se ignoran;
+        # encabezados o prosa normal SI se traducen.
+        for ignored in (
+            "NIT: 900.123.456-7",
+            "Calle 72 # 10-07, Oficina 402, Bogotá D.C.",
+            "https://www.andinas.com.co/portal",
+            "www.portal-clientes.org",
+            "contacto@andinas.com.co",
+            "Tel: +57 (601) 555-1234 | www.andinas.com.co | info@andinas.com.co",
+            "742 Evergreen Terrace, Suite 200, Springfield, IL 62704",
+            "C.C. 1.020.304.506",
+            "Inversiones Andinas S.A.S.",
+        ):
+            self.assertTrue(_should_skip_translation(ignored), f"Debio ignorarse: {ignored}")
+
+        for translatable in (
+            "Dirección",
+            "Teléfono",
+            "El registro de actividades requiere aprobación formal.",
+            "Para soporte visite https://www.andinas.com.co o escriba a info@andinas.com.co.",
+        ):
+            self.assertFalse(_should_skip_translation(translatable), f"No debio ignorarse: {translatable}")
+
+        # 2. Documento complejo: membrete + prosa con entidades embebidas + 2 columnas + tabla con bordes + tabla sin bordes
+        cfg = load_settings(ROOT)
+        with tempfile.TemporaryDirectory(prefix="folio-nmt-struct-") as td:
+            work = Path(td)
+            src = work / "structured.pdf"
+            with pdf.open() as doc:
+                p = doc.new_page(width=595, height=842)
+                p.insert_text((170, 50), "INFORME TÉCNICO DE SERVICIOS", fontname="hebo", fontsize=14)
+                p.insert_text((50, 75), "Inversiones Andinas S.A.S.", fontsize=10)
+                p.insert_text((50, 88), "NIT: 900.123.456-7", fontsize=10)
+                p.insert_text((50, 101), "Calle 72 # 10-07, Oficina 402, Bogotá D.C.", fontsize=10)
+                p.insert_text((50, 114), "Tel: +57 (601) 555-1234 | www.andinas.com.co | info@andinas.com.co", fontsize=10)
+
+                p.insert_text((50, 150), "Para soporte visite https://www.andinas.com.co/ayuda o escriba a", fontsize=10.5)
+                p.insert_text((50, 164), "soporte@andinas.com.co con su NIT 900.123.456-7 antes del viernes.", fontsize=10.5)
+
+                p.draw_line(pdf.Point(295, 195), pdf.Point(295, 255), color=(0.5, 0.5, 0.5), width=0.8)
+                p.insert_text((50, 208), "La columna izquierda contiene el análisis", fontsize=10)
+                p.insert_text((50, 222), "técnico detallado del proyecto actual.", fontsize=10)
+                p.insert_text((310, 208), "La columna derecha presenta las conclusiones", fontsize=10)
+                p.insert_text((310, 222), "principales de la auditoría financiera.", fontsize=10)
+
+                cols = [50, 195, 380, 545]
+                rows_y = [275, 305, 335, 365]
+                for r in range(3):
+                    for c in range(3):
+                        p.draw_rect(pdf.Rect(cols[c], rows_y[r], cols[c + 1], rows_y[r + 1]), color=(0, 0, 0), width=0.8)
+                tbl_data = [
+                    ["Concepto", "Dirección", "Correo"],
+                    ["Consultoría Mensual", "Carrera 15 No. 88-64", "ana@andinas.com.co"],
+                    ["Soporte Técnico", "Av. El Dorado # 69-76", "soporte@andinas.com.co"],
+                ]
+                for r, row in enumerate(tbl_data):
+                    for c, val in enumerate(row):
+                        p.insert_text((cols[c] + 6, rows_y[r] + 19), val, fontsize=9.5, fontname=("hebo" if r == 0 else "helv"))
+
+                p.insert_text((55, 410), "Responsable Técnico", fontsize=10)
+                p.insert_text((280, 410), "carlos@andinas.com.co", fontsize=10)
+                p.insert_text((55, 424), "Sede Operativa", fontsize=10)
+                p.insert_text((280, 424), "Calle 100 # 19-54, Piso 5", fontsize=10)
+                doc.save(src)
+
+            with pdf.open(src) as d_chk:
+                units = _collect_translatable_units(d_chk[0])
+                table_units = [u for u in units if u.get("in_table")]
+                self.assertEqual(len(table_units), 9)
+
+            res = handle_translate_layout(
+                "translate_layout",
+                [src],
+                {"source_lang": "es", "target_lang": "en"},
+                work,
+                cfg,
+                ROOT,
+            )
+            self.assertIn("motor=nmt_offline_es_en", res["notice"])
+            with pdf.open(work / res["file"]) as out_doc:
+                out_p = out_doc[0]
+                full = out_p.get_text().replace("\xa0", " ")
+                # Datos de contacto/IDs/direcciones intactos
+                for exact in (
+                    "Inversiones Andinas S.A.S.",
+                    "NIT: 900.123.456-7",
+                    "Calle 72 # 10-07, Oficina 402, Bogotá D.C.",
+                    "https://www.andinas.com.co/ayuda",
+                    "soporte@andinas.com.co",
+                    "Carrera 15 No. 88-64",
+                    "Av. El Dorado # 69-76",
+                    "ana@andinas.com.co",
+                    "carlos@andinas.com.co",
+                    "Calle 100 # 19-54, Piso 5",
+                ):
+                    self.assertIn(exact, full)
+                # Prosa circundante y encabezados traducidos completamente sin mutilaciones
+                self.assertIn("before Friday", full)
+                self.assertNotIn("antes del viernes", full)
+                self.assertIn("Address", full)
+                self.assertIn("left", full.lower())
+                self.assertIn("right", full.lower())
+
+                # Ningun span invade los bordes verticales de celdas ni el divisor central
+                for blk in out_p.get_text("dict")["blocks"]:
+                    if blk.get("type") != 0:
+                        continue
+                    for ln in blk["lines"]:
+                        for sp in ln["spans"]:
+                            sb = sp["bbox"]
+                            ymid = (sb[1] + sb[3]) * 0.5
+                            if 275.0 < ymid < 365.0:
+                                self.assertFalse(sb[0] < 194.0 < 196.0 < sb[2], f"Invasion col 1->2: {sp}")
+                                self.assertFalse(sb[0] < 379.0 < 381.0 < sb[2], f"Invasion col 2->3: {sp}")
+                            if 195.0 < ymid < 255.0:
+                                self.assertFalse(sb[0] < 294.0 < 296.0 < sb[2], f"Invasion divisor columnas: {sp}")
+
+    def test_16_translate_complete_text_and_signature_names_vs_roles(self):
+        from engines.typography_and_layout import (
+            _collect_translatable_units,
+            handle_translate_layout,
+        )
+
+        nmt_dir = ROOT / "addons" / "pack-nmt"
+        if not (nmt_dir / "es_en" / "model" / "model.bin").is_file() or not (nmt_dir / "en_es" / "model" / "model.bin").is_file():
+            self.skipTest("Modelos NMT es_en/en_es (pack-nmt) no instalados")
+
+        cfg = load_settings(ROOT)
+        with tempfile.TemporaryDirectory(prefix="folio-nmt-sig-") as td:
+            work = Path(td)
+
+            # 1. Documento ES->EN con clausula extensa (>550 chars), bloque apilado de firma a 10.5pt,
+            #    firmas en 2 columnas con MAYUSCULAS + cargo multilinea, firmas inline con rol y titulo normal.
+            es_src = work / "sig_complete_es.pdf"
+            with pdf.open() as d:
+                p = d.new_page(width=595, height=842)
+                long_p = (
+                    "El presente contrato de prestación de servicios profesionales tendrá una vigencia inicial de doce meses "
+                    "contados a partir de la fecha de suscripción del acta de inicio por ambas partes contratantes, prorrogables "
+                    "automáticamente por periodos iguales salvo notificación escrita enviada con treinta días calendario de "
+                    "anticipación al vencimiento respectivo, debiendo entregarse la totalidad de los informes mensuales de gestión, "
+                    "los comprobantes de pago de aportes al sistema de seguridad social integral y las actas de aprobación técnica "
+                    "correspondientes antes de finalizar cada periodo de facturación ordinaria."
+                )
+                p.insert_textbox(pdf.Rect(50, 45, 540, 145), long_p, fontsize=9.5, fontname="helv")
+
+                cols = [50, 210, 540]
+                rows = [165, 200, 232]
+                for r in range(2):
+                    for c in range(2):
+                        p.draw_rect(pdf.Rect(cols[c], rows[r], cols[c + 1], rows[r + 1]), color=(0, 0, 0), width=0.8)
+                p.insert_text((cols[0] + 6, rows[0] + 20), "Coordinación Técnica de Obras", fontsize=9.5)
+                p.insert_text((cols[1] + 6, rows[0] + 18), "Responsable de la ejecución integral del cronograma operativo.", fontsize=9.0)
+                p.insert_text((cols[0] + 6, rows[1] + 19), "Representante Legal", fontsize=9.5)
+                p.insert_text((cols[1] + 6, rows[1] + 19), "Blanca Nieves - Directora Ejecutiva", fontsize=9.5)
+
+                p.insert_text((50, 270), "Atentamente,", fontsize=11)
+                p.draw_line(pdf.Point(50, 310), pdf.Point(230, 310), color=(0, 0, 0), width=0.8)
+                p.insert_text((50, 323), "Blanca Nieves", fontsize=11)
+                p.insert_text((50, 333.5), "Directora General de Operaciones", fontsize=11)
+                p.insert_text((50, 344.0), "C.C. 52.456.789", fontsize=11)
+
+                p.insert_text((50, 385), "Elaboró: Armando Casas", fontsize=10)
+                p.insert_text((310, 385), "Aprobado por:", fontsize=10)
+                p.draw_line(pdf.Point(50, 425), pdf.Point(240, 425), color=(0, 0, 0), width=0.8)
+                p.draw_line(pdf.Point(310, 425), pdf.Point(510, 425), color=(0, 0, 0), width=0.8)
+                p.insert_text((50, 438), "CARLOS EDUARDO MENDOZA", fontsize=10, fontname="hebo")
+                p.insert_text((50, 450), "Jefe de Ingeniería y\nMantenimiento", fontsize=9.5)
+                p.insert_text((310, 438), "ANA MARÍA TORRES", fontsize=10, fontname="hebo")
+                p.insert_text((310, 450), "GERENTE FINANCIERA", fontsize=9.5)
+
+                p.insert_text((50, 500), "Resumen Ejecutivo de Resultados", fontsize=12, fontname="hebo")
+                p.insert_text((50, 520), "Firmado electrónicamente por: Juan Carlos Ramírez", fontsize=10)
+                p.insert_text((50, 535), "Representante Legal: María Fernanda Gómez", fontsize=10)
+                d.save(es_src)
+
+            with pdf.open(es_src) as d_det:
+                det_units = _collect_translatable_units(d_det[0])
+                by_txt = {u["text"]: u for u in det_units}
+                self.assertIn("Jefe de Ingeniería y Mantenimiento", by_txt)
+                self.assertTrue(by_txt["Blanca Nieves"]["skip_translation"])
+                self.assertTrue(by_txt["CARLOS EDUARDO MENDOZA"]["skip_translation"])
+                self.assertTrue(by_txt["ANA MARÍA TORRES"]["skip_translation"])
+                self.assertFalse(by_txt["Directora General de Operaciones"]["skip_translation"])
+                self.assertFalse(by_txt["GERENTE FINANCIERA"]["skip_translation"])
+                self.assertFalse(by_txt["Resumen Ejecutivo de Resultados"]["skip_translation"])
+
+            res_es = handle_translate_layout(
+                "translate_layout",
+                [es_src],
+                {"source_lang": "es", "target_lang": "en"},
+                work,
+                cfg,
+                ROOT,
+            )
+            with pdf.open(work / res_es["file"]) as out_es:
+                full_es = out_es[0].get_text().replace("\xa0", " ").replace("\xad", "-")
+                # Nombres propios de firma intactos incluso con redaccion vecina a 10.5pt
+                for keep_name in (
+                    "Blanca Nieves",
+                    "Armando Casas",
+                    "CARLOS EDUARDO MENDOZA",
+                    "ANA MARÍA TORRES",
+                    "Juan Carlos Ramírez",
+                    "María Fernanda Gómez",
+                    "C.C. 52.456.789",
+                ):
+                    self.assertIn(keep_name, full_es)
+                self.assertNotIn("Snow White", full_es)
+                # Cargos, rotulos de firma y clausula completa SI se traducen sin truncamiento
+                self.assertIn("Executive Director", full_es)
+                self.assertIn("Operations", full_es)
+                self.assertIn("Chief of Engineering", full_es)
+                self.assertIn("Maintenance", full_es)
+                self.assertIn("FINANCIAL MANAGER", full_es)
+                self.assertIn("Signed by: Juan Carlos Ramírez", full_es)
+                self.assertIn("Legal Representative: María Fernanda Gómez", full_es)
+                self.assertIn("Executive summary", full_es)
+                self.assertIn("billing period is completed.", full_es)
+                self.assertNotIn("& apos;", full_es)
+                self.assertNotIn(".,", full_es)
+
+            # 2. EN->ES firma con nombre en ingles traducible literalmente + cargo en Title Case
+            en_src = work / "sig_complete_en.pdf"
+            with pdf.open() as d:
+                p = d.new_page(width=595, height=400)
+                p.insert_text((60, 60), "Notice of Technical Compliance and Audit Acceptance.", fontsize=12)
+                p.insert_text((60, 120), "Sincerely,", fontsize=11)
+                p.insert_text((60, 155), "____________________", fontsize=11)
+                p.insert_text((60, 170), "Christian Baker", fontsize=11)
+                p.insert_text((60, 181), "Head of Engineering", fontsize=11)
+                p.insert_text((60, 220), "Approved by: Rose White - Legal Representative", fontsize=10)
+                d.save(en_src)
+
+            res_en = handle_translate_layout(
+                "translate_layout",
+                [en_src],
+                {"source_lang": "en", "target_lang": "es"},
+                work,
+                cfg,
+                ROOT,
+            )
+            with pdf.open(work / res_en["file"]) as out_en:
+                full_en = out_en[0].get_text().replace("\xa0", " ").replace("\xad", "-")
+                self.assertIn("Christian Baker", full_en)
+                self.assertIn("Rose White", full_en)
+                self.assertIn("Jefe de Ingeniería", full_en)
+                self.assertIn("Representante Jurídico", full_en)
+                self.assertIn("Aprobado por:", full_en)
+                self.assertNotIn("Head of Engineering", full_en)
+
+            # 3. Celda muy estrecha con expansion >3x: nunca elimina ni deja caja vacia y respeta columna
+            squeeze_src = work / "squeeze_cell.pdf"
+            with pdf.open() as d:
+                p = d.new_page(width=450, height=220)
+                p.draw_rect(pdf.Rect(40, 40, 110, 62), color=(0, 0, 0), width=0.8)
+                p.draw_rect(pdf.Rect(110, 40, 260, 62), color=(0, 0, 0), width=0.8)
+                p.insert_text((44, 55), "Fee", fontsize=10)
+                p.insert_text((114, 55), "Due immediately.", fontsize=10)
+                d.save(squeeze_src)
+
+            res_sq = handle_translate_layout(
+                "translate_layout",
+                [squeeze_src],
+                {
+                    "source_lang": "en",
+                    "target_lang": "es",
+                    "translations": {
+                        "Fee": "Tarifa administrativa extraordinaria reembolsable",
+                        "Due immediately.": "Debe pagarse inmediatamente dentro de los diez días hábiles siguientes a la notificación formal.",
+                    },
+                },
+                work,
+                cfg,
+                ROOT,
+            )
+            with pdf.open(work / res_sq["file"]) as out_sq:
+                full_sq = out_sq[0].get_text().replace("\xa0", " ")
+                self.assertIn("Tarifa administrativa", full_sq)
+                self.assertIn("extraordinaria reembolsable", full_sq)
+                self.assertIn("notificación formal.", full_sq)
+                for blk in out_sq[0].get_text("dict")["blocks"]:
+                    if blk.get("type") != 0:
+                        continue
+                    for ln in blk["lines"]:
+                        for sp in ln["spans"]:
+                            sb = sp["bbox"]
+                            if sb[0] < 109.0:
+                                self.assertLessEqual(sb[2], 110.2)

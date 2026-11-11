@@ -41,6 +41,7 @@ dialog.multi-edit-workspace .session-tool{font-size:12px;padding:9px 10px}
 .tool-tooltip-meta{margin:7px 0 0;padding-top:6px;border-top:1px solid var(--border);font-size:10px;line-height:1.4;color:var(--muted)}
 .header-privacy-link{font-size:14px;color:var(--muted);transition:color .15s;white-space:nowrap}
 .header-privacy-link:hover{color:var(--accent)}
+.standalone-tab-btn{width:100%;margin:8px 0 14px 0;padding:12px;font-weight:600;text-align:center;cursor:pointer}
 @media(max-width:700px){
   .header-privacy-link{font-size:12px}
 }

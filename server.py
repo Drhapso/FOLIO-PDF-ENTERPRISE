@@ -26,7 +26,7 @@ from settings import ROOT, load_settings
 from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
 from recovery_events import install_recovery, report_failure, request_recovery
 
-CLIENT_BUILD = "2026-11-09-v2-enterprise-6"
+CLIENT_BUILD = "2026-11-10-v2-enterprise-8"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
@@ -112,7 +112,9 @@ def create_app(root: Path = ROOT) -> Flask:
         MAX_CONTENT_LENGTH=(config["max_upload_mb"] + 1) * 1024 * 1024,
         MAX_FORM_MEMORY_SIZE=128 * 1024,
         MAX_FORM_PARTS=max(config["max_files"], config["max_batch_files"]) + 4,
+        TEMPLATES_AUTO_RELOAD=True,
     )
+    app.jinja_env.auto_reload = True
     lock = InstanceLock(runtime / "instance.lock")
     app.extensions["instance_lock"] = lock
     atexit.register(lock.close)

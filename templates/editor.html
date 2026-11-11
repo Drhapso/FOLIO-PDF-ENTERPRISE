@@ -294,7 +294,11 @@
           <summary><strong>#4 Fuentes, #12 Traductor In-Situ y #18 WCAG Audio-Tags</strong></summary>
           <div class="v2-row">
             <button id="v2-fonts-btn" type="button" class="secondary">Auditar Fuentes (#4)</button>
-            <button id="v2-translate-btn" type="button" class="secondary">Traducir ES→EN (#12)</button>
+            <select id="v2-translate-pair" aria-label="Dirección de traducción in-situ">
+              <option value="es_en">ES → EN</option>
+              <option value="en_es">EN → ES</option>
+            </select>
+            <button id="v2-translate-btn" type="button" class="secondary">Traducir In-Situ (#12)</button>
           </div>
           <div class="v2-row">
             <button id="v2-wcag-btn" type="button" class="secondary">Etiquetar PDF/UA (#18)</button>

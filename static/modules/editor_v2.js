@@ -136,7 +136,10 @@
   });
 
   $("v2-translate-btn")?.addEventListener("click", async () => {
-    const result = await runV2("translate_layout", { source_lang: "es", target_lang: "en" });
+    const pair = ($("v2-translate-pair")?.value || "es_en").split("_");
+    const source_lang = pair[0] || "es";
+    const target_lang = pair[1] || "en";
+    const result = await runV2("translate_layout", { source_lang, target_lang });
     if (result) showResult(result.blob, result.disp, result.notice);
   });
 

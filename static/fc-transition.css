@@ -1,0 +1,138 @@
+/* =============================================================================
+   FC26 TACTICAL TRANSITION & FALCON CENTER LINK
+   Transiciones suaves de carga y retorno · Batallón de Intendencia N.º 1
+   ============================================================================= */
+
+/* Botón 'Ir a Falcon Center' táctico */
+.btn-fc-center, .fc-center-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  background: linear-gradient(135deg, #3a4736, #283325);
+  color: #f0f4ed;
+  border: 1px solid #5b6b52;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+
+.btn-fc-center:hover, .fc-center-btn:hover {
+  background: linear-gradient(135deg, #5f7359, #475842);
+  color: #ffffff;
+  border-color: #8fa382;
+  box-shadow: 0 4px 12px rgba(143, 163, 130, 0.4);
+  transform: translateY(-2px);
+}
+
+.btn-fc-center:active, .fc-center-btn:active {
+  transform: translateY(0);
+}
+
+/* Pantalla de transición FC26 */
+.fc26-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  background: radial-gradient(circle at 50% 45%, #222920 0%, #151914 65%, #0b0e0a 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.32s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.32s;
+  color: #f0f2ec;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+}
+
+.fc26-overlay.fc26-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: all;
+}
+
+/* Medallón con logo minimalista */
+.fc26-emblem-wrap {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(203, 213, 225, 0.22) 0%, rgba(148, 163, 184, 0.06) 60%, transparent 75%);
+  border: 1px solid rgba(203, 213, 225, 0.35);
+  box-shadow: 0 0 25px rgba(143, 163, 130, 0.28), inset 0 0 15px rgba(255, 255, 255, 0.12);
+  animation: fc26Pulse 2s infinite ease-in-out;
+}
+
+@keyframes fc26Pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(143, 163, 130, 0.2); }
+  50% { transform: scale(1.04); box-shadow: 0 0 32px rgba(203, 213, 225, 0.45); }
+}
+
+.fc26-eagle-svg {
+  width: 62px;
+  height: 62px;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.7));
+}
+
+.fc26-brand-text {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fc26-platform-title {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #f0f2ec;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.fc26-platform-sub {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a4ad9f;
+  letter-spacing: 0.03em;
+  margin: 0;
+}
+
+/* Barra de progreso láser táctica */
+.fc26-loader-track {
+  width: 170px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+  margin-top: 4px;
+}
+
+.fc26-loader-bar {
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, #b9c98f, #ffffff, #b9c98f, transparent);
+  border-radius: 999px;
+  animation: fc26Laser 1.1s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fc26Laser {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}

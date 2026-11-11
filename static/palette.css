@@ -307,6 +307,16 @@ dialog::backdrop, .acro-dialog::backdrop { background: var(--backdrop); }
   color: var(--muted);
   line-height: 1.5;
 }
+.desktop-detected-list {
+  color: var(--accent);
+  font-weight: 600;
+}
+.desktop-guide-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
 @keyframes folio-startup-glow {
   0%, 100% { box-shadow: 0 0 5px var(--success); }
   50% { box-shadow: 0 0 12px var(--success); }

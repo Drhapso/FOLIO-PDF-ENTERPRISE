@@ -28,7 +28,7 @@ def discover_addon_packs(config: dict, root: Path) -> dict[str, dict]:
         manifest = entry / "manifest.json"
         if manifest.is_file():
             try:
-                data = json.loads(manifest.read_text(encoding="utf-8"))
+                data = json.loads(manifest.read_text(encoding="utf-8-sig"))
                 if isinstance(data, dict):
                     packs[entry.name] = {
                         "id": entry.name,
@@ -57,7 +57,6 @@ def discover_nmt_pairs(config: dict, root: Path) -> list[str]:
     if not nmt_root.is_dir():
         return []
     has_sp = _has_python_package("sentencepiece")
-    has_bpe = _has_python_package("subword_nmt") and _has_python_package("sacremoses")
     pairs: list[str] = []
     for entry in sorted(nmt_root.iterdir()):
         if not entry.is_dir() or not re.fullmatch(r"[a-z]{2}_[a-z]{2}", entry.name):
@@ -66,7 +65,7 @@ def discover_nmt_pairs(config: dict, root: Path) -> list[str]:
             continue
         if (entry / "sentencepiece.model").is_file() and has_sp:
             pairs.append(entry.name)
-        elif (entry / "bpe.model").is_file() and has_bpe:
+        elif (entry / "bpe.model").is_file():
             pairs.append(entry.name)
     return pairs
 

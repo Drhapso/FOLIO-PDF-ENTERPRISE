@@ -1,6 +1,22 @@
 {
+  "id": "pack-nmt",
   "name": "EVA Neural MT Offline Pack (ES<->EN)",
   "version": "1.0.0",
-  "capabilities": ["ctranslate2", "nmt_offline", "es_en", "en_es"],
-  "pairs": ["en_es", "es_en"]
+  "engine": "ctranslate2",
+  "capabilities": ["ctranslate2", "nmt_offline", "translate_layout", "es_en", "en_es"],
+  "pairs": ["en_es", "es_en"],
+  "models": {
+    "en_es": {
+      "source_lang": "en",
+      "target_lang": "es",
+      "tokenizer": "sentencepiece.model",
+      "model_bin": "en_es/model/model.bin"
+    },
+    "es_en": {
+      "source_lang": "es",
+      "target_lang": "en",
+      "tokenizer": "bpe.model",
+      "model_bin": "es_en/model/model.bin"
+    }
+  }
 }
