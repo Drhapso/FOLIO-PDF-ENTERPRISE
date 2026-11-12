@@ -933,7 +933,7 @@ _PUBLIC_ID_ENTITY_RE = re.compile(
     r"\b(?i:NIT|RUT|RUC|RFC|CURP|CIF|NIF|C\.?\s*C\.?|C\.?\s*E\.?|T\.?\s*I\.?|NUIP|DNI|NIE|EIN|SSN|VAT|TIN|DUNS|"
     r"CUFE|CUNE|IBAN|SWIFT|BIC|UUID|ORCID|ISBN|ISSN|PASAPORTE|PASSPORT|RADICADO|RAD\.?|EXPEDIENTE|EXP\.?|"
     r"MATR[ÍI]CULA(?:\s+MERCANTIL)?|REGISTRO(?:\s+MERCANTIL|\s+CIVIL|\s+P[ÚU]BLICO)?|TARJETA\s+PROFESIONAL|"
-    r"T\.?\s*P\.?|C[ÓO]DIGO\s+POSTAL|C\.?\s*P\.?|ZIP(?:\s+CODE)?)(?![A-Za-zÁÉÍÓÚÜÑáéíóúüñ])"
+    r"T\.?\s*P\.?|C[ÓO]DIGO\s+POSTAL|C\.?\s*P\.?|ZIP(?:\s+CODE)?)"
     r"(?:\s*(?i:N[°oº.]*|No\.?))?\s*[:#\-]?\s*"
     r"[A-Za-z0-9][A-Za-z0-9.\-/]{1,28}(?:\s+(?:\d+[A-Za-z0-9.\-/]*|[A-Z]{2,}[A-Z0-9.\-/]*)){0,5}"
     r"(?:\s+de\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)?)?"
@@ -1302,7 +1302,7 @@ def _looks_like_proper_person_name(text: str, allow_all_caps: bool = False) -> b
     rem = _HONORIFIC_PREFIX_RE.sub("", s, count=1).strip()
     if not rem or _looks_like_job_title_or_role(rem):
         return False
-    if _find_protected_spans(rem, include_signatures=False):
+    if any(rx.search(rem) for rx in (_URL_ENTITY_RE, _EMAIL_ENTITY_RE, _PUBLIC_ID_ENTITY_RE)):
         return False
 
     raw_words = [w.strip(",;") for w in rem.split() if w.strip(",;")]
@@ -1815,21 +1815,13 @@ def _translate_with_ctranslate2(
 
     def _join_clauses(entries: list[tuple[str, str]]) -> str:
         buf: list[str] = []
-        prev_joiner = ""
         for idx, (s_key, joiner) in enumerate(entries):
             tr_c = translated_map.get(s_key, s_key).strip()
-            if prev_joiner in (", ", "; ") and len(tr_c) >= 2 and tr_c[0].isupper() and tr_c[1].islower():
-                first_tok = tr_c.split(None, 1)[0]
-                if len(first_tok) >= 2 and not s_key.lstrip()[:1].isupper():
-                    tr_c = tr_c[0].lower() + tr_c[1:]
-                elif first_tok.lower() in {"all", "the", "a", "an", "and", "or", "must", "shall", "with", "both", "each", "every", "los", "las", "el", "la", "y", "o", "todos", "todas", "ambos", "ambas"}:
-                    tr_c = tr_c[0].lower() + tr_c[1:]
             if joiner in ("; ", ", "):
-                tr_c = tr_c.rstrip(".,; ")
+                tr_c = tr_c.rstrip(";, ")
                 buf.append(f"{tr_c}{joiner}")
             else:
                 buf.append(tr_c + (" " if idx < len(entries) - 1 else ""))
-            prev_joiner = joiner
         return "".join(buf).strip()
 
     # Verificar que todos los marcadores de entidades protegidas sobrevivieron; si alguno falto,
@@ -2387,10 +2379,8 @@ def _merge_subline_rows_into_units(
             est_next_w = max(12.0, len(first_next_word) * sl["size"] * 0.52)
             col_right_ref = max(block_max_x1, last_lb[2], sl["bbox"][2])
             soft_hyphen = len(prev_txt) >= 3 and prev_txt.endswith("-") and prev_txt[-2].isalpha()
-            role_continuation = prev_is_role and prev_ends_connector and not curr_is_role
             short_hard_break = (
                 not soft_hyphen
-                and not role_continuation
                 and (
                     prev_txt.endswith(":")
                     or (len(prev_txt) < 28 and (last_lb[2] + est_next_w <= col_right_ref - 6.0 or row_peer_check(last_lb)))
@@ -2406,7 +2396,7 @@ def _merge_subline_rows_into_units(
                 and len(prev_txt) < 42
                 and len(sl_stripped) < 42
             )
-            tab_row_break = (not container_bbox) and (not role_continuation) and row_peer_check(last_lb) and last_line_w < 130.0
+            tab_row_break = (not container_bbox) and row_peer_check(last_lb) and last_line_w < 130.0
 
             can_merge = (
                 not crosses_h
