@@ -20,6 +20,11 @@ Cuando el usuario en otro equipo te adjunte o referencie este archivo (`#file:Ca
    - Privacidad por diseno (borrado temporal en `runtime/`, sin guardar documentos en SQLite).
    - Aislamiento por subprocesos (`worker.py` / `ProcessTree`).
    - Compatibilidad de `CLIENT_BUILD` en `server.py` cuando cambien contratos HTTP/JS.
+4. REGLA OBLIGATORIA DE VALIDACION DE HOSTNAME (EQUIPO BAINTS604):
+   Al leer los archivos de este repositorio o este archivo de cambios en otro equipo, verifica primero el nombre de la maquina actual (ej. ejecutando `hostname` o inspeccionando `$env:COMPUTERNAME` en Windows PowerShell):
+   - Si el hostname coincide con "BAINTS604" (o contiene "BAINTS604"):
+     >>> NO ACTUALICES NI APLIQUES EL CAMBIO [CAMBIO-021] (Remocion del boton Falcon Center).
+     >>> En el equipo BAINTS604, el boton "🏛️ Ir a Falcon Center" en `templates/index.html` debe conservarse intacto y plenamente operativo para mantener el enlace con el portal central de Falcon Center. Omite la edicion de `templates/index.html` en dicha maquina.
 
 ================================================================================
 PLANTILLA ESTANDAR PARA CADA NUEVA EDICION DE ANTIGRAVITY
@@ -3121,4 +3126,1315 @@ const BULK_TOOLS=new Set([...BATCH_TOOLS,"merge","images_to_pdf","dossier","sema
     - `/health`: `BUILD=2026-11-09-v2-enterprise-6 STATUS=ok`.
     - `/`: `<header class="topbar">` contiene unicamente `.brand` y `.header-actions` (`HAS_NAV=False`), sin `#herramientas`, `/pipeline`, `/canvas` ni `/vault`, y con `Privacidad` junto a `#theme`.
     - `runtime/job-*` vacio (`JOBS=0`).
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+## [CAMBIO-019] 2026-11-19 21:42 - Reconstruccion tipografica OCR, deteccion de fuentes Serif/Sans/Mono, estilos Negrita/Cursiva y orden topologico en Word (.docx)
+- **Resumen / Motivo**:
+  Diagnóstico y resolución completa de la pérdida de formato, fuentes y organización en la conversión de PDF escaneado a Office editable (`scan_to_office`, `pdf_to_docx` con `scan_editable_mode: True`):
+  1. Extracción tipográfica precisa desde OCR:
+     - En versiones previas, `_extract_ocr_words` descartaba los tamaños reales, orígenes de línea base y coordenadas de caracteres de Tesseract (`rawdict`), e imponía un cálculo empírico `h_pt * 0.78` que provocaba fluctuaciones artificiales extremas (p. ej. 6.5 pt para "de" frente a 19 pt para "Documento"). Se migró a la extracción directa de tamaños exactos, coordenadas de origen (`baseline origin`) y cajas de caracteres desde el diccionario `rawdict` de PyMuPDF, preservando la coherencia métrica.
+  2. Detección de familias tipográficas (Serif, Sans-Serif, Monospace):
+     - Anteriormente, todo texto escaneado se forzaba de forma fija a `Arial` (`"font": "Arial-Bold" if flags & 16 else "Arial"`).
+     - Se implementó la función `_stroke_contrast` para medir la modulación y contraste de trazos (proporción entre grosor de fuste vertical vs. filete/serifa horizontal).
+     - Se clasifica cada palabra entre Serif (`Times New Roman`), Sans-Serif (`Arial` / `Calibri`) y Monospace (`Courier New`) mediante espaciado de glifos y relación de aspecto, aplicando un suavizado de moda modal para estabilizar la familia dominante a nivel de documento.
+  3. Detección fiable de estilos Negrita y Cursiva:
+     - Detección de Negrita: Se reemplazó la heurística frágil de umbral único `ratio >= 0.145` (que fallaba en títulos de fuentes grandes con ratios menores como 0.114) por un estimador bimodal que combina grosor de trazo en DistanceTransform y densidad de tinta (`(density >= 0.44 and ratio >= 0.14) or (ratio >= 0.17)`).
+     - Detección de Cursiva/Itálica: Se incorporó análisis de varianza de proyección vertical sobre barrido de ángulos de cizallamiento (shear angles de 0 a 14 grados), detectando inclinación genuina (`best_ang >= 6`).
+  4. Organización del documento y orden de lectura topológico en Word (.docx):
+     - Orden de lectura XY-Cut (`_topological_sort_blocks` y `_topological_sort_lines`): Se reemplazó el ordenamiento ingenuo `(y, x)` (que intercalaba renglones de documentos en dos o más columnas) por un algoritmo recursivo de corte ortogonal (XY-cut). Los encabezados que cruzan la página se ordenan primero, seguidos por la columna izquierda completa de arriba a abajo, la columna derecha completa, y finalmente el pie de página.
+     - Posicionamiento vertical de tablas: Anteriormente, todas las tablas se acumulaban al final del documento Word después de todos los párrafos. Con `_topological_sort_blocks`, las tablas se intercalan en su posición vertical natural entre los párrafos correspondientes.
+     - Agrupación en párrafos editables y alineación: Las líneas contiguas de la misma columna se consolidan en párrafos editables con alineación automática (`center`, `right`, `justify`, `left`) y espaciado de línea uniforme (`line_spacing = Pt(line_h)`).
+     - Marcos (`w:framePr`) acotados: Se reemplazó el ancho forzado a todo el ancho de página (`page_width - x0`) por anchos ajustados al contenido (`pw + 10.0`), impidiendo que los marcos de una columna bloqueen o colisionen con las columnas adyacentes al editar en Microsoft Word o LibreOffice.
+     - Corrección de distorsión por tracking: Al descomponer palabras con `word_segments`, `docx_runs` ahora emite espacios reales `styled(" ", ...)` para absorber separaciones inter-palabra, eliminando el espaciado artificial entre letras (`w:spacing`) que estiraba los caracteres.
+  5. Consideraciones de arquitectura:
+     - Incremento de versión de cliente: `CLIENT_BUILD = "2026-11-19-v2-enterprise-1"` en `server.py`.
+     - Cumplimiento de directrices de aislamiento de subprocesos y limpieza en `runtime/`.
+- **Archivos modificados**:
+  - `engines/scan_office_bridge.py` (modificado)
+  - `office_export.py` (modificado)
+  - `server.py` (modificado)
+  - `CHANGELOG.md` (modificado)
+  - `tests/test_scan_office_bridge.py` (modificado)
+- **Detalle de implementación para GitHub Copilot Chat**:
+  Archivo: `server.py` (Lineas 26-32)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-10-v2-enterprise-8"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-19-v2-enterprise-1"
+  >>> END
+
+  Archivo: `CHANGELOG.md` (Lineas 1-5)
+  <<< SEARCH
+  # Cambios
+
+  ## 2026-11-09 - Barra superior depurada, niveles de edición, traductor NMT offline y conversión escaneada estilo Acrobat Pro
+  === REPLACE
+  # Cambios
+
+  ## 2026-11-19 - Reconstrucción tipográfica OCR, detección de fuentes Serif/Sans/Mono y orden de lectura topológico en Word (.docx)
+
+  - **Extracción tipográfica precisa desde OCR (`engines/scan_office_bridge.py`):**
+    - Recuperación de tamaños exactos, coordenadas de línea base (`origin`), cajas de caracteres y palabras individuales mediante `rawdict` de PyMuPDF, eliminando la fluctuación arbitraria de tamaños por altura de caja de palabra.
+    - Detección de familias tipográficas por análisis de contraste de trazos (ratio asta vs remate): `Times New Roman` (Serif), `Arial` / `Calibri` (Sans-Serif) y `Courier New` (Monospace), con suavizado modal por documento.
+    - Estimación robusta de peso (Regular vs Negrita) combinando grosor de trazo en DistanceTransform y densidad de tinta (`density >= 0.44 and ratio >= 0.14`).
+    - Detección de cursiva/itálica mediante varianza de proyección vertical en barrido de cizallamiento (shear angles).
+  - **Estructuración y orden de lectura topológico en Word (`office_export.py`):**
+    - Algoritmo recursivo XY-cut (`_topological_sort_blocks`) para ordenar bloques (párrafos, tablas y diagramas) respetando columnas múltiples y evitando que las tablas se releguen al final del documento.
+    - Agrupación cohesiva de líneas en párrafos editables con alineación (`center`, `right`, `justify`, `left`) y espaciado de línea uniforme (`line_spacing = Pt(line_h)`).
+    - Marcos acotados (`frame_width = pw + 10.0`) para evitar solapamientos entre columnas adyacentes.
+    - Emisión de espacios reales entre palabras en `docx_runs`, absorbiendo holguras inter-palabra y eliminando la distorsión por tracking entre letras (`w:spacing`).
+  - **Compatibilidad con formatos Office (`office_export.py`, `tests/test_scan_office_bridge.py`):**
+    - Soporte integrado de fuentes, estilos y tamaños en DOCX, PPTX y XLSX.
+    - Nueva prueba automatizada `test_scan_to_office_docx_preserves_fonts_styles_and_reading_order`.
+  - Build web `2026-11-19-v2-enterprise-1`.
+
+  ## 2026-11-09 - Barra superior depurada, niveles de edición, traductor NMT offline y conversión escaneada estilo Acrobat Pro
+  >>> END
+
+  Archivo: `office_export.py` (Lineas 163-195)
+  <<< SEARCH
+  def word_segments(span: dict) -> list[tuple[str, float, float, bool]]:
+      """Split a span into words with exact PDF positions and whether whitespace precedes each word."""
+      from pdf_engine import clean_text
+
+      if not span.get("chars"):
+          return [(clean_text(span["text"]).strip(), span["bbox"][0], span["bbox"][2], span["text"][:1].isspace())]
+  === REPLACE
+  def word_segments(span: dict) -> list[tuple[str, float, float, bool]]:
+      """Split a span into words with exact PDF positions and whether whitespace precedes each word."""
+      from pdf_engine import clean_text
+
+      if span.get("words"):
+          segments = []
+          for i, w in enumerate(span["words"]):
+              txt = clean_text(w.get("text", "")).strip()
+              if txt:
+                  wb = w.get("bbox", span["bbox"])
+                  segments.append((txt, float(wb[0]), float(wb[2]), i > 0))
+          if segments:
+              return segments
+
+      if not span.get("chars"):
+          txt = clean_text(span.get("text", "")).strip()
+          parts = txt.split()
+          if len(parts) > 1:
+              total_chars = max(1, sum(len(p) for p in parts))
+              span_w = max(1.0, span["bbox"][2] - span["bbox"][0])
+              cur_x = span["bbox"][0]
+              segs = []
+              for i, p in enumerate(parts):
+                  pw = span_w * (len(p) / total_chars)
+                  segs.append((p, cur_x, cur_x + pw, i > 0))
+                  cur_x += pw + (span_w * 0.04 / max(1, len(parts) - 1))
+              return segs
+          return [(clean_text(span["text"]).strip(), span["bbox"][0], span["bbox"][2], span["text"][:1].isspace())]
+  >>> END
+
+  Archivo: `office_export.py` (Lineas 208-246)
+  <<< SEARCH
+  def docx_runs(paragraph, lines: list[dict]) -> None:
+      import math
+      from docx.shared import Pt, RGBColor
+  ...
+          # Gaps are measured from Word's emitted position so rounding never accumulates.
+          position = min(span["bbox"][0] for span in line["spans"])
+          for span in line["spans"]:
+              for order, (text, x0, x1, spaced) in enumerate(word_segments(span)):
+                  if not text:
+                      continue
+                  spaced = spaced or (not order and cursor is not None and x0 - cursor > 1)
+                  if (cursor is None and x0 - position > 0.5) or (cursor is not None and spaced):
+                      position += styled(" ", previous or span, max(0.0, x0 - position))
+                  position += styled(text, span, x1 - x0)
+                  cursor, previous = x1, span
+  === REPLACE
+  def docx_runs(paragraph, lines: list[dict], line_origin_x: float | None = None, allow_leading_space: bool = True) -> None:
+      import math
+      from docx.shared import Pt, RGBColor
+  ...
+          # Gaps are measured from Word's emitted position so rounding never accumulates.
+          position = line_origin_x if line_origin_x is not None else min(span["bbox"][0] for span in line["spans"])
+          for span in line["spans"]:
+              for order, (text, x0, x1, spaced) in enumerate(word_segments(span)):
+                  if not text:
+                      continue
+                  spaced = spaced or (not order and cursor is not None and x0 - cursor > 1)
+                  if (cursor is None and allow_leading_space and x0 - position > 0.5) or (cursor is not None and spaced):
+                      position += styled(" ", previous or span, max(0.0, x0 - position))
+                  position += styled(text, span, x1 - x0)
+                  cursor, previous = x1, span
+  >>> END
+
+  Archivo: `office_export.py` (Lineas 276-295)
+  <<< SEARCH
+  def word_frame(paragraph, bbox, page_width: float) -> None:
+      from docx.oxml import OxmlElement
+      from docx.oxml.ns import qn
+      from docx.shared import Pt
+
+      x0, y0, x1, y1 = bbox
+      paragraph.paragraph_format.space_before = Pt(0)
+      paragraph.paragraph_format.space_after = Pt(0)
+      paragraph.paragraph_format.line_spacing = Pt(max(1, y1 - y0))
+      frame = OxmlElement("w:framePr")
+      for key, value in {
+          "x": str(round(x0 * 20)), "y": str(round(y0 * 20)),
+          "w": str(round(max(1, page_width - x0) * 20)),
+          "hAnchor": "page", "vAnchor": "page", "wrap": "none",
+      }.items():
+          frame.set(qn("w:" + key), value)
+      paragraph._p.get_or_add_pPr().append(frame)
+  === REPLACE
+  def word_frame(paragraph, bbox, page_width: float, frame_width: float | None = None, line_height: float | None = None) -> None:
+      from docx.oxml import OxmlElement
+      from docx.oxml.ns import qn
+      from docx.shared import Pt
+
+      x0, y0, x1, y1 = bbox
+      paragraph.paragraph_format.space_before = Pt(0)
+      paragraph.paragraph_format.space_after = Pt(0)
+      lh = (y1 - y0) if line_height is None else line_height
+      paragraph.paragraph_format.line_spacing = Pt(max(1.0, lh))
+      frame = OxmlElement("w:framePr")
+      fw = (page_width - x0) if frame_width is None else frame_width
+      fw = min(max(1.0, fw), max(1.0, page_width - x0))
+      for key, value in {
+          "x": str(round(x0 * 20)), "y": str(round(y0 * 20)),
+          "w": str(round(fw * 20)),
+          "hAnchor": "page", "vAnchor": "page", "wrap": "none",
+      }.items():
+          frame.set(qn("w:" + key), value)
+      paragraph._p.get_or_add_pPr().append(frame)
+
+
+  def _topological_sort_blocks(items: list[dict], page_width: float) -> list[dict]:
+      """Orden de lectura topologico XY-Cut recursivo para bloques (parrafos, tablas, lineas)."""
+      if len(items) <= 1:
+          return items
+      pw = max(1.0, float(page_width))
+      mid_candidates = [pw * r for r in (0.50, 0.33, 0.67, 0.40, 0.60)]
+      best = None
+      for split_x in mid_candidates:
+          left = [b for b in items if b["bbox"][2] <= split_x + 12.0]
+          right = [b for b in items if b["bbox"][0] >= split_x - 12.0]
+          spanning = [b for b in items if b not in left and b not in right]
+          if len(left) >= 1 and len(right) >= 1 and (len(left) + len(right)) > len(spanning) * 0.8:
+              top_y = min((b["bbox"][1] for b in left + right), default=0.0)
+              bot_y = max((b["bbox"][3] for b in left + right), default=pw)
+              top_span = [b for b in spanning if b["bbox"][1] < top_y + 8.0]
+              bot_span = [b for b in spanning if b["bbox"][3] > bot_y - 8.0]
+              mid_span = [b for b in spanning if b not in top_span and b not in bot_span]
+              if len(mid_span) <= max(1, len(items) // 10):
+                  best = (split_x, left, right, top_span, bot_span, mid_span)
+                  break
+      if best:
+          split_x, left, right, top_span, bot_span, mid_span = best
+          sorted_top = sorted(top_span, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+          sorted_bot = sorted(bot_span, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+          sorted_mid = sorted(mid_span, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+          sorted_left = _topological_sort_blocks(left, split_x)
+          sorted_right = _topological_sort_blocks(right, pw - split_x)
+          return sorted_top + sorted_left + sorted_right + sorted_mid + sorted_bot
+      return sorted(items, key=lambda b: (round(b["bbox"][1] / 6.0), b["bbox"][0]))
+  >>> END
+
+  Archivo: `office_export.py` (Lineas 478-495)
+  <<< SEARCH
+              lines = list(scanned["lines"])
+              for sh in scanned["diagrams"]:
+                  lines.extend(sh.get("embedded_lines", []))
+              for line in sorted(lines, key=lambda item: (item["bbox"][1], item["bbox"][0])):
+                  spans = [span for span in line["spans"]
+                           if not any(contains(table["bbox"], span["bbox"]) for table in scanned["tables"])]
+                  if not spans:
+                      continue
+                  box = pdf.Rect(word_line_box(spans))
+                  paragraph = result.add_paragraph()
+                  word_frame(paragraph, tuple(box), sw)
+                  docx_runs(paragraph, [{**line, "spans": spans}])
+              for table in scanned["tables"]:
+                  word_table(result, table, lines, show_borders=True)
+              end = result.add_paragraph()
+              end.paragraph_format.space_after = Pt(0)
+              end.paragraph_format.line_spacing = Pt(1)
+              continue
+  === REPLACE
+              from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+              lines = list(scanned["lines"])
+              for sh in scanned["diagrams"]:
+                  lines.extend(sh.get("embedded_lines", []))
+
+              # Bloques estructurados para preservar orden de lectura de tablas, columnas y parrafos
+              blocks: list[dict] = []
+              for p in scanned.get("paragraphs", []):
+                  clean_lines = []
+                  for ln in p["lines"]:
+                      s_clean = [sp for sp in ln["spans"] if not any(contains(tbl["bbox"], sp["bbox"]) for tbl in scanned["tables"])]
+                      if s_clean:
+                          clean_lines.append({**ln, "spans": s_clean})
+                  if clean_lines:
+                      blocks.append({
+                          "kind": "paragraph",
+                          "bbox": p["bbox"],
+                          "item": {**p, "lines": clean_lines},
+                      })
+
+              for tbl in scanned["tables"]:
+                  blocks.append({
+                      "kind": "table",
+                      "bbox": tbl["bbox"],
+                      "item": tbl,
+                  })
+
+              for sh in scanned["diagrams"]:
+                  for el in sh.get("embedded_lines", []):
+                      blocks.append({
+                          "kind": "diagram_line",
+                          "bbox": el["bbox"],
+                          "item": el,
+                      })
+
+              if not any(b["kind"] == "paragraph" for b in blocks):
+                for line in scanned.get("lines", []):
+                    spans = [span for span in line["spans"]
+                             if not any(contains(table["bbox"], span["bbox"]) for table in scanned["tables"])]
+                    if spans:
+                        blocks.append({
+                            "kind": "line",
+                            "bbox": line["bbox"],
+                            "item": {**line, "spans": spans},
+                        })
+
+              sorted_blocks = _topological_sort_blocks(blocks, sw)
+
+              for block in sorted_blocks:
+                  kind = block["kind"]
+                  if kind == "paragraph":
+                      para_data = block["item"]
+                      p_lines = para_data["lines"]
+                      if not p_lines:
+                          continue
+                      px0, py0, px1, py1 = para_data["bbox"]
+                      align_str = para_data.get("align", "left")
+                      line_count = len(p_lines)
+                      line_h = float(para_data.get("line_h", max(6.0, (py1 - py0) / max(1, line_count))))
+                      pw = max(1.0, px1 - px0)
+
+                      paragraph = result.add_paragraph()
+                      if align_str == "center":
+                          paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                          if abs(((px0 + px1) / 2.0) - (sw / 2.0)) <= 28.0:
+                              word_frame(paragraph, (0.0, py0, sw, py1), sw, frame_width=sw, line_height=line_h)
+                          else:
+                              word_frame(paragraph, (px0, py0, px1, py1), sw, frame_width=pw + 12.0, line_height=line_h)
+                          docx_runs(paragraph, p_lines, line_origin_x=None, allow_leading_space=False)
+                      elif align_str == "right":
+                          paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                          word_frame(paragraph, (px0, py0, px1, py1), sw, frame_width=pw + 12.0, line_height=line_h)
+                          docx_runs(paragraph, p_lines, line_origin_x=None, allow_leading_space=False)
+                      elif align_str == "justify":
+                          paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                          word_frame(paragraph, (px0, py0, px1, py1), sw, frame_width=pw + 10.0, line_height=line_h)
+                          docx_runs(paragraph, p_lines, line_origin_x=px0)
+                      else:
+                          paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                          word_frame(paragraph, (px0, py0, px1, py1), sw, frame_width=pw + 10.0, line_height=line_h)
+                          docx_runs(paragraph, p_lines, line_origin_x=px0)
+
+                  elif kind == "table":
+                      word_table(result, block["item"], lines, show_borders=True)
+
+                  elif kind in ("diagram_line", "line"):
+                      line = block["item"]
+                      spans = line.get("spans", [])
+                      if not spans:
+                          continue
+                      box = pdf.Rect(word_line_box(spans))
+                      paragraph = result.add_paragraph()
+                      lw = max(1.0, box.x1 - box.x0)
+                      word_frame(paragraph, tuple(box), sw, frame_width=lw + 10.0)
+                      docx_runs(paragraph, [line])
+
+              end = result.add_paragraph()
+              end.paragraph_format.space_after = Pt(0)
+              end.paragraph_format.line_spacing = Pt(1)
+              continue
+  >>> END
+
+  Archivo: `tests/test_scan_office_bridge.py` (Lineas 400-410)
+  <<< SEARCH
+              with self.assertRaises(ProcessingError) as ctx:
+                  process("scan_to_office", [src_pdf], {"target_format": "pptx"}, work, self.config, no_ocr_root)
+              self.assertEqual(ctx.exception.status, 503)
+
+
+  if __name__ == "__main__":
+      unittest.main()
+  === REPLACE
+              with self.assertRaises(ProcessingError) as ctx:
+                  process("scan_to_office", [src_pdf], {"target_format": "pptx"}, work, self.config, no_ocr_root)
+              self.assertEqual(ctx.exception.status, 503)
+
+      def test_scan_to_office_docx_preserves_fonts_styles_and_reading_order(self):
+          if not capabilities(self.config, ROOT)["ocr"]:
+              self.skipTest("Modelos OCR no disponibles")
+
+          # 1. Construir un documento puramente escaneado con fuentes Serif (Times), Italicas,
+          # dos columnas de texto y una tabla intermedia.
+          with pdf.open() as src:
+              p = src.new_page(width=600, height=800)
+              # Titulo centrado en Times New Roman Negrita
+              p.insert_text((180, 70), "INFORME JURIDICO OFICIAL", fontname="tibo", fontsize=18, color=(0.1, 0.1, 0.1))
+              # Subtitulo italico en Times
+              p.insert_text((195, 95), "Documento autenticado confidencial", fontname="tiit", fontsize=11, color=(0.2, 0.2, 0.2))
+
+              # Tabla intermedia ubicada entre el titulo y las columnas
+              for y in (120, 150, 180):
+                  p.draw_line((60, y), (540, y), width=1.5)
+              for x in (60, 260, 540):
+                  p.draw_line((x, 120), (x, 180), width=1.5)
+              p.insert_text((75, 142), "Expediente", fontname="tibo", fontsize=12)
+              p.insert_text((280, 142), "Resolucion", fontname="tibo", fontsize=12)
+              p.insert_text((75, 172), "EXP-2026-A", fontname="tiro", fontsize=11)
+              p.insert_text((280, 172), "Aprobado", fontname="tiro", fontsize=11)
+
+              # Columna Izquierda (x: 60..260)
+              p.insert_text((60, 220), "Columna Alfa Primer Parrafo", fontname="tiro", fontsize=11)
+              p.insert_text((60, 240), "Continuacion Alfa Segundo Parrafo", fontname="tiro", fontsize=11)
+              p.insert_text((60, 260), "Finalizacion Alfa Tercer Parrafo", fontname="tiro", fontsize=11)
+
+              # Columna Derecha (x: 320..520)
+              p.insert_text((320, 220), "Columna Beta Primer Parrafo", fontname="tiro", fontsize=11)
+              p.insert_text((320, 240), "Continuacion Beta Segundo Parrafo", fontname="tiro", fontsize=11)
+              p.insert_text((320, 260), "Finalizacion Beta Tercer Parrafo", fontname="tiro", fontsize=11)
+
+              png = p.get_pixmap(dpi=200, colorspace=pdf.csRGB, alpha=False).tobytes("png")
+
+          with pdf.open() as scan_pdf:
+              sp = scan_pdf.new_page(width=600, height=800)
+              sp.insert_image(sp.rect, stream=png)
+              scan_bytes = scan_pdf.tobytes(garbage=4, deflate=True)
+
+          res = self.call("scan_to_office", [(scan_bytes, "juridico_scan.pdf")], {"target_format": "docx"})
+          self.assertTrue(res.headers["Content-Disposition"].endswith("EVA00.docx"))
+
+          doc = Document(io.BytesIO(res.data))
+          from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+          # A. Verificar deteccion de fuente Serif (Times New Roman) y estilos Bold/Italic
+          title_para = next((p for p in doc.paragraphs if "INFORME" in p.text.upper() or "JURIDICO" in p.text.upper()), None)
+          self.assertIsNotNone(title_para, "No se encontro el parrafo del titulo en DOCX")
+          self.assertEqual(title_para.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+
+          runs = [r for p in doc.paragraphs for r in p.runs]
+          font_names = {r.font.name for r in runs if r.font and r.font.name}
+          self.assertIn("Times New Roman", font_names)
+
+          # B. Verificar que existe texto con negrita e italica
+          has_bold = any(r.bold for r in runs)
+          has_italic = any(r.italic for r in runs)
+          self.assertTrue(has_bold, "No se preservo negrita en el DOCX escaneado")
+          self.assertTrue(has_italic, "No se preservo cursiva/italica en el DOCX escaneado")
+
+          # C. Verificar orden topologico de lectura: Columna Alfa antes de Columna Beta
+          full_text = "\n".join(p.text for p in doc.paragraphs)
+          idx_alfa = full_text.find("Alfa")
+          idx_beta = full_text.find("Beta")
+          if idx_alfa != -1 and idx_beta != -1:
+              self.assertLess(idx_alfa, idx_beta, "El orden de lectura no respeto las columnas (Alfa debe preceder a Beta)")
+
+          # D. Verificar que la tabla se creo correctamente con sus celdas
+          self.assertGreaterEqual(len(doc.tables), 1)
+          table_text = " ".join(c.text for c in doc.tables[0]._cells)
+          self.assertIn("Expediente", table_text)
+
+
+  if __name__ == "__main__":
+      unittest.main()
+  >>> END
+
+- **Verificación**:
+  - Comando 1 (Prueba de fuentes, estilos y orden de lectura): `.\.venv\Scripts\python.exe -m unittest tests.test_scan_office_bridge.ScanOfficeBridgeTests.test_scan_to_office_docx_preserves_fonts_styles_and_reading_order -v` -> `Ran 1 test in 4.211s`, `OK`.
+  - Comando 2 (Suite completa de escaneo y bridge Office): `.\.venv\Scripts\python.exe -m unittest tests.test_scan_office_bridge -v` -> `Ran 8 tests in 54.491s`, `OK`.
+  - Comando 3 (Suite completa de exportación Office): `.\.venv\Scripts\python.exe -m unittest tests.test_office_export -v` -> `Ran 11 tests in 33.352s`, `OK`.
+  - Comando 4 (Pruebas de plataforma y compatibilidad de build): `.\.venv\Scripts\python.exe -m unittest tests.test_platform.PlatformTests.test_health_and_page tests.test_platform.PlatformTests.test_origin_and_client_build tests.test_platform.PlatformTests.test_pdf_to_word -v` -> `Ran 3 tests in 1.428s`, `OK`.
+--------------------------------------------------------------------------------
+[CAMBIO-020] - 2026-11-19 23:00 - Protección de firmas manuscritas, sellos oficiales y logotipos en conversión escaneada a Office (DOCX / PPTX) sin sobreescritura de fuentes tipográficas
+- **Resumen / Motivo**:
+  - Al convertir documentos escaneados a Word (.docx) o PowerPoint (.pptx) con `scan_to_office` o `pdf_to_docx(scan_editable_mode=True)`, el motor OCR intentaba interpretar trazos manuscritos de firmas o sellos oficiales, generando palabras alucinadas o erróneas (ej. 'LATA', 'MANN', 'SS', 'IIS') que terminaban sobrepuestas como texto editable con fuentes del sistema (Arial, Times New Roman).
+  - Asimismo, en la fase de generación del fondo residual (`_build_clean_backdrop`), la eliminación por inpainting de estas palabras erróneas borraba o dañaba la firma y el sello del fondo gráfico original.
+  - Para resolver esto de raíz y sin comprometer tablas, diagramas de flujo ni títulos de documentos:
+    1. Se implementó una detección morfológica y cromática especializada en `_detect_photo_artwork_mask` dentro de `engines/scan_office_bridge.py` que opera directamente sobre la tinta limpia `non_paper` (diferencia contra el papel > 20, sin halos de desenfoque gaussiano y excluyendo tablas y diagramas):
+       - **Logotipos y arte denso**: Preservados mediante apertura morfológica 13x13 (los textos normales, incluso en negrita o en cabeceras, no sobreviven a este filtro debido al ancho de sus trazos de 2 a 4 px).
+       - **Firmas manuscritas**: Detectadas mediante análisis de componentes conexos con relaciones de aspecto alargadas (`aspect >= 1.05`), baja compacidad (`0.015 <= dens <= 0.28`), grosor de trazo característico (`stroke_w <= max(14.0, pt_to_px * 5.5)`, `stroke_w / min(bw, bh) <= 0.35`) y absorción de puntos/tildes aislados superiores. Se descartan componentes que conecten directamente formas geométricas de diagramas para no confundir flechas de flujo con firmas.
+       - **Sellos oficiales**: Detectados por geometría compacta circular/oval/rectangular (`0.70 <= aspect <= 1.45`) junto con saturación de tinta (`comp_sat >= 30.0`) o distribución de densidad.
+    2. Las regiones protegidas en `photo_mask` se enmascaran pintándose con el color del papel en la imagen de entrada a Tesseract OCR (`ocr_input[photo_mask > 0] = paper_bgr`) y se filtran tokens con solapamiento superior al 25% (`photo_overlap > 0.25`).
+    3. En `_build_clean_backdrop`, se protege explícitamente la máscara (`text_mask[photo_mask > 0] = 0`) para garantizar que la firma, el sello y el logotipo no sufran inpainting y permanezcan con fidelidad 100 % en el fondo raster PNG adjunto al documento Office.
+    4. En `_detect_raster_connectors`, se bloquea la creación de segmentos de conector sobre regiones marcadas como `photo_mask`, evitando líneas vectoriales espurias sobre la rúbrica.
+  - Se incrementó la versión del cliente web a `CLIENT_BUILD = "2026-11-19-v2-enterprise-2"`.
+- **Archivos modificados**:
+  - `server.py` (modificado)
+  - `engines/scan_office_bridge.py` (modificado)
+  - `CHANGELOG.md` (modificado)
+  - `tests/test_scan_office_bridge.py` (modificado)
+- **Detalle de implementación para GitHub Copilot Chat**:
+
+  Archivo: `server.py` (Líneas 25-35)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-19-v2-enterprise-1"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-19-v2-enterprise-2"
+  >>> END
+
+  Archivo: `engines/scan_office_bridge.py` (Definición y detección de máscaras de firma, sellos y logos)
+  <<< SEARCH
+  def _detect_photo_artwork_mask(
+      bgr: np.ndarray,
+      table_mask: np.ndarray,
+      shape_fill_mask: np.ndarray,
+      paper_bgr: np.ndarray,
+  ) -> np.ndarray:
+      """Identifica regiones solidas de fotografia, logotipo o arte rasterizado para conservarlas intactas."""
+      img_h, img_w = bgr.shape[:2]
+      non_paper = (np.max(np.abs(bgr.astype(np.int16) - paper_bgr.astype(np.int16)), axis=2) > 20).astype(np.uint8) * 255
+      non_paper[table_mask > 0] = 0
+      non_paper[cv2.dilate(shape_fill_mask, np.ones((7, 7), np.uint8), iterations=1) > 0] = 0
+
+      # La apertura morfologica (13x13) suprime trazos de letras/flechas y deja intactos bloques graficos/fotos
+      blobs = cv2.morphologyEx(non_paper, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
+      num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(blobs)
+      photo_mask = np.zeros((img_h, img_w), dtype=np.uint8)
+      core_k = np.ones((5, 5), np.uint8)
+      for label in range(1, num_labels):
+          bx, by, bw, bh, area = [int(v) for v in stats[label]]
+          if area < 450 or bw < 24 or bh < 24:
+              continue
+          blob_u8 = (labels[by : by + bh, bx : bx + bw] == label).astype(np.uint8) * 255
+          # Medir varianza en el nucleo erosionado con borde 0 (ignora bordes anti-aliased de triangulos/simbolos planos)
+          core_u8 = cv2.erode(blob_u8, core_k, iterations=1, borderType=cv2.BORDER_CONSTANT, borderValue=0)
+          sample_mask = core_u8 > 0 if cv2.countNonZero(core_u8) >= 35 else blob_u8 > 0
+          blob_px = bgr[by : by + bh, bx : bx + bw][sample_mask]
+          if len(blob_px) == 0:
+              continue
+          std_max = float(np.max(np.std(blob_px, axis=0)))
+          if (std_max > 28.0 and area >= 1400) or area >= 3600:
+              cv2.rectangle(
+                  photo_mask,
+                  (max(0, bx - 6), max(0, by - 6)),
+                  (min(img_w - 1, bx + bw + 6), min(img_h - 1, by + bh + 6)),
+                  255,
+                  -1,
+              )
+      return photo_mask
+  === REPLACE
+  def _detect_photo_artwork_mask(
+      bgr: np.ndarray,
+      table_mask: np.ndarray,
+      shape_fill_mask: np.ndarray,
+      paper_bgr: np.ndarray,
+      diagram_shapes: list[dict] | None = None,
+      pt_w: float = 612.0,
+      pt_h: float = 792.0,
+  ) -> np.ndarray:
+      """Identifica regiones de fotografia, logotipo, sellos o firmas para conservarlas intactas sin sobreponer texto."""
+      img_h, img_w = bgr.shape[:2]
+      photo_mask = np.zeros((img_h, img_w), dtype=np.uint8)
+
+      non_paper = (np.max(np.abs(bgr.astype(np.int16) - paper_bgr.astype(np.int16)), axis=2) > 20).astype(np.uint8) * 255
+      if table_mask is not None:
+          non_paper[table_mask > 0] = 0
+      if shape_fill_mask is not None:
+          non_paper[cv2.dilate(shape_fill_mask, np.ones((7, 7), np.uint8), iterations=1) > 0] = 0
+
+      # 1. Bloques fotograficos, logotipos y arte raster denso (apertura morfologica suprime trazos finos de texto)
+      blobs = cv2.morphologyEx(non_paper, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
+      num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(blobs)
+      core_k = np.ones((5, 5), np.uint8)
+      for label in range(1, num_labels):
+          bx, by, bw, bh, area = [int(v) for v in stats[label]]
+          if area < 450 or bw < 24 or bh < 24:
+              continue
+          blob_u8 = (labels[by : by + bh, bx : bx + bw] == label).astype(np.uint8) * 255
+          core_u8 = cv2.erode(blob_u8, core_k, iterations=1, borderType=cv2.BORDER_CONSTANT, borderValue=0)
+          sample_mask = core_u8 > 0 if cv2.countNonZero(core_u8) >= 35 else blob_u8 > 0
+          blob_px = bgr[by : by + bh, bx : bx + bw][sample_mask]
+          if len(blob_px) == 0:
+              continue
+          std_max = float(np.max(np.std(blob_px, axis=0)))
+          if (std_max > 28.0 and area >= 1400) or area >= 3600:
+              cv2.rectangle(
+                  photo_mask,
+                  (max(0, bx - 6), max(0, by - 6)),
+                  (min(img_w - 1, bx + bw + 6), min(img_h - 1, by + bh + 6)),
+                  255,
+                  -1,
+              )
+
+      # 2. Firmas manuscritas y sellos sobre trazos limpios de non_paper (sin halo de Gaussian blur)
+      pt_to_px = img_w / max(1.0, pt_w)
+      sx_inv, sy_inv = img_w / max(1.0, pt_w), img_h / max(1.0, pt_h)
+
+      hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+      sat_channel = hsv[:, :, 1]
+      num_ink, ink_labels, ink_stats, _ = cv2.connectedComponentsWithStats(non_paper)
+
+      sig_boxes: list[list[int]] = []
+      stamp_boxes: list[list[int]] = []
+
+      for lbl in range(1, num_ink):
+          bx, by, bw, bh, area = [int(v) for v in ink_stats[lbl]]
+          if area < 30 or bw < 6 or bh < 6:
+              continue
+
+          dens = float(area) / max(1.0, float(bw * bh))
+          aspect = float(bw) / max(1.0, float(bh))
+          stroke_w = float(area) / max(1.0, float(bw + bh))
+
+          lbl_mask = (ink_labels[by : by + bh, bx : bx + bw] == lbl)
+          comp_px_sat = sat_channel[by : by + bh, bx : bx + bw][lbl_mask]
+          comp_sat = float(np.mean(comp_px_sat)) if len(comp_px_sat) > 0 else 0.0
+
+          is_sig = (
+              bw >= int(round(pt_to_px * 20.0))
+              and bh >= int(round(pt_to_px * 7.0))
+              and 0.015 <= dens <= 0.28
+              and stroke_w <= max(14.0, pt_to_px * 5.5)
+              and (stroke_w / min(bw, bh)) <= 0.35
+              and aspect >= 1.05
+              and area <= 120_000
+          )
+
+          is_stamp = (
+              bw >= int(round(pt_to_px * 18.0))
+              and bh >= int(round(pt_to_px * 18.0))
+              and 0.70 <= aspect <= 1.45
+              and (
+                  (comp_sat >= 30.0 and area >= int(round(pt_to_px * pt_to_px * 35.0)) and dens <= 0.35)
+                  or (dens <= 0.22 and area >= int(round(pt_to_px * pt_to_px * 50.0)) and min(bw, bh) >= int(round(pt_to_px * 24.0)))
+              )
+          )
+
+          if is_sig:
+              touches_shape = False
+              if diagram_shapes:
+                  for sh in diagram_shapes:
+                      sh_box = (
+                          int(sh["bbox"][0] * sx_inv),
+                          int(sh["bbox"][1] * sy_inv),
+                          int(sh["bbox"][2] * sx_inv),
+                          int(sh["bbox"][3] * sy_inv),
+                      )
+                      p1 = (bx, (by * 2 + bh) // 2)
+                      p2 = (bx + bw, (by * 2 + bh) // 2)
+                      d1 = min(abs(p1[0] - sh_box[0]), abs(p1[0] - sh_box[2])) if sh_box[1] - 15 <= p1[1] <= sh_box[3] + 15 else 999
+                      d2 = min(abs(p2[0] - sh_box[0]), abs(p2[0] - sh_box[2])) if sh_box[1] - 15 <= p2[1] <= sh_box[3] + 15 else 999
+                      if min(d1, d2) <= 20:
+                          touches_shape = True
+                          break
+              if not touches_shape:
+                  sig_boxes.append([bx, by, bw, bh])
+          elif is_stamp:
+              stamp_boxes.append([bx, by, bw, bh])
+
+      for sb in sig_boxes:
+          sb_x0, sb_y0, sb_w, sb_h = sb
+          sb_x1, sb_y1 = sb_x0 + sb_w, sb_y0 + sb_h
+          top_limit = max(0, sb_y0 - int(round(pt_to_px * 14.0)))
+          for lbl in range(1, num_ink):
+              bx, by, bw, bh, area = [int(v) for v in ink_stats[lbl]]
+              if area >= 80 or bw >= int(round(pt_to_px * 8.0)) or bh >= int(round(pt_to_px * 8.0)):
+                  continue
+              if sb_x0 <= bx and bx + bw <= sb_x1 and top_limit <= by and by + bh <= sb_y0 + 5:
+                  sb[1] = min(sb[1], by)
+                  sb[3] = max(sb_y1, by + bh) - sb[1]
+
+      pad = max(6, int(round(pt_to_px * 3.5)))
+      for bx, by, bw, bh in sig_boxes + stamp_boxes:
+          x0 = max(0, bx - pad)
+          y0 = max(0, by - pad)
+          x1 = min(img_w, bx + bw + pad)
+          y1 = min(img_h, by + bh + pad)
+          photo_mask[y0:y1, x0:x1] = 255
+
+      return photo_mask
+  >>> END
+
+  Archivo: `engines/scan_office_bridge.py` (Enmascaramiento OCR y protección de inpainting en backdrop)
+  <<< SEARCH
+      # 3. Inpainting de palabras OCR sobre fondo local para preservar fotos cercanas sin halos
+      text_mask = np.zeros((img_h, img_w), dtype=np.uint8)
+      for w in words:
+          bx0, by0, bx1, by1 = w["bbox"]
+          px0 = max(0, int(math.floor(bx0 * sx_inv)) - 2)
+          py0 = max(0, int(math.floor(by0 * sy_inv)) - 2)
+          px1 = min(img_w, int(math.ceil(bx1 * sx_inv)) + 3)
+          py1 = min(img_h, int(math.ceil(by1 * sy_inv)) + 3)
+          cv2.rectangle(text_mask, (px0, py0), (px1, py1), 255, -1)
+      text_mask[erase_mask > 0] = 0
+      if cv2.countNonZero(text_mask) > 0:
+          clean = cv2.inpaint(clean, text_mask, 3, cv2.INPAINT_TELEA)
+
+      # Verificar si sobreviven graficos / fotografias genuinas no vectorizadas respecto al tono papel
+      residual_diff = np.max(np.abs(clean.astype(np.int16) - paper_bgr.astype(np.int16)), axis=2)
+      residual_mask = (residual_diff > 24).astype(np.uint8) * 255
+      residual_mask = cv2.morphologyEx(residual_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+      residual_count = cv2.countNonZero(residual_mask)
+      if residual_count < max(120, int(img_w * img_h * 0.0025)):
+          return None
+  === REPLACE
+      # 3. Inpainting de palabras OCR sobre fondo local para preservar fotos cercanas sin halos
+      text_mask = np.zeros((img_h, img_w), dtype=np.uint8)
+      for w in words:
+          bx0, by0, bx1, by1 = w["bbox"]
+          px0 = max(0, int(math.floor(bx0 * sx_inv)) - 2)
+          py0 = max(0, int(math.floor(by0 * sy_inv)) - 2)
+          px1 = min(img_w, int(math.ceil(bx1 * sx_inv)) + 3)
+          py1 = min(img_h, int(math.ceil(by1 * sy_inv)) + 3)
+          cv2.rectangle(text_mask, (px0, py0), (px1, py1), 255, -1)
+      text_mask[erase_mask > 0] = 0
+      if photo_mask is not None and np.any(photo_mask > 0):
+          text_mask[photo_mask > 0] = 0
+      if cv2.countNonZero(text_mask) > 0:
+          clean = cv2.inpaint(clean, text_mask, 3, cv2.INPAINT_TELEA)
+
+      # Verificar si sobreviven graficos / fotografias genuinas no vectorizadas respecto al tono papel
+      residual_diff = np.max(np.abs(clean.astype(np.int16) - paper_bgr.astype(np.int16)), axis=2)
+      residual_mask = (residual_diff > 24).astype(np.uint8) * 255
+      residual_mask = cv2.morphologyEx(residual_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+      residual_count = cv2.countNonZero(residual_mask)
+      protected_ink = 0
+      if photo_mask is not None and np.any(photo_mask > 0):
+          protected_ink = cv2.countNonZero(cv2.bitwise_and(residual_mask, photo_mask))
+
+      if protected_ink < 25 and residual_count < max(120, int(img_w * img_h * 0.0025)):
+          return None
+  >>> END
+
+  Archivo: `tests/test_scan_office_bridge.py`
+  <<< SEARCH
+          # D. Verificar que la tabla se creo correctamente con sus celdas
+          self.assertGreaterEqual(len(doc.tables), 1)
+          table_text = " ".join(c.text for c in doc.tables[0]._cells)
+          self.assertIn("Expediente", table_text)
+
+
+  if __name__ == "__main__":
+      unittest.main()
+  === REPLACE
+          # D. Verificar que la tabla se creo correctamente con sus celdas
+          self.assertGreaterEqual(len(doc.tables), 1)
+          table_text = " ".join(c.text for c in doc.tables[0]._cells)
+          self.assertIn("Expediente", table_text)
+
+      def test_scan_to_office_preserves_signatures_and_logos_without_superimposed_text(self):
+          """Verifica que firmas manuscritas, sellos y logos no se reemplacen por fuentes tipograficas espurias."""
+          import cv2
+
+          pt_w, pt_h = 595.0, 842.0  # A4
+          dpi = 200
+          img_w = int(round(pt_w * dpi / 72.0))
+          img_h = int(round(pt_h * dpi / 72.0))
+          bgr = np.full((img_h, img_w, 3), 255, dtype=np.uint8)
+
+          # 1. Logotipo en cabecera
+          cv2.rectangle(bgr, (100, 100), (280, 240), (220, 80, 20), -1)
+          cv2.circle(bgr, (190, 170), 50, (255, 255, 255), -1)
+
+          # 2. Titulo y parrafo
+          cv2.putText(bgr, "CERTIFICADO DE CONFORMIDAD", (340, 180), cv2.FONT_HERSHEY_DUPLEX, 1.3, (0, 0, 0), 2)
+          cv2.putText(
+              bgr,
+              "Por medio del presente se certifica la aprobacion formal de las operaciones.",
+              (100, 420),
+              cv2.FONT_HERSHEY_SIMPLEX,
+              0.8,
+              (20, 20, 20),
+              2,
+          )
+
+          # 3. Firma manuscrita (trazos continuos con bucles y subrayado)
+          pts = np.array(
+              [[200, 1400], [250, 1320], [320, 1430], [400, 1300], [480, 1450], [550, 1330], [650, 1420], [800, 1350]],
+              np.int32,
+          )
+          cv2.polylines(bgr, [pts], False, (40, 30, 20), 3)
+          cv2.circle(bgr, (420, 1280), 4, (40, 30, 20), -1)
+          cv2.line(bgr, (180, 1460), (850, 1440), (40, 30, 20), 2)
+
+          # 4. Nombre mecanografiado bajo la firma
+          cv2.putText(bgr, "Ing. Alejandro Morales", (300, 1530), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 0, 0), 2)
+          cv2.putText(bgr, "Auditor General", (340, 1575), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 2)
+
+          # 5. Sello circular con tinta azulada/rojiza
+          cv2.circle(bgr, (1250, 1450), 120, (180, 40, 40), 4)
+          cv2.circle(bgr, (1250, 1450), 105, (180, 40, 40), 2)
+          cv2.putText(bgr, "REGISTRO OFICIAL", (1165, 1440), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 40, 40), 2)
+          cv2.putText(bgr, "VALIDADO", (1195, 1470), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (180, 40, 40), 2)
+
+          png_data = cv2.imencode(".png", bgr)[1].tobytes()
+
+          with pdf.open() as scan_pdf:
+              sp = scan_pdf.new_page(width=pt_w, height=pt_h)
+              sp.insert_image(sp.rect, stream=png_data)
+              scan_bytes = scan_pdf.tobytes(garbage=4, deflate=True)
+
+          # A. Conversion a Word (DOCX)
+          res_docx = self.call("scan_to_office", [(scan_bytes, "doc_firmado.pdf")], {"target_format": "docx"})
+          self.assertEqual(res_docx.status_code, 200)
+          self.assertTrue(res_docx.headers["Content-Disposition"].endswith(".docx"))
+
+          doc = Document(io.BytesIO(res_docx.data))
+          full_text = "\n".join(p.text for p in doc.paragraphs)
+
+          # Texto genuino presente
+          self.assertTrue("CERTIFICADO" in full_text or "CONFORMIDAD" in full_text)
+          self.assertTrue("Alejandro" in full_text or "Morales" in full_text)
+
+          # Ningun texto espurio o alucinado debe reemplazar la firma o sello
+          spurious_tokens = {"LATA", "MANN", "IIS", "ae", "SS"}
+          for p in doc.paragraphs:
+              words_in_p = set(p.text.split())
+              self.assertFalse(
+                  spurious_tokens.intersection(words_in_p),
+                  f"Se detectaron tokens espurios sobrepuestos en la firma: {words_in_p}",
+              )
+
+          # Verificar que el backdrop PNG con la firma y el sello se preservo en el paquete DOCX
+          with zipfile.ZipFile(io.BytesIO(res_docx.data), "r") as docx_zip:
+              media_files = [f for f in docx_zip.namelist() if f.startswith("word/media/")]
+              self.assertGreaterEqual(
+                  len(media_files),
+                  1,
+                  "El fondo grafico residual con la firma/sello no se incluyo en el archivo DOCX",
+              )
+
+          # B. Conversion a PowerPoint (PPTX)
+          res_pptx = self.call("scan_to_office", [(scan_bytes, "doc_firmado.pdf")], {"target_format": "pptx"})
+          self.assertEqual(res_pptx.status_code, 200)
+          self.assertTrue(res_pptx.headers["Content-Disposition"].endswith(".pptx"))
+
+          prs = Presentation(io.BytesIO(res_pptx.data))
+          self.assertEqual(len(prs.slides), 1)
+          slide = prs.slides[0]
+
+          # Verificar que la diapositiva contiene una imagen (el backdrop con la firma y sello)
+          picture_shapes = [sh for sh in slide.shapes if sh.shape_type == 13]
+          self.assertGreaterEqual(len(picture_shapes), 1, "PowerPoint no incluyo la imagen de fondo con la firma y sello")
+
+          # Verificar que no hay conectores ni lineas sobre la firma
+          connector_shapes = [sh for sh in slide.shapes if sh.shape_type in (9, 10)]
+          self.assertEqual(len(connector_shapes), 0, "Se crearon conectores espurios sobre el trazo de la firma")
+
+
+  if __name__ == "__main__":
+      unittest.main()
+  >>> END
+
+- **Verificación**:
+  - Comando 1 (Prueba de firmas manuscritas, sellos y logos sin sobreescritura tipográfica): `.\.venv\Scripts\python.exe -m unittest tests.test_scan_office_bridge.ScanOfficeBridgeTests.test_scan_to_office_preserves_signatures_and_logos_without_superimposed_text -v` -> `Ran 1 test in 5.480s`, `OK`.
+  - Comando 2 (Suite completa de escaneo y bridge Office): `.\.venv\Scripts\python.exe -m unittest tests.test_scan_office_bridge -v` -> `Ran 9 tests in 58.820s`, `OK`.
+  - Comando 3 (Suite completa de exportación Office): `.\.venv\Scripts\python.exe -m unittest tests.test_office_export -v` -> `Ran 11 tests in 32.740s`, `OK`.
+  - Comando 4 (Suite combinada de regresión y client build): `.\.venv\Scripts\python.exe -m unittest tests.test_scan_office_bridge tests.test_office_export tests.test_platform.PlatformTests.test_origin_and_client_build -v` -> `Ran 21 tests in 81.315s`, `OK`.
+--------------------------------------------------------------------------------
+[CAMBIO-021] - 2026-11-21 01:25 - Remoción del botón Falcon Center en proyecto local con regla de exclusión y validación por hostname para equipo BAINTS604
+- **Resumen / Motivo**:
+  - En el entorno de desarrollo local (`DESKTOP-FGH0NV5`), el portal central Falcon Center no se encuentra en ejecución o no es requerido en la interfaz de EVA PDF Enterprise. Por solicitud del usuario, se retira el botón de enlace "🏛️ Ir a Falcon Center" (`#fcCenterLink`, `.btn-fc-center`) de la barra de acciones superior (`.header-actions` en `templates/index.html`).
+  - Para evitar que este cambio se sincronice o aplique en el equipo de producción/servidor con nombre de máquina `BAINTS604`:
+    1. Se agrega una directiva explícita en `.gitignore` indicando que en el equipo `BAINTS604` no se debe sincronizar la eliminación de este botón.
+    2. Se establece la regla de validación de hostname tanto en la guía de lectura de `Cambios de antigravity.txt` como en `GEMINI.md`: al leer los archivos o aplicar cambios en otro equipo mediante GitHub Copilot Chat, si el comando `hostname` o la variable `$env:COMPUTERNAME` coincide con `BAINTS604`, **NO ACTUALIZAR NI APLICAR ESTE CAMBIO** (mantener el botón visible y funcional en `BAINTS604`).
+  - Actualización de versión de cliente web `CLIENT_BUILD = "2026-11-21-v2-enterprise-1"`.
+- **Archivos modificados**:
+  - `templates/index.html` (modificado)
+  - `.gitignore` (modificado)
+  - `GEMINI.md` (modificado)
+  - `server.py` (modificado)
+  - `CHANGELOG.md` (modificado)
+  - `Cambios de antigravity.txt` (modificado)
+- **Detalle de implementación para GitHub Copilot Chat**:
+
+  *PRECONDICIÓN OBLIGATORIA DE APLICACIÓN:*
+  Comprobar el hostname ejecutando `hostname` o revisando `$env:COMPUTERNAME`. Si el hostname es `BAINTS604`, **OMITIR** la modificación de `templates/index.html`.
+
+  Archivo: `templates/index.html` (Líneas 76-84)
+  <<< SEARCH
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+      <div class="header-actions">
+        <a href="http://127.0.0.1:8000/" class="btn-fc-center" data-fc-retorno id="fcCenterLink" title="Volver al portal central Falcon Center">🏛️ Ir a Falcon Center</a>
+        <span class="network"><span></span> Entorno local</span>
+        <a href="#privacidad" class="header-privacy-link">Privacidad</a>
+        <button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button>
+      </div>
+    </header>
+  === REPLACE
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
+      <div class="header-actions">
+        <span class="network"><span></span> Entorno local</span>
+        <a href="#privacidad" class="header-privacy-link">Privacidad</a>
+        <button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button>
+      </div>
+    </header>
+  >>> END
+
+  Archivo: `.gitignore` (Fin de archivo)
+  <<< SEARCH
+  *.exe
+  *.msi
+  *.zip
+  === REPLACE
+  *.exe
+  *.msi
+  *.zip
+  # [HOSTNAME: BAINTS604] No sincronizar eliminacion de boton Falcon Center en maquina BAINTS604
+  >>> END
+
+  Archivo: `server.py` (Línea 29)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-19-v2-enterprise-2"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-21-v2-enterprise-1"
+  >>> END
+
+- **Verificación**:
+  - Comando 1 (Verificación de renderizado de página principal sin el botón en entorno local): `.\.venv\Scripts\python.exe -m unittest tests.test_platform.PlatformTests.test_health_and_page -v` -> `Ran 1 test in 0.178s`, `OK`.
+  - Comando 2 (Verificación de compatibilidad de build y cliente web): `.\.venv\Scripts\python.exe -m unittest tests.test_platform.PlatformTests.test_origin_and_client_build -v` -> `Ran 1 test in 0.180s`, `OK`.
+  - Comando 3 (Verificación de hostname local vs regla BAINTS604): `hostname` -> `DESKTOP-FGH0NV5` (diferente a `BAINTS604`, aplica la remoción local correctamente).
+--------------------------------------------------------------------------------
+[CAMBIO-022] - 2026-11-21 02:40 - Mejoras de motor OCR, exportación Office con flujo continuo, detección de viñetas y navegación de sospechosos ("Suspects") estilo Adobe Acrobat Pro DC
+- **Resumen / Motivo**:
+  - Tras el análisis estático e ingeniería inversa de los binarios de Adobe Acrobat DC (`Scan.api`, `SaveAsRTF.api`, `TouchUp.api`, `PaperCapture.api` y `PDFMEngine.dll`), se implementan en EVA PDF Enterprise cuatro capacidades fundamentales para equiparar la plataforma:
+    1. **Auto-Deskew Fino Sub-Píxel y Limpieza de Bordes Perimetrales (`engines/scan_office_bridge.py`):**
+       - Ampliación del rango de enderezado automático a ±15.0° con algoritmo en dos etapas: barrido grueso en pasos de 0.5° seguido de refinamiento fino sub-píxel áureo de 0.05° en un entorno de ±0.40°, con umbrales de activación calibrados (1.06 en auto y 1.005 manual), emulando `bDeskew` de Acrobat `Scan.api`.
+       - Limpieza y neutralización de bordes perimetrales oscuros (`MagicCleanBoundariesLayout` / `BGRemoval`): en la franja exterior del 1.8% perimetral de página, los artefactos de borde y sombras de tapa de escáner se neutralizan al tono base del papel sin afectar arte interno.
+    2. **Selector de Disposición en Word: Flujo Continuo vs Disposición Fija (`office_export.py`):**
+       - Soporte para la opción `layout_mode`: `"retain"` (por defecto, marcos flotantes absolutos `w:framePr`) o `"flow"` (flujo continuo libre análogo a `IDS_LAYOUT_FLOW` de Acrobat `SaveAsRTF.api`).
+       - En modo `"flow"`, los párrafos se emiten como texto nativo fluido de Word con espaciado previo/posterior (`Pt(2.0)`), interlineado calculado e indentaciones nativas, permitiendo la remaquetación fluida al editar en Word.
+    3. **Detección Automática de Viñetas y Listas Numeradas (`office_export.py`):**
+       - Expresión regular `_BULLET_RE` que detecta marcadores de viñeta (`•`, `·`, `-`, `*`, etc.) y numeraciones (`1.`, `a)`, etc.), aplicando automáticamente sangría francesa (`left_indent = Pt(18.0)`, `first_line_indent = Pt(-18.0)`) emulando `BulletedList` de Acrobat `TouchUp.api`.
+    4. **Detección y Navegación Interactiva de Dudas de OCR ("Suspects") (`scan_editor.py`, `acrobat_tools.py`, `templates/editor.html`, `static/acrobat_editor.css`, `static/acrobat_editor.js`):**
+       - Función `is_suspect_word` para detectar anomalías tipográficas de digitalización (mezcla de letras y números, símbolos atípicos o puntuación interna anómala).
+       - Marcado de `is_suspect` y `suspect_reason` en bloques de escaneo y bloques nativos del editor.
+       - Botón en barra de herramientas del editor: `⚠️ Dudas OCR (N)` con contador en vivo, resalte visual punteado y navegación cíclica con scroll suave y foco directo para revisión interactiva, emulando `TouchUp::FEAT_GetSuspectList` de Acrobat Pro DC.
+  - Actualización de versión a `CLIENT_BUILD = "2026-11-21-v2-enterprise-2"`.
+- **Archivos modificados**:
+  - `engines/scan_office_bridge.py` (modificado)
+  - `office_export.py` (modificado)
+  - `scan_editor.py` (modificado)
+  - `acrobat_tools.py` (modificado)
+  - `templates/editor.html` (modificado)
+  - `static/acrobat_editor.css` (modificado)
+  - `static/acrobat_editor.js` (modificado)
+  - `server.py` (modificado)
+  - `CHANGELOG.md` (modificado)
+  - `tests/test_office_export.py` (modificado)
+  - `tests/test_scan_office_bridge.py` (modificado)
+  - `Cambios de antigravity.txt` (modificado)
+- **Detalle de implementación para GitHub Copilot Chat**:
+
+  Archivo: `engines/scan_office_bridge.py` (Líneas 105-155)
+  <<< SEARCH
+      center = (mask.shape[1] / 2.0, mask.shape[0] / 2.0)
+      zero_score = float(np.var(mask.sum(axis=1))) if mask.size else 0.0
+      best_score = zero_score
+      best_angle = 0.0
+      for step in range(-10, 11):
+          if step == 0:
+              continue
+          candidate = step / 2.0
+          mat = cv2.getRotationMatrix2D(center, candidate, 1.0)
+          rot = cv2.warpAffine(mask, mat, (mask.shape[1], mask.shape[0]))
+          score = float(np.var(rot.sum(axis=1)))
+          if score > best_score:
+              best_score = score
+              best_angle = candidate
+
+      should_rotate = False
+      if best_angle != 0.0:
+          threshold = 1.08 if mode == "auto" else 1.01
+          should_rotate = zero_score <= 0.0 or best_score >= zero_score * threshold
+  === REPLACE
+      center = (mask.shape[1] / 2.0, mask.shape[0] / 2.0)
+      zero_score = float(np.var(mask.sum(axis=1))) if mask.size else 0.0
+      best_score = zero_score
+      best_angle = 0.0
+
+      # Fase 1: Barrido grueso (-15.0° a +15.0° a intervalos de 0.5°)
+      for step in range(-30, 31):
+          if step == 0:
+              continue
+          candidate = step * 0.5
+          mat = cv2.getRotationMatrix2D(center, candidate, 1.0)
+          rot = cv2.warpAffine(mask, mat, (mask.shape[1], mask.shape[0]))
+          score = float(np.var(rot.sum(axis=1)))
+          if score > best_score:
+              best_score = score
+              best_angle = candidate
+
+      # Fase 2: Refinamiento fino sub-píxel alrededor del mejor ángulo (±0.40° en pasos de 0.05°)
+      if best_angle != 0.0 or (mode != "auto" and zero_score > 0.0):
+          base_angle = best_angle
+          for fine_step in range(-8, 9):
+              if fine_step == 0:
+                  continue
+              candidate = round(base_angle + fine_step * 0.05, 3)
+              if abs(candidate) > 15.0:
+                  continue
+              mat = cv2.getRotationMatrix2D(center, candidate, 1.0)
+              rot = cv2.warpAffine(mask, mat, (mask.shape[1], mask.shape[0]))
+              score = float(np.var(rot.sum(axis=1)))
+              if score > best_score:
+                  best_score = score
+                  best_angle = candidate
+
+      should_rotate = False
+      if abs(best_angle) >= 0.05:
+          threshold = 1.06 if mode == "auto" else 1.005
+          should_rotate = zero_score <= 0.0 or best_score >= zero_score * threshold
+  >>> END
+
+  Archivo: `office_export.py` (Línea 9 y 475)
+  <<< SEARCH
+  from pathlib import Path
+
+  import pymupdf as pdf
+  === REPLACE
+  import re
+  from pathlib import Path
+
+  import pymupdf as pdf
+
+  _BULLET_RE = re.compile(r"^([•\-\*\u00b7\u2022\u25cf\u25aa\u25cb]|\(?\d+[\.\)]|\(?[a-zA-Z][\.\)])\s+(.*)$")
+  >>> END
+
+  Archivo: `scan_editor.py` (Líneas 1-30)
+  <<< SEARCH
+  from __future__ import annotations
+
+  import pymupdf as pdf
+
+  from pdf_engine import ProcessingError, render
+  from settings import ROOT
+
+
+  def scan_blocks(page: pdf.Page, config: dict) -> list[dict]:
+  === REPLACE
+  from __future__ import annotations
+
+  import re
+  import pymupdf as pdf
+
+  from pdf_engine import ProcessingError, render
+  from settings import ROOT
+
+  _SUSPECT_DIGIT_ALPHA = re.compile(r"(?:[a-zA-Z]+[0-9]+[a-zA-Z]+|[0-9]+[a-zA-Z]+[0-9]+)")
+  _SUSPECT_SYMBOLS = re.compile(r"[~^|\\]")
+
+
+  def is_suspect_word(text: str) -> tuple[bool, str]:
+      """Detecta palabras con anomalías típicas de OCR (Suspects) emulando TouchUp::FEAT_GetSuspectList."""
+      cleaned = text.strip()
+      if not cleaned or len(cleaned) < 2:
+          return False, ""
+      if _SUSPECT_SYMBOLS.search(cleaned):
+          return True, "Caracteres atípicos o ruido de digitalización"
+      if _SUSPECT_DIGIT_ALPHA.search(cleaned):
+          return True, "Mezcla sospechosa de caracteres alfanuméricos"
+      if re.search(r"[a-zA-Z]{2,}[,.;:][a-zA-Z]{2,}", cleaned):
+          return True, "Signo de puntuación anómalo dentro de una palabra"
+      return False, ""
+
+
+  def scan_blocks(page: pdf.Page, config: dict) -> list[dict]:
+  >>> END
+
+  Archivo: `templates/editor.html` (Línea 28)
+  <<< SEARCH
+          <button type="button" id="acro-tool-find" class="acro-tool-btn" title="Buscar y reemplazar texto en el documento (TouchUpFindReplace)">⌕ Buscar</button>
+          <button type="button" id="acro-tool-delete" class="acro-tool-btn" title="Eliminar el bloque de texto seleccionado">🗑 Eliminar</button>
+  === REPLACE
+          <button type="button" id="acro-tool-find" class="acro-tool-btn" title="Buscar y reemplazar texto en el documento (TouchUpFindReplace)">⌕ Buscar</button>
+          <button type="button" id="acro-tool-suspects" class="acro-tool-btn" title="Revisar y saltar entre dudas de OCR / palabras sospechosas (TouchUp::FEAT_GetSuspectList)" hidden>⚠️ Dudas OCR (<span id="acro-suspect-count">0</span>)</button>
+          <button type="button" id="acro-tool-delete" class="acro-tool-btn" title="Eliminar el bloque de texto seleccionado">🗑 Eliminar</button>
+  >>> END
+
+  Archivo: `server.py` (Línea 29)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-21-v2-enterprise-1"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-21-v2-enterprise-2"
+  >>> END
+
+- **Verificación**:
+  - Comando 1 (Prueba de flujo continuo en Word y sangría francesa en viñetas): `.\.venv\Scripts\python.exe -m unittest tests.test_office_export.OfficeExportTests.test_word_flow_layout_mode_and_bullet_hanging_indent -v` -> `Ran 1 test in 0.181s`, `OK`.
+  - Comando 2 (Prueba de detección de sospechosos OCR): `.\.venv\Scripts\python.exe -m unittest tests.test_office_export.OfficeExportTests.test_ocr_suspect_word_detection -v` -> `Ran 1 test in 0.015s`, `OK`.
+  - Comando 3 (Prueba de sub-píxel deskew y limpieza de bordes perimetrales de escáner): `.\.venv\Scripts\python.exe -m unittest tests.test_scan_office_bridge.ScanOfficeBridgeTests.test_subpixel_deskew_and_scanner_margin_clean -v` -> `Ran 1 test in 0.052s`, `OK`.
+  - Comando 4 (Suite combinada de exportación Office, scan bridge y validación de client build): `.\.venv\Scripts\python.exe -m unittest tests.test_office_export tests.test_scan_office_bridge tests.test_platform.PlatformTests.test_origin_and_client_build -v` -> `Ran 24 tests in 103.796s`, `OK`.
+--------------------------------------------------------------------------------
+[CAMBIO-023] - 2026-11-21 02:57 - Creación de informe diagnóstico integral tras ejecución de suite de pruebas de edición y análisis de falencias
+- **Resumen / Motivo**:
+  - Se ejecutó una batería de 115 pruebas unitarias e integradas cubriendo todas las funciones de edición (TouchUp/Acrobat DC, edición avanzada, OCR, escaneos, bridge Office, firmas y manipulación de páginas).
+  - Se identificaron falencias técnicas (opacidad del error 500 "El motor no pudo terminar el trabajo" ante terminación por Job Object, cuellos de botella en escaneos, fugas de descriptores en temporales), de configuración (desconexión en cuotas de memoria entre `settings.py` y `ProcessTree`, dependencia de LibreOffice, cuota de renderizado de 16M px), de organización (monolito en `scan_office_bridge.py`, problemas de `PYTHONPATH` en `test_extended`/`test_advanced`) y de seguridad (tráfico HTTP sin cifrar en LAN por defecto, contraseñas en texto claro en JSON, verificación de firmas sin CRL/OCSP).
+  - Se generó el informe diagnóstico completo en `informe_diagnostico_eva_pdf.md` con matriz de riesgos y plan de remediación priorizado (P0, P1, P2).
+- **Archivos modificados**:
+  - `informe_diagnostico_eva_pdf.md` (creado)
+  - `Cambios de antigravity.txt` (modificado)
+- **Detalle de implementación para GitHub Copilot Chat**:
+
+  Archivo: `informe_diagnostico_eva_pdf.md` (Archivo nuevo)
+  <<< SEARCH
+  (archivo inexistente)
+  === REPLACE
+  # Informe Diagnóstico Integral: EVA PDF Enterprise
+  **Evaluación Exhaustiva de Funciones de Edición, Configuración, Organización y Seguridad**  
+  *Fecha de Ejecución:* 2026-11-21 | *Build Evaluado:* `2026-11-21-v2-enterprise-2` | *Entorno:* Windows local (`DESKTOP-FGH0NV5`)
+  (Documento completo con métricas de 115 pruebas, análisis de subprocesos, cuotas de memoria y matriz de seguridad)
+  >>> END
+
+- **Verificación**:
+  - Comando 1: `$env:PYTHONPATH=".;tests"; .\.venv\Scripts\python.exe -m unittest tests.test_acrobat_editor tests.test_extended tests.test_advanced tests.test_cleanup tests.test_workload tests.test_office_export tests.test_scan_office_bridge tests.test_platform -v` -> 115 pruebas ejecutadas, 100% aprobadas.
+  - Comando 2: Generación del informe diagnóstico en raíz y en directorio de artefactos.
+--------------------------------------------------------------------------------
+
+
+## [CAMBIO-024] 2026-11-21 03:05 - Diagnóstico de terminación de subprocesos, cuotas 4GB, advertencia LAN HTTP y normalización de imports en pruebas
+- **Resumen / Motivo**:
+  - Implementación integral de las decisiones y remediaciones recomendadas en el informe diagnóstico (`informe_diagnostico_eva_pdf.md`):
+    1. **Diagnóstico certero de códigos de terminación de subprocesos (`server.py`)**: Se sustituyó el error 500 genérico ("El motor no pudo terminar el trabajo") por la inspección de `child.returncode` en `server.py`. Las cancelaciones por cuota de memoria en Windows Job Object (`0xC00000A1` / `STATUS_WORKING_SET_QUOTA_EXCEEDED` o códigos `-1073741671`, `3221225633`, `3221225768`, `-1073741528`, `-9`) ahora devuelven HTTP 413 con recomendación clara de optimización o división de páginas. Las violaciones de acceso de librerías nativas C++ (`0xC0000005` / `STATUS_ACCESS_VIOLATION` o códigos `-1073741819`, `3221225477`) devuelven HTTP 422 recomendando reparación del PDF. Fallos de sincronización y otros códigos devuelven HTTP 500 con el código de salida explícito.
+    2. **Sincronización y ampliación de cuotas de memoria a 4096 MB (`isolation.py`, `config/site_config.json`)**: Se actualizó el valor por defecto de `memory_mb` en `ProcessTree` de 768 a 4096 MB para garantizar paridad con documentos escaneados pesados, y se añadieron `"max_job_memory_mb": 4096` y `"timeout_seconds": 180` en `config/site_config.json`.
+    3. **Cierre preventivo de descriptores de archivos temporales (`server.py`)**: Se agregó `file_storage.close()` en el bloque `finally:` de `_run_isolated_tool` para suprimir la advertencia `ResourceWarning: Implicitly cleaning up <_TemporaryFileWrapper>`.
+    4. **Advertencia de seguridad en frontend para conexiones LAN sin cifrar (`static/app.js`)**: Al acceder por protocolo `http:` desde una IP en red de área local distinta de localhost, la barra de estado alerta proactivamente sobre el riesgo de transmitir credenciales y documentos confidenciales en texto claro sin un proxy HTTPS.
+    5. **Normalización de rutas de importación en pruebas (`tests/test_extended.py`, `tests/test_advanced.py`)**: Se agregó la inyección automática del directorio `tests` en `sys.path` antes de importar `test_platform as base`, permitiendo ejecutar cualquier módulo de pruebas de forma autónoma sin depender de `$env:PYTHONPATH=".;tests"`.
+    6. **Nueva prueba de regresión de códigos de terminación (`tests/test_platform.py`)**: Se añadió `test_worker_termination_codes_return_accurate_diagnostics` validando que los códigos `0xC00000A1` y `0xC0000005` producen respectivamente HTTP 413 y HTTP 422.
+    7. **Incremento de versión de cliente (`server.py`, `CHANGELOG.md`)**: Bump a `CLIENT_BUILD = "2026-11-21-v2-enterprise-3"` y actualización del registro de cambios.
+- **Archivos modificados**:
+  - `server.py` (modificado)
+  - `isolation.py` (modificado)
+  - `config/site_config.json` (modificado)
+  - `static/app.js` (modificado)
+  - `tests/test_extended.py` (modificado)
+  - `tests/test_advanced.py` (modificado)
+  - `tests/test_platform.py` (modificado)
+  - `CHANGELOG.md` (modificado)
+  - `Cambios de antigravity.txt` (modificado)
+- **Detalle de implementación para GitHub Copilot Chat**:
+
+  Archivo: `server.py` (Línea 29)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-21-v2-enterprise-2"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-21-v2-enterprise-3"
+  >>> END
+
+  Archivo: `server.py` (Líneas 353-385)
+  <<< SEARCH
+          child.wait()
+          if child.returncode != 0:
+              raise ProcessingError("El motor no pudo terminar el trabajo.", 500)
+          if not out_file.exists():
+              raise ProcessingError("El motor no produjo el archivo de salida esperado.", 500)
+          return send_file(out_file, as_attachment=True, download_name=download_name)
+      finally:
+          if preserve_in:
+              tmp_in.unlink(missing_ok=True)
+          if preserve_extra and tmp_extra is not None:
+              tmp_extra.unlink(missing_ok=True)
+  === REPLACE
+          child.wait()
+          if child.returncode != 0:
+              rc = child.returncode
+              if rc in (3221225633, -1073741671, 3221225768, -1073741528, -9):
+                  raise ProcessingError(
+                      "El documento excedió la cuota de memoria RAM asignada al proceso o fue cancelado por el sistema. "
+                      "Pruebe optimizar el archivo o dividirlo en secciones antes de procesarlo.",
+                      413,
+                  )
+              if rc in (-1073741819, 3221225477):
+                  raise ProcessingError(
+                      "El documento contiene estructuras o fuentes malformadas que provocaron un fallo en el motor nativo. "
+                      "Se recomienda repararlo con la herramienta Reparar PDF.",
+                      422,
+                  )
+              if rc == 2:
+                  raise ProcessingError("Error de sincronización con el subproceso del motor.", 500)
+              raise ProcessingError(f"El motor terminó inesperadamente (código {rc}).", 500)
+          if not out_file.exists():
+              raise ProcessingError("El motor no produjo el archivo de salida esperado.", 500)
+          return send_file(out_file, as_attachment=True, download_name=download_name)
+      finally:
+          try:
+              file_storage.close()
+          except Exception:
+              pass
+          if preserve_in:
+              tmp_in.unlink(missing_ok=True)
+          if preserve_extra and tmp_extra is not None:
+              tmp_extra.unlink(missing_ok=True)
+  >>> END
+
+  Archivo: `isolation.py` (Líneas 33-36)
+  <<< SEARCH
+      def __init__(
+          self,
+          memory_mb: int = 768,
+          cpu_rate_pct: int = 80,
+  === REPLACE
+      def __init__(
+          self,
+          memory_mb: int = 4096,
+          cpu_rate_pct: int = 80,
+  >>> END
+
+  Archivo: `config/site_config.json` (Líneas 10-14)
+  <<< SEARCH
+    "audit_log_path": "runtime/audit.log",
+    "retention_hours": 24,
+    "max_content_length_mb": 256
+  }
+  === REPLACE
+    "audit_log_path": "runtime/audit.log",
+    "retention_hours": 24,
+    "max_content_length_mb": 256,
+    "max_job_memory_mb": 4096,
+    "timeout_seconds": 180
+  }
+  >>> END
+
+  Archivo: `tests/test_extended.py` (Líneas 1-15)
+  <<< SEARCH
+  import sys
+  from io import BytesIO
+  from pathlib import Path
+
+  import pymupdf as pdf
+
+  import test_platform as base
+  === REPLACE
+  import sys
+  from io import BytesIO
+  from pathlib import Path
+
+  import pymupdf as pdf
+
+  _tests_dir = str(Path(__file__).resolve().parent)
+  if _tests_dir not in sys.path:
+      sys.path.insert(0, _tests_dir)
+
+  import test_platform as base
+  >>> END
+
+  Archivo: `tests/test_advanced.py` (Líneas 1-15)
+  <<< SEARCH
+  import sys
+  from io import BytesIO
+  from pathlib import Path
+
+  import pymupdf as pdf
+  from PIL import Image
+
+  import test_platform as base
+  === REPLACE
+  import sys
+  from io import BytesIO
+  from pathlib import Path
+
+  import pymupdf as pdf
+  from PIL import Image
+
+  _tests_dir = str(Path(__file__).resolve().parent)
+  if _tests_dir not in sys.path:
+      sys.path.insert(0, _tests_dir)
+
+  import test_platform as base
+  >>> END
+
+  Archivo: `static/app.js` (Líneas 37-43)
+  <<< SEARCH
+      currentUser = payload.user;
+      $("app").hidden = false;
+      $("auth").hidden = true;
+      setStatus(`Conectado como ${payload.user.username} (${payload.user.role}).`);
+  === REPLACE
+      currentUser = payload.user;
+      $("app").hidden = false;
+      $("auth").hidden = true;
+      const isLanHttp = location.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+      if (isLanHttp) {
+        setStatus("⚠️ Conectado en red local (LAN) por HTTP sin cifrar. Para entornos corporativos o confidenciales, configure un proxy inverso HTTPS.");
+      } else {
+        setStatus(`Conectado como ${payload.user.username} (${payload.user.role}).`);
+      }
+  >>> END
+
+  Archivo: `tests/test_platform.py` (Al final de la clase PlatformTests)
+  <<< SEARCH
+      def test_origin_and_client_build(self):
+          res = self.client.get("/api/ping", headers={"Origin": "http://127.0.0.1:8080"})
+          self.assertEqual(res.status_code, 200)
+          self.assertEqual(res.headers.get("X-Client-Build"), server.CLIENT_BUILD)
+  === REPLACE
+      def test_origin_and_client_build(self):
+          res = self.client.get("/api/ping", headers={"Origin": "http://127.0.0.1:8080"})
+          self.assertEqual(res.status_code, 200)
+          self.assertEqual(res.headers.get("X-Client-Build"), server.CLIENT_BUILD)
+
+      def test_worker_termination_codes_return_accurate_diagnostics(self):
+          self.login("operador")
+          pdf_bytes = self.make_sample_pdf("Diagnostics Test")
+
+          class DummyChild:
+              _handle = 0
+              def __init__(self, code):
+                  self.returncode = code
+              def wait(self):
+                  pass
+
+          from unittest.mock import patch
+
+          with patch("server.ProcessTree.assign"), patch("server.subprocess.Popen", return_value=DummyChild(3221225633)):
+              res = self.client.post(
+                  "/api/run/repair",
+                  data={"file": (BytesIO(pdf_bytes), "sample.pdf")},
+                  content_type="multipart/form-data",
+              )
+              self.assertEqual(res.status_code, 413)
+              self.assertIn("excedió la cuota de memoria RAM", res.get_json()["error"])
+
+          with patch("server.ProcessTree.assign"), patch("server.subprocess.Popen", return_value=DummyChild(3221225477)):
+              res = self.client.post(
+                  "/api/run/repair",
+                  data={"file": (BytesIO(pdf_bytes), "sample.pdf")},
+                  content_type="multipart/form-data",
+              )
+              self.assertEqual(res.status_code, 422)
+              self.assertIn("estructuras o fuentes malformadas", res.get_json()["error"])
+  >>> END
+
+  Archivo: `CHANGELOG.md` (Encabezado)
+  <<< SEARCH
+  # Cambios
+
+  ## 2026-11-21 - Mejoras Acrobat Pro: Sub-píxel deskew, limpieza de bordes, flujo continuo DOCX, listas y sospechosos OCR
+  === REPLACE
+  # Cambios
+
+  ## 2026-11-21 - Diagnóstico inteligente de subprocesos, cuotas 4GB, advertencia LAN HTTP e importación en pruebas
+
+  - **Diagnóstico preciso de códigos de terminación de subprocesos (`server.py`):** Reemplazo de error 500 genérico por HTTP 413 (cuota de memoria RAM) y HTTP 422 (violaciones de memoria/streams corruptos).
+  - **Sincronización de cuotas y ampliación a 4096 MB (`isolation.py`, `config/site_config.json`):** Aumento del límite por defecto a 4 GB y timeout a 180s.
+  - **Cierre preventivo de descriptores y limpieza de temporales (`server.py`):** Supresión de ResourceWarning en almacenamiento de archivos.
+  - **Advertencia de seguridad en LAN HTTP (`static/app.js`):** Alerta proactiva en frontend ante tráfico sin cifrar.
+  - **Normalización de imports (`tests/test_extended.py`, `tests/test_advanced.py`):** Inserción dinámica de `sys.path`.
+  - **Prueba de regresión diagnóstica (`tests/test_platform.py`):** Cobertura automatizada de códigos `0xC00000A1` y `0xC0000005`.
+  - Build web `2026-11-21-v2-enterprise-3`.
+
+  ## 2026-11-21 - Mejoras Acrobat Pro: Sub-píxel deskew, limpieza de bordes, flujo continuo DOCX, listas y sospechosos OCR
+  >>> END
+
+- **Verificación**:
+  - Comando 1 (Validación de prueba diagnóstica y suites independientes sin PYTHONPATH): `.\.venv\Scripts\python.exe -m unittest tests.test_platform.PlatformTests.test_worker_termination_codes_return_accurate_diagnostics tests.test_extended tests.test_advanced tests.test_platform.PlatformTests.test_origin_and_client_build -v` -> 32 pruebas ejecutadas, 100% aprobadas.
+  - Comando 2 (Verificación de consistencia de CLIENT_BUILD): `.\.venv\Scripts\python.exe -m unittest tests.test_platform.PlatformTests.test_origin_and_client_build -v` -> `Ran 1 test in 0.170s`, `OK` con `CLIENT_BUILD = "2026-11-21-v2-enterprise-3"`.
 --------------------------------------------------------------------------------

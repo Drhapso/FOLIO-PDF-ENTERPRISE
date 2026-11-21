@@ -1,9 +1,27 @@
 from __future__ import annotations
 
+import re
 import pymupdf as pdf
 
 from pdf_engine import ProcessingError, render
 from settings import ROOT
+
+_SUSPECT_DIGIT_ALPHA = re.compile(r"(?:[a-zA-Z]+[0-9]+[a-zA-Z]+|[0-9]+[a-zA-Z]+[0-9]+)")
+_SUSPECT_SYMBOLS = re.compile(r"[~^|\\]")
+
+
+def is_suspect_word(text: str) -> tuple[bool, str]:
+    """Detecta palabras con anomalías típicas de OCR (Suspects) emulando TouchUp::FEAT_GetSuspectList."""
+    cleaned = text.strip()
+    if not cleaned or len(cleaned) < 2:
+        return False, ""
+    if _SUSPECT_SYMBOLS.search(cleaned):
+        return True, "Caracteres atípicos o ruido de digitalización"
+    if _SUSPECT_DIGIT_ALPHA.search(cleaned):
+        return True, "Mezcla sospechosa de caracteres alfanuméricos"
+    if re.search(r"[a-zA-Z]{2,}[,.;:][a-zA-Z]{2,}", cleaned):
+        return True, "Signo de puntuación anómalo dentro de una palabra"
+    return False, ""
 
 
 def scan_blocks(page: pdf.Page, config: dict) -> list[dict]:
@@ -17,11 +35,13 @@ def scan_blocks(page: pdf.Page, config: dict) -> list[dict]:
     for index, word in enumerate(page.get_text("words", textpage=textpage)):
         x0, y0, x1, y1, text = word[:5]
         rect = pdf.Rect(x0 - 0.8, y0 - 0.8, x1 + 0.8, y1 + 0.8) & page.rect
+        is_susp, susp_reason = is_suspect_word(text)
         blocks.append({
             "id": f"scan_{index}", "bbox": list(rect), "text": text, "source": "scan",
             "origin": [rect.x0, rect.y1 - 1], "font": "Helvetica",
             "size": max(6, min(72, (y1 - y0) * 0.8)),
             "color": "#000000", "bold": False, "italic": False, "lines_count": 1,
+            "is_suspect": is_susp, "suspect_reason": susp_reason,
         })
     return blocks
 

@@ -40,7 +40,7 @@ class InstanceLock:
 class ProcessTree:
     """Un Job Object evita dejar conversores huerfanos en Windows."""
 
-    def __init__(self, memory_mb: int = 768):
+    def __init__(self, memory_mb: int = 4096):
         self.handle = None
         if os.name != "nt":
             return

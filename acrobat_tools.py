@@ -83,6 +83,8 @@ def extract_page_blocks(page: pdf.Page) -> list[dict]:
     width = page.rect.width
     height = page.rect.height
 
+    from scan_editor import is_suspect_word
+
     for b_idx, block in enumerate(text_page.get("blocks", [])):
         if block.get("type") != 0:
             continue
@@ -95,6 +97,7 @@ def extract_page_blocks(page: pdf.Page) -> list[dict]:
                 x0, y0, x1, y1 = [float(v) for v in span["bbox"]]
                 font_name = span.get("font", "Helvetica")
                 flags = span.get("flags", 0)
+                is_susp, susp_reason = is_suspect_word(span["text"])
                 blocks.append({
                     "id": f"blk_{b_idx}_{l_idx}_{s_idx}",
                     "bbox": [x0, y0, x1, y1],
@@ -107,6 +110,8 @@ def extract_page_blocks(page: pdf.Page) -> list[dict]:
                     "bold": bool(flags & 16 or "bold" in font_name.lower()),
                     "italic": bool(flags & 2 or "italic" in font_name.lower() or "oblique" in font_name.lower()),
                     "lines_count": 1,
+                    "is_suspect": is_susp,
+                    "suspect_reason": susp_reason,
                 })
     return blocks
 

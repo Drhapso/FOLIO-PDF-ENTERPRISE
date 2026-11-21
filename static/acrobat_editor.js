@@ -75,6 +75,8 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     dragStart: { x: 0, y: 0 },
     initialBox: null,
     currentScale: 1.0,
+    suspectBlocks: [],
+    currentSuspectIdx: -1,
   };
 
   const dom = {};
@@ -100,6 +102,8 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     dom.btnToolAdd = document.getElementById("acro-tool-add");
     dom.btnToolOutlines = document.getElementById("acro-tool-outlines");
     dom.btnToolFind = document.getElementById("acro-tool-find");
+    dom.btnToolSuspects = document.getElementById("acro-tool-suspects");
+    dom.suspectCount = document.getElementById("acro-suspect-count");
     dom.btnToolDelete = document.getElementById("acro-tool-delete");
     dom.findBar = document.getElementById("acro-find-bar");
     dom.findInput = document.getElementById("acro-find-text");
@@ -272,6 +276,25 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       dom.findBar.hidden = true;
       dom.btnToolFind.classList.remove("active");
     });
+
+    if (dom.btnToolSuspects) {
+      dom.btnToolSuspects.addEventListener("click", () => {
+        if (!state.suspectBlocks.length) {
+          setStatusNotice("No hay dudas de OCR en esta página.", false);
+          return;
+        }
+        state.currentSuspectIdx = (state.currentSuspectIdx + 1) % state.suspectBlocks.length;
+        const targetBlock = state.suspectBlocks[state.currentSuspectIdx];
+        selectBlock(targetBlock.id);
+        const targetEl = dom.overlay.querySelector(`[data-block-id="${targetBlock.id}"]`);
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+          const ta = targetEl.querySelector("textarea");
+          if (ta) ta.focus();
+        }
+        setStatusNotice(`Duda de OCR (${state.currentSuspectIdx + 1}/${state.suspectBlocks.length}): ${targetBlock.suspect_reason || "Revisar texto"}`, false);
+      });
+    }
 
     dom.btnToolDelete.addEventListener("click", deleteActiveBlock);
 
@@ -513,6 +536,13 @@ window.retrieveFileForEditor = retrieveFileForEditor;
   function renderPageBlocks() {
     dom.overlay.replaceChildren();
 
+    // Actualizar lista de sospechosos de OCR (TouchUp::FEAT_GetSuspectList)
+    state.suspectBlocks = state.pageBlocks.filter(b => b.is_suspect && !state.deletedBlocks.has(`${state.currentPage}_${b.id}`));
+    if (dom.btnToolSuspects && dom.suspectCount) {
+      dom.suspectCount.textContent = state.suspectBlocks.length;
+      dom.btnToolSuspects.hidden = state.suspectBlocks.length === 0;
+    }
+
     // 1. Bloques originales
     state.pageBlocks.forEach(block => {
       if (block.editable === false) {
@@ -545,7 +575,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       const italic = change?.italic !== undefined ? change.italic : block.italic;
       const align = change?.align || "left";
 
-      createBlockElement(block.id, bbox, text, font, size, color, bold, italic, align, false, isModified);
+      createBlockElement(block.id, bbox, text, font, size, color, bold, italic, align, false, isModified, Boolean(block.is_suspect), block.suspect_reason || "");
     });
 
     // 2. Bloques nuevos agregados en esta página
@@ -652,9 +682,12 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     dom.overlay.appendChild(el);
   }
 
-  function createBlockElement(id, bbox, text, font, size, color, bold, italic, align, isNew, isModified = false) {
+  function createBlockElement(id, bbox, text, font, size, color, bold, italic, align, isNew, isModified = false, isSuspect = false, suspectReason = "") {
     const el = document.createElement("div");
-    el.className = "acro-block" + (isNew ? " is-new" : "") + (isModified ? " modified" : "");
+    el.className = "acro-block" + (isNew ? " is-new" : "") + (isModified ? " modified" : "") + (isSuspect ? " is-suspect" : "");
+    if (isSuspect) {
+      el.title = `Duda de OCR: ${suspectReason || "Revisar precisión de caracteres"}`;
+    }
     el.id = `block-${id}`;
     el.dataset.blockId = id;
     el.dataset.isNew = isNew ? "true" : "false";

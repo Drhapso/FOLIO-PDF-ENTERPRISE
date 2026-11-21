@@ -13,6 +13,13 @@ import pymupdf as pdf
 from PIL import Image, ImageDraw
 from pillow_heif import register_heif_opener
 
+import sys
+from pathlib import Path
+
+_tests_dir = str(Path(__file__).resolve().parent)
+if _tests_dir not in sys.path:
+    sys.path.insert(0, _tests_dir)
+
 import test_platform as base
 from advanced_tools import preprocess_scan, signature_report
 from pdf_engine import ProcessingError, capabilities

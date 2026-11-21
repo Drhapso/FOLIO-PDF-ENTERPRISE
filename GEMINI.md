@@ -16,3 +16,10 @@ Enunciado original del usuario:
    - **Detalle de implementación para GitHub Copilot Chat:** Bloques exactos `<<< SEARCH`, `=== REPLACE` y `>>> END` con líneas de contexto suficientes para que GitHub Copilot Chat en otro equipo pueda localizar y aplicar el cambio sin ambigüedad.
    - **Verificación:** Comandos de prueba ejecutados y resultado obtenido.
 
+### Regla de Validación por Hostname para GitHub Copilot Chat (Equipo BAINTS604)
+- **Validación de entorno de ejecución / lectura:** Al leer los archivos de cambios o sincronizar el proyecto en otro equipo, GitHub Copilot Chat debe comprobar el nombre de la máquina (`hostname` / `$env:COMPUTERNAME`).
+- **Condición de exclusión:** Si el hostname coincide con `BAINTS604`:
+  - **NO ACTUALIZAR NI APLICAR** el cambio que remueve el botón "Ir a Falcon Center" (`[CAMBIO-021]`).
+  - Preservar intacto el botón `<a ... id="fcCenterLink" ...>🏛️ Ir a Falcon Center</a>` en `templates/index.html` en el equipo `BAINTS604`.
+
+

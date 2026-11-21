@@ -404,6 +404,206 @@ class ScanOfficeBridgeTests(unittest.TestCase):
                 process("scan_to_office", [src_pdf], {"target_format": "pptx"}, work, self.config, no_ocr_root)
             self.assertEqual(ctx.exception.status, 503)
 
+    def test_scan_to_office_docx_preserves_fonts_styles_and_reading_order(self):
+        if not capabilities(self.config, ROOT)["ocr"]:
+            self.skipTest("Modelos OCR no disponibles")
+
+        # 1. Construir un documento puramente escaneado con fuentes Serif (Times), Italicas,
+        # dos columnas de texto y una tabla intermedia.
+        with pdf.open() as src:
+            p = src.new_page(width=600, height=800)
+            # Titulo centrado en Times New Roman Negrita
+            p.insert_text((180, 70), "INFORME JURIDICO OFICIAL", fontname="tibo", fontsize=18, color=(0.1, 0.1, 0.1))
+            # Subtitulo italico en Times
+            p.insert_text((195, 95), "Documento autenticado confidencial", fontname="tiit", fontsize=11, color=(0.2, 0.2, 0.2))
+
+            # Tabla intermedia ubicada entre el titulo y las columnas
+            for y in (120, 150, 180):
+                p.draw_line((60, y), (540, y), width=1.5)
+            for x in (60, 260, 540):
+                p.draw_line((x, 120), (x, 180), width=1.5)
+            p.insert_text((75, 142), "Expediente", fontname="tibo", fontsize=12)
+            p.insert_text((280, 142), "Resolucion", fontname="tibo", fontsize=12)
+            p.insert_text((75, 172), "EXP-2026-A", fontname="tiro", fontsize=11)
+            p.insert_text((280, 172), "Aprobado", fontname="tiro", fontsize=11)
+
+            # Columna Izquierda (x: 60..260)
+            p.insert_text((60, 220), "Columna Alfa Primer Parrafo", fontname="tiro", fontsize=11)
+            p.insert_text((60, 240), "Continuacion Alfa Segundo Parrafo", fontname="tiro", fontsize=11)
+            p.insert_text((60, 260), "Finalizacion Alfa Tercer Parrafo", fontname="tiro", fontsize=11)
+
+            # Columna Derecha (x: 320..520)
+            p.insert_text((320, 220), "Columna Beta Primer Parrafo", fontname="tiro", fontsize=11)
+            p.insert_text((320, 240), "Continuacion Beta Segundo Parrafo", fontname="tiro", fontsize=11)
+            p.insert_text((320, 260), "Finalizacion Beta Tercer Parrafo", fontname="tiro", fontsize=11)
+
+            png = p.get_pixmap(dpi=200, colorspace=pdf.csRGB, alpha=False).tobytes("png")
+
+        with pdf.open() as scan_pdf:
+            sp = scan_pdf.new_page(width=600, height=800)
+            sp.insert_image(sp.rect, stream=png)
+            scan_bytes = scan_pdf.tobytes(garbage=4, deflate=True)
+
+        res = self.call("scan_to_office", [(scan_bytes, "juridico_scan.pdf")], {"target_format": "docx"})
+        self.assertTrue(res.headers["Content-Disposition"].endswith("EVA00.docx"))
+
+        doc = Document(io.BytesIO(res.data))
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+        # A. Verificar deteccion de fuente Serif (Times New Roman) y estilos Bold/Italic
+        title_para = next((p for p in doc.paragraphs if "INFORME" in p.text.upper() or "JURIDICO" in p.text.upper()), None)
+        self.assertIsNotNone(title_para, "No se encontro el parrafo del titulo en DOCX")
+        self.assertEqual(title_para.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+
+        runs = [r for p in doc.paragraphs for r in p.runs]
+        font_names = {r.font.name for r in runs if r.font and r.font.name}
+        self.assertIn("Times New Roman", font_names)
+
+        # B. Verificar que existe texto con negrita e italica
+        has_bold = any(r.bold for r in runs)
+        has_italic = any(r.italic for r in runs)
+        self.assertTrue(has_bold, "No se preservo negrita en el DOCX escaneado")
+        self.assertTrue(has_italic, "No se preservo cursiva/italica en el DOCX escaneado")
+
+        # C. Verificar orden topologico de lectura: Columna Alfa antes de Columna Beta
+        full_text = "\n".join(p.text for p in doc.paragraphs)
+        idx_alfa = full_text.find("Alfa")
+        idx_beta = full_text.find("Beta")
+        if idx_alfa != -1 and idx_beta != -1:
+            self.assertLess(idx_alfa, idx_beta, "El orden de lectura no respeto las columnas (Alfa debe preceder a Beta)")
+
+        # D. Verificar que la tabla se creo correctamente con sus celdas
+        self.assertGreaterEqual(len(doc.tables), 1)
+        table_text = " ".join(c.text for c in doc.tables[0]._cells)
+        self.assertIn("Expediente", table_text)
+
+    def test_scan_to_office_preserves_signatures_and_logos_without_superimposed_text(self):
+        """Verifica que firmas manuscritas, sellos y logos no se reemplacen por fuentes tipograficas espurias."""
+        import cv2
+
+        pt_w, pt_h = 595.0, 842.0  # A4
+        dpi = 200
+        img_w = int(round(pt_w * dpi / 72.0))
+        img_h = int(round(pt_h * dpi / 72.0))
+        bgr = np.full((img_h, img_w, 3), 255, dtype=np.uint8)
+
+        # 1. Logotipo en cabecera
+        cv2.rectangle(bgr, (100, 100), (280, 240), (220, 80, 20), -1)
+        cv2.circle(bgr, (190, 170), 50, (255, 255, 255), -1)
+
+        # 2. Titulo y parrafo
+        cv2.putText(bgr, "CERTIFICADO DE CONFORMIDAD", (340, 180), cv2.FONT_HERSHEY_DUPLEX, 1.3, (0, 0, 0), 2)
+        cv2.putText(
+            bgr,
+            "Por medio del presente se certifica la aprobacion formal de las operaciones.",
+            (100, 420),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (20, 20, 20),
+            2,
+        )
+
+        # 3. Firma manuscrita (trazos continuos con bucles y subrayado)
+        pts = np.array(
+            [[200, 1400], [250, 1320], [320, 1430], [400, 1300], [480, 1450], [550, 1330], [650, 1420], [800, 1350]],
+            np.int32,
+        )
+        cv2.polylines(bgr, [pts], False, (40, 30, 20), 3)
+        cv2.circle(bgr, (420, 1280), 4, (40, 30, 20), -1)
+        cv2.line(bgr, (180, 1460), (850, 1440), (40, 30, 20), 2)
+
+        # 4. Nombre mecanografiado bajo la firma
+        cv2.putText(bgr, "Ing. Alejandro Morales", (300, 1530), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 0, 0), 2)
+        cv2.putText(bgr, "Auditor General", (340, 1575), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 2)
+
+        # 5. Sello circular con tinta azulada/rojiza
+        cv2.circle(bgr, (1250, 1450), 120, (180, 40, 40), 4)
+        cv2.putText(bgr, "APROBADO", (1165, 1460), cv2.FONT_HERSHEY_DUPLEX, 0.9, (180, 40, 40), 2)
+
+        buf = io.BytesIO()
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        Image.fromarray(rgb).save(buf, format="PNG")
+        png_data = buf.getvalue()
+
+        with pdf.open() as scan_pdf:
+            sp = scan_pdf.new_page(width=pt_w, height=pt_h)
+            sp.insert_image(sp.rect, stream=png_data)
+            scan_bytes = scan_pdf.tobytes(garbage=4, deflate=True)
+
+        # A. Conversion a Word (DOCX)
+        res_docx = self.call("scan_to_office", [(scan_bytes, "doc_firmado.pdf")], {"target_format": "docx"})
+        self.assertEqual(res_docx.status_code, 200)
+        self.assertTrue(res_docx.headers["Content-Disposition"].endswith(".docx"))
+
+        doc = Document(io.BytesIO(res_docx.data))
+        full_text = "\n".join(p.text for p in doc.paragraphs)
+
+        # Texto genuino presente
+        self.assertTrue("CERTIFICADO" in full_text or "CONFORMIDAD" in full_text)
+        self.assertTrue("Alejandro" in full_text or "Morales" in full_text)
+
+        # Ningun texto espurio o alucinado debe reemplazar la firma o sello
+        spurious_tokens = {"LATA", "MANN", "IIS", "ae", "SS"}
+        for p in doc.paragraphs:
+            words_in_p = set(p.text.split())
+            self.assertFalse(
+                spurious_tokens.intersection(words_in_p),
+                f"Se detectaron tokens espurios sobrepuestos en la firma: {words_in_p}",
+            )
+
+        # Verificar que el backdrop PNG con la firma y el sello se preservo en el paquete DOCX
+        with zipfile.ZipFile(io.BytesIO(res_docx.data), "r") as docx_zip:
+            media_files = [f for f in docx_zip.namelist() if f.startswith("word/media/")]
+            self.assertGreaterEqual(
+                len(media_files),
+                1,
+                "El fondo grafico residual con la firma/sello no se incluyo en el archivo DOCX",
+            )
+
+        # B. Conversion a PowerPoint (PPTX)
+        res_pptx = self.call("scan_to_office", [(scan_bytes, "doc_firmado.pdf")], {"target_format": "pptx"})
+        self.assertEqual(res_pptx.status_code, 200)
+        self.assertTrue(res_pptx.headers["Content-Disposition"].endswith(".pptx"))
+
+        prs = Presentation(io.BytesIO(res_pptx.data))
+        self.assertEqual(len(prs.slides), 1)
+        slide = prs.slides[0]
+
+        # Verificar que la diapositiva contiene una imagen (el backdrop con la firma y sello)
+        picture_shapes = [sh for sh in slide.shapes if sh.shape_type == 13]
+        self.assertGreaterEqual(len(picture_shapes), 1, "PowerPoint no incluyo la imagen de fondo con la firma y sello")
+
+        # Verificar que no hay conectores ni lineas sobre la firma
+        connector_shapes = [sh for sh in slide.shapes if sh.shape_type in (9, 10)]
+        self.assertEqual(len(connector_shapes), 0, "Se crearon conectores espurios sobre el trazo de la firma")
+
+    def test_subpixel_deskew_and_scanner_margin_clean(self):
+        """Verifica deskew fino sub-píxel y limpieza de bordes perimetrales de escáner."""
+        import cv2
+        from engines.scan_office_bridge import _preprocess_bgr
+
+        # Crear imagen con fondo blanco y lineas horizontales
+        img = np.full((300, 400, 3), 250, dtype=np.uint8)
+        # Lineas de texto para proyectar varianza
+        for y in range(60, 240, 25):
+            cv2.line(img, (50, y), (350, y), (20, 20, 20), 4)
+
+        # Agregar artefacto de borde de tapa de escáner en el margen superior perimetral (outer 1.8%)
+        img[:4, :] = [15, 15, 15]
+
+        # Rotar 2.2° (sub-píxel)
+        M = cv2.getRotationMatrix2D((200, 150), 2.2, 1.0)
+        tilted = cv2.warpAffine(img, M, (400, 300), borderValue=(250, 250, 250))
+        # Re-aplicar sombra de borde de vidrio
+        tilted[:3, :] = [10, 10, 10]
+
+        cleaned, paper_bgr = _preprocess_bgr(tilted, mode="auto", max_pixels=1000000)
+
+        # Comprobar que el borde perimetral superior fue neutralizado (MagicCleanBoundariesLayout)
+        top_strip = cleaned[:3, :]
+        self.assertGreater(float(np.mean(top_strip)), 200.0, "La sombra perimetral de escáner no fue neutralizada")
+        self.assertAlmostEqual(float(paper_bgr[0]), 250.0, delta=10.0)
+
 
 if __name__ == "__main__":
     unittest.main()

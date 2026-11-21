@@ -532,6 +532,34 @@ class PlatformTests(unittest.TestCase):
             finally:
                 app.extensions["instance_lock"].close()
 
+    def test_worker_termination_codes_return_accurate_diagnostics(self):
+        class DummyProcess:
+            def __init__(self, code):
+                self.returncode = code
+                self._handle = 0
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def communicate(self, *args, **kwargs):
+                pass
+            def poll(self):
+                return self.returncode
+            def kill(self):
+                pass
+            def wait(self):
+                pass
+
+        # 1. Terminacion de memoria Job Object (STATUS_WORKING_SET_QUOTA_EXCEEDED) -> HTTP 413
+        with patch("server.ProcessTree.assign"), patch("server.subprocess.Popen", return_value=DummyProcess(3221225633)):
+            res = self.call("rotate", expected=413)
+            self.assertIn("cuota de memoria RAM", res.get_json()["error"])
+
+        # 2. Access Violation en C++ (STATUS_ACCESS_VIOLATION) -> HTTP 422
+        with patch("server.ProcessTree.assign"), patch("server.subprocess.Popen", return_value=DummyProcess(-1073741819)):
+            res = self.call("rotate", expected=422)
+            self.assertIn("fallo en el motor nativo", res.get_json()["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

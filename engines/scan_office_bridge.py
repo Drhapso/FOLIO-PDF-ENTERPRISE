@@ -108,10 +108,12 @@ def _preprocess_bgr(bgr: np.ndarray, mode: str, max_pixels: int) -> tuple[np.nda
     zero_score = float(np.var(mask.sum(axis=1))) if mask.size else 0.0
     best_score = zero_score
     best_angle = 0.0
-    for step in range(-10, 11):
+
+    # Fase 1: Barrido grueso (-15.0° a +15.0° a intervalos de 0.5°)
+    for step in range(-30, 31):
         if step == 0:
             continue
-        candidate = step / 2.0
+        candidate = step * 0.5
         mat = cv2.getRotationMatrix2D(center, candidate, 1.0)
         rot = cv2.warpAffine(mask, mat, (mask.shape[1], mask.shape[0]))
         score = float(np.var(rot.sum(axis=1)))
@@ -119,9 +121,25 @@ def _preprocess_bgr(bgr: np.ndarray, mode: str, max_pixels: int) -> tuple[np.nda
             best_score = score
             best_angle = candidate
 
+    # Fase 2: Refinamiento fino sub-píxel alrededor del mejor ángulo (±0.40° en pasos de 0.05°)
+    if best_angle != 0.0 or (mode != "auto" and zero_score > 0.0):
+        base_angle = best_angle
+        for fine_step in range(-8, 9):
+            if fine_step == 0:
+                continue
+            candidate = round(base_angle + fine_step * 0.05, 3)
+            if abs(candidate) > 15.0:
+                continue
+            mat = cv2.getRotationMatrix2D(center, candidate, 1.0)
+            rot = cv2.warpAffine(mask, mat, (mask.shape[1], mask.shape[0]))
+            score = float(np.var(rot.sum(axis=1)))
+            if score > best_score:
+                best_score = score
+                best_angle = candidate
+
     should_rotate = False
-    if best_angle != 0.0:
-        threshold = 1.08 if mode == "auto" else 1.01
+    if abs(best_angle) >= 0.05:
+        threshold = 1.06 if mode == "auto" else 1.005
         should_rotate = zero_score <= 0.0 or best_score >= zero_score * threshold
 
     out = bgr
@@ -142,6 +160,22 @@ def _preprocess_bgr(bgr: np.ndarray, mode: str, max_pixels: int) -> tuple[np.nda
                 borderValue=tuple(int(x) for x in paper_bgr),
             )
             paper_bgr = _sample_paper_bgr(out)
+
+    # Limpieza de bordes perimetrales de escáner (MagicCleanBoundariesLayout / BGRemoval)
+    if mode in ("auto", "clean"):
+        bh, bw = out.shape[:2]
+        my = max(2, int(bh * 0.018))
+        mx = max(2, int(bw * 0.018))
+        edge_mask = np.zeros((bh, bw), dtype=bool)
+        edge_mask[:my, :] = True
+        edge_mask[-my:, :] = True
+        edge_mask[:, :mx] = True
+        edge_mask[:, -mx:] = True
+        diff = np.max(np.abs(out.astype(np.int16) - paper_bgr.astype(np.int16)), axis=2)
+        dirty_edge = edge_mask & (diff > 25)
+        if np.any(dirty_edge):
+            out = out.copy()
+            out[dirty_edge] = paper_bgr
 
     if mode == "clean":
         ch, cw = out.shape[:2]
@@ -645,7 +679,9 @@ def _extract_shape_embedded_ocr(
                 bbox_pt = (max(0.0, wx0 * sx), max(0.0, wy0 * sy), min(pt_w, wx1 * sx), min(pt_h, wy1 * sy))
                 if bbox_pt[2] - bbox_pt[0] < 1.5 or bbox_pt[3] - bbox_pt[1] < 3.5:
                     continue
-                color_int, is_bold = _estimate_word_style(bgr, ink_mask, fill_bgr, bbox_pt, pt_w, pt_h)
+                color_int, is_bold, is_italic, font_fam = _estimate_word_style(
+                    bgr, ink_mask, fill_bgr, bbox_pt, pt_w, pt_h, text=txt
+                )
                 size_pt = max(6.5, min(42.0, round((bbox_pt[3] - bbox_pt[1]) * 0.80 * 2.0) / 2.0))
                 w_entry = {
                     "bbox": bbox_pt,
@@ -653,7 +689,8 @@ def _extract_shape_embedded_ocr(
                     "size": size_pt,
                     "color": color_int,
                     "bold": is_bold,
-                    "italic": False,
+                    "italic": is_italic,
+                    "font_family": font_fam,
                     "from_shape": True,
                 }
                 shape_words.append(w_entry)
@@ -667,24 +704,29 @@ def _detect_photo_artwork_mask(
     table_mask: np.ndarray,
     shape_fill_mask: np.ndarray,
     paper_bgr: np.ndarray,
+    diagram_shapes: list[dict] | None = None,
+    pt_w: float = 612.0,
+    pt_h: float = 792.0,
 ) -> np.ndarray:
-    """Identifica regiones solidas de fotografia, logotipo o arte rasterizado para conservarlas intactas."""
+    """Identifica regiones de fotografia, logotipo, sellos o firmas para conservarlas intactas sin sobreponer texto."""
     img_h, img_w = bgr.shape[:2]
-    non_paper = (np.max(np.abs(bgr.astype(np.int16) - paper_bgr.astype(np.int16)), axis=2) > 20).astype(np.uint8) * 255
-    non_paper[table_mask > 0] = 0
-    non_paper[cv2.dilate(shape_fill_mask, np.ones((7, 7), np.uint8), iterations=1) > 0] = 0
+    photo_mask = np.zeros((img_h, img_w), dtype=np.uint8)
 
-    # La apertura morfologica (13x13) suprime trazos de letras/flechas y deja intactos bloques graficos/fotos
+    non_paper = (np.max(np.abs(bgr.astype(np.int16) - paper_bgr.astype(np.int16)), axis=2) > 20).astype(np.uint8) * 255
+    if table_mask is not None:
+        non_paper[table_mask > 0] = 0
+    if shape_fill_mask is not None:
+        non_paper[cv2.dilate(shape_fill_mask, np.ones((7, 7), np.uint8), iterations=1) > 0] = 0
+
+    # 1. Bloques fotograficos, logotipos y arte raster denso (apertura morfologica suprime trazos finos de texto)
     blobs = cv2.morphologyEx(non_paper, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(blobs)
-    photo_mask = np.zeros((img_h, img_w), dtype=np.uint8)
     core_k = np.ones((5, 5), np.uint8)
     for label in range(1, num_labels):
         bx, by, bw, bh, area = [int(v) for v in stats[label]]
         if area < 450 or bw < 24 or bh < 24:
             continue
         blob_u8 = (labels[by : by + bh, bx : bx + bw] == label).astype(np.uint8) * 255
-        # Medir varianza en el nucleo erosionado con borde 0 (ignora bordes anti-aliased de triangulos/simbolos planos)
         core_u8 = cv2.erode(blob_u8, core_k, iterations=1, borderType=cv2.BORDER_CONSTANT, borderValue=0)
         sample_mask = core_u8 > 0 if cv2.countNonZero(core_u8) >= 35 else blob_u8 > 0
         blob_px = bgr[by : by + bh, bx : bx + bw][sample_mask]
@@ -699,6 +741,95 @@ def _detect_photo_artwork_mask(
                 255,
                 -1,
             )
+
+    # 2. Firmas manuscritas y sellos sobre trazos limpios de non_paper (sin halo de Gaussian blur)
+    pt_to_px = img_w / max(1.0, pt_w)
+    sx_inv, sy_inv = img_w / max(1.0, pt_w), img_h / max(1.0, pt_h)
+
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    sat_channel = hsv[:, :, 1]
+    num_ink, ink_labels, ink_stats, _ = cv2.connectedComponentsWithStats(non_paper)
+
+    sig_boxes: list[list[int]] = []
+    stamp_boxes: list[list[int]] = []
+
+    for lbl in range(1, num_ink):
+        bx, by, bw, bh, area = [int(v) for v in ink_stats[lbl]]
+        if area < 30 or bw < 6 or bh < 6:
+            continue
+
+        dens = float(area) / max(1.0, float(bw * bh))
+        aspect = float(bw) / max(1.0, float(bh))
+        stroke_w = float(area) / max(1.0, float(bw + bh))
+
+        lbl_mask = (ink_labels[by : by + bh, bx : bx + bw] == lbl)
+        comp_px_sat = sat_channel[by : by + bh, bx : bx + bw][lbl_mask]
+        comp_sat = float(np.mean(comp_px_sat)) if len(comp_px_sat) > 0 else 0.0
+
+        is_sig = (
+            bw >= int(round(pt_to_px * 20.0))
+            and bh >= int(round(pt_to_px * 7.0))
+            and 0.015 <= dens <= 0.28
+            and stroke_w <= max(14.0, pt_to_px * 5.5)
+            and (stroke_w / min(bw, bh)) <= 0.35
+            and aspect >= 1.05
+            and area <= 120_000
+        )
+
+        is_stamp = (
+            bw >= int(round(pt_to_px * 18.0))
+            and bh >= int(round(pt_to_px * 18.0))
+            and 0.70 <= aspect <= 1.45
+            and (
+                (comp_sat >= 30.0 and area >= int(round(pt_to_px * pt_to_px * 35.0)) and dens <= 0.35)
+                or (dens <= 0.22 and area >= int(round(pt_to_px * pt_to_px * 50.0)) and min(bw, bh) >= int(round(pt_to_px * 24.0)))
+            )
+        )
+
+        if is_sig:
+            touches_shape = False
+            if diagram_shapes:
+                for sh in diagram_shapes:
+                    sh_box = (
+                        int(sh["bbox"][0] * sx_inv),
+                        int(sh["bbox"][1] * sy_inv),
+                        int(sh["bbox"][2] * sx_inv),
+                        int(sh["bbox"][3] * sy_inv),
+                    )
+                    p1 = (bx, (by * 2 + bh) // 2)
+                    p2 = (bx + bw, (by * 2 + bh) // 2)
+                    d1 = min(abs(p1[0] - sh_box[0]), abs(p1[0] - sh_box[2])) if sh_box[1] - 15 <= p1[1] <= sh_box[3] + 15 else 999
+                    d2 = min(abs(p2[0] - sh_box[0]), abs(p2[0] - sh_box[2])) if sh_box[1] - 15 <= p2[1] <= sh_box[3] + 15 else 999
+                    if min(d1, d2) <= 20:
+                        touches_shape = True
+                        break
+            if not touches_shape:
+                sig_boxes.append([bx, by, bw, bh])
+        elif is_stamp:
+            stamp_boxes.append([bx, by, bw, bh])
+
+    for sb in sig_boxes:
+        sb_x0, sb_y0, sb_w, sb_h = sb
+        sb_x1, sb_y1 = sb_x0 + sb_w, sb_y0 + sb_h
+        top_limit = max(0, sb_y0 - int(round(pt_to_px * 14.0)))
+        for lbl in range(1, num_ink):
+            bx, by, bw, bh, area = [int(v) for v in ink_stats[lbl]]
+            if area >= 80 or bw >= int(round(pt_to_px * 8.0)) or bh >= int(round(pt_to_px * 8.0)):
+                continue
+            if sb_x0 <= bx and bx + bw <= sb_x1 and top_limit <= by and by + bh <= sb_y0 + 5:
+                sb[1] = min(sb[1], by)
+                sb[3] = max(sb_y1, by + bh) - sb[1]
+
+    pad = max(6, int(round(pt_to_px * 3.5)))
+    for bx, by, bw, bh in sig_boxes + stamp_boxes:
+        x0 = max(0, bx - pad)
+        y0 = max(0, by - pad)
+        x1 = min(img_w, bx + bw + pad)
+        y1 = min(img_h, by + bh + pad)
+        photo_mask[y0:y1, x0:x1] = 255
+
+    return photo_mask
+
     return photo_mask
 
 
@@ -977,6 +1108,65 @@ def _detect_raster_connectors(
     return connectors
 
 
+def _topological_sort_lines(items: list[dict], page_width: float) -> list[dict]:
+    """Orden de lectura topologico XY-Cut recursivo para columnas, tablas y encabezados."""
+    if len(items) <= 1:
+        return items
+    pw = max(1.0, float(page_width))
+    mid_candidates = [pw * r for r in (0.50, 0.33, 0.67, 0.40, 0.60)]
+    best = None
+    for split_x in mid_candidates:
+        left = [b for b in items if b["bbox"][2] <= split_x + 12.0]
+        right = [b for b in items if b["bbox"][0] >= split_x - 12.0]
+        spanning = [b for b in items if b not in left and b not in right]
+        if len(left) >= 1 and len(right) >= 1 and (len(left) + len(right)) > len(spanning) * 0.8:
+            top_y = min((b["bbox"][1] for b in left + right), default=0.0)
+            bot_y = max((b["bbox"][3] for b in left + right), default=pw)
+            top_span = [b for b in spanning if b["bbox"][1] < top_y + 8.0]
+            bot_span = [b for b in spanning if b["bbox"][3] > bot_y - 8.0]
+            mid_span = [b for b in spanning if b not in top_span and b not in bot_span]
+            if len(mid_span) <= max(1, len(items) // 10):
+                best = (split_x, left, right, top_span, bot_span, mid_span)
+                break
+    if best:
+        split_x, left, right, top_span, bot_span, mid_span = best
+        sorted_top = sorted(top_span, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+        sorted_bot = sorted(bot_span, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+        sorted_mid = sorted(mid_span, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+        sorted_left = _topological_sort_lines(left, split_x)
+        sorted_right = _topological_sort_lines(right, pw - split_x)
+        return sorted_top + sorted_left + sorted_right + sorted_mid + sorted_bot
+    return sorted(items, key=lambda b: (round(b["bbox"][1] / 6.0), b["bbox"][0]))
+
+
+def _stroke_contrast(crop: np.ndarray) -> float:
+    """Calcula la modulacion de trazo (proporcion de grosor de fuste vertical vs filete/serifa)."""
+    rh, rw = crop.shape[:2]
+    if rh < 8 or rw < 8:
+        return 1.0
+    mid_rows = crop[int(rh * 0.25):int(rh * 0.75), :]
+    h_runs: list[int] = []
+    for r in mid_rows:
+        nz = np.where(r > 0)[0]
+        if len(nz) >= 2:
+            splits = np.where(np.diff(nz) > 1)[0]
+            starts = np.insert(nz[splits + 1], 0, nz[0])
+            ends = np.append(nz[splits], nz[-1])
+            h_runs.extend(ends - starts + 1)
+    mid_cols = crop[:, int(rw * 0.15):int(rw * 0.85)].T
+    v_runs: list[int] = []
+    for c in mid_cols:
+        nz = np.where(c > 0)[0]
+        if len(nz) >= 2:
+            splits = np.where(np.diff(nz) > 1)[0]
+            starts = np.insert(nz[splits + 1], 0, nz[0])
+            ends = np.append(nz[splits], nz[-1])
+            v_runs.extend(ends - starts + 1)
+    stem = float(np.median(h_runs)) if h_runs else 1.0
+    bar = float(np.median(v_runs)) if v_runs else 1.0
+    return stem / max(1.0, bar)
+
+
 def _estimate_word_style(
     bgr: np.ndarray,
     ink_mask: np.ndarray,
@@ -984,7 +1174,8 @@ def _estimate_word_style(
     bbox_pt: tuple[float, float, float, float],
     pt_w: float,
     pt_h: float,
-) -> tuple[int, bool]:
+    text: str = "",
+) -> tuple[int, bool, bool, str]:
     img_h, img_w = bgr.shape[:2]
     sx_inv, sy_inv = img_w / pt_w, img_h / pt_h
     x0 = max(0, int(math.floor(bbox_pt[0] * sx_inv)))
@@ -992,7 +1183,7 @@ def _estimate_word_style(
     x1 = min(img_w, int(math.ceil(bbox_pt[2] * sx_inv)))
     y1 = min(img_h, int(math.ceil(bbox_pt[3] * sy_inv)))
     if x1 <= x0 or y1 <= y0:
-        return 0x111111, False
+        return 0x111111, False, False, "Arial"
     roi_bgr = bgr[y0:y1, x0:x1]
     # Estimar fondo local alrededor del perimetro de la palabra (soporta texto claro sobre cajas oscuras)
     bx0, by0, bx1, by1 = max(0, x0 - 2), max(0, y0 - 2), min(img_w, x1 + 2), min(img_h, y1 + 2)
@@ -1016,17 +1207,59 @@ def _estimate_word_style(
         med = np.median(strong if len(strong) else fg, axis=0)
         color_int = (int(round(med[2])) << 16) | (int(round(med[1])) << 8) | int(round(med[0]))
 
-    # Deteccion aproximada de negrita usando espesor medio de trazo via DistanceTransform
     roi_bw = (diff > 26).astype(np.uint8) * 255
     is_bold = False
-    if cv2.countNonZero(roi_bw) >= 12 and (y1 - y0) >= 8:
-        dt = cv2.distanceTransform(roi_bw, cv2.DIST_L2, 3)
-        pos = dt[roi_bw > 0]
-        if len(pos):
-            stroke_diam = 2.0 * float(np.percentile(pos, 75))
-            ratio = stroke_diam / max(1.0, float(y1 - y0))
-            is_bold = ratio >= 0.145
-    return color_int, is_bold
+    is_italic = False
+    font_family = "Arial"
+
+    cnt_ink = cv2.countNonZero(roi_bw)
+    if cnt_ink >= 12:
+        coords = cv2.findNonZero(roi_bw)
+        if coords is not None:
+            rx, ry, rw, rh = cv2.boundingRect(coords)
+            crop = roi_bw[ry : ry + rh, rx : rx + rw]
+            dt = cv2.distanceTransform(crop, cv2.DIST_L2, 3)
+            pos = dt[crop > 0]
+            if len(pos):
+                stroke_diam = 2.0 * float(np.percentile(pos, 75))
+                ratio = stroke_diam / max(1.0, float(rh))
+                density = cnt_ink / float(max(1, rw * rh))
+                is_bold = (density >= 0.44 and ratio >= 0.14) or (ratio >= 0.17)
+
+            clean_txt = text.strip()
+            if (len(clean_txt) >= 2 or (len(clean_txt) == 1 and clean_txt.isalnum())) and rw >= 10:
+                best_ang = 0
+                max_var = 0.0
+                for ang in (-4, 0, 4, 8, 12, 16, 20):
+                    rad = math.radians(ang)
+                    tan_a = math.tan(rad)
+                    M_shear = np.float32([[1.0, tan_a, 0.0 if tan_a <= 0 else -rh * tan_a], [0.0, 1.0, 0.0]])
+                    new_w = int(math.ceil(rw + rh * abs(tan_a)))
+                    sheared = cv2.warpAffine(crop, M_shear, (new_w, rh))
+                    v_proj = np.sum(sheared > 0, axis=0)
+                    var = float(np.var(v_proj))
+                    if var > max_var:
+                        max_var = var
+                        best_ang = ang
+                if best_ang >= 6:
+                    is_italic = True
+
+            if len(clean_txt) >= 3:
+                char_pitch = float(rw) / len(clean_txt)
+                pitch_ratio = char_pitch / float(max(1, rh))
+                sobel_x = np.abs(cv2.Sobel(crop, cv2.CV_32F, 1, 0, ksize=3))
+                sobel_y = np.abs(cv2.Sobel(crop, cv2.CV_32F, 0, 1, ksize=3))
+                grad_ratio = float(np.sum(sobel_x)) / max(1.0, float(np.sum(sobel_y)))
+                if pitch_ratio >= 0.72 and grad_ratio < 1.15:
+                    font_family = "Courier New"
+                else:
+                    contrast = _stroke_contrast(crop)
+                    if contrast >= 1.28:
+                        font_family = "Times New Roman"
+                    else:
+                        font_family = "Arial"
+
+    return color_int, is_bold, is_italic, font_family
 
 
 def _extract_ocr_words(
@@ -1049,14 +1282,16 @@ def _extract_ocr_words(
     ocr_available = all((root / "models" / f"{lang}.traineddata").is_file() for lang in languages)
     has_hidden_ocr = any(t.get("type") == 3 for t in page.get_texttrace())
 
-    raw_words: list[tuple[float, float, float, float, str]] = []
+    raw_words: list[dict] = []
     ocr_applied = False
     ocr_missing = False
 
     if ocr_mode != "existing_only" and ocr_available:
-        # Limpiar trazos de cuadricula largos antes del OCR para evitar caracteres "|" / "_" espurios
+        # Limpiar trazos de cuadricula largos y zonas graficas protegidas (fotos/firmas/sellos/logos) antes del OCR
         ocr_input = bgr.copy()
         ocr_input[long_rules_mask > 0] = paper_bgr
+        if photo_mask is not None and np.any(photo_mask > 0):
+            ocr_input[photo_mask > 0] = paper_bgr
         rgb = cv2.cvtColor(ocr_input, cv2.COLOR_BGR2RGB)
         pix = pdf.Pixmap(pdf.csRGB, img_w, img_h, rgb.tobytes(), False)
         raw_pdf = pix.pdfocr_tobytes(language=config["ocr_language"], tessdata=str(root / "models"))
@@ -1064,22 +1299,99 @@ def _extract_ocr_words(
             ocr_page = ocr_doc[0]
             opw, oph = ocr_page.rect.width, ocr_page.rect.height
             fx, fy = pt_w / max(1.0, opw), pt_h / max(1.0, oph)
-            for w_item in ocr_page.get_text("words"):
-                x0, y0, x1, y1, txt = float(w_item[0]) * fx, float(w_item[1]) * fy, float(w_item[2]) * fx, float(w_item[3]) * fy, str(w_item[4]).strip()
-                if txt:
-                    raw_words.append((x0, y0, x1, y1, txt))
+            rd = ocr_page.get_text("rawdict")
+            for b in rd.get("blocks", []):
+                if b.get("type") == 0:
+                    for l in b.get("lines", []):
+                        for s in l.get("spans", []):
+                            w_txt = "".join(c["c"] for c in s.get("chars", []) if not c["c"].isspace()).strip()
+                            if not w_txt:
+                                continue
+                            x0, y0, x1, y1 = (
+                                float(s["bbox"][0]) * fx,
+                                float(s["bbox"][1]) * fy,
+                                float(s["bbox"][2]) * fx,
+                                float(s["bbox"][3]) * fy,
+                            )
+                            ox, oy = float(s["origin"][0]) * fx, float(s["origin"][1]) * fy
+                            sz = float(s.get("size", 10.0)) * fy
+                            c_list = [
+                                {
+                                    "c": c["c"],
+                                    "origin": (float(c["origin"][0]) * fx, float(c["origin"][1]) * fy),
+                                    "bbox": (
+                                        float(c["bbox"][0]) * fx,
+                                        float(c["bbox"][1]) * fy,
+                                        float(c["bbox"][2]) * fx,
+                                        float(c["bbox"][3]) * fy,
+                                    ),
+                                }
+                                for c in s.get("chars", [])
+                            ]
+                            raw_words.append({
+                                "bbox": (x0, y0, x1, y1),
+                                "text": w_txt,
+                                "origin": (ox, oy),
+                                "size": sz,
+                                "chars": c_list,
+                            })
+            if not raw_words:
+                for w_item in ocr_page.get_text("words"):
+                    x0, y0, x1, y1, txt = (
+                        float(w_item[0]) * fx,
+                        float(w_item[1]) * fy,
+                        float(w_item[2]) * fx,
+                        float(w_item[3]) * fy,
+                        str(w_item[4]).strip(),
+                    )
+                    if txt:
+                        h_pt = y1 - y0
+                        sz = max(6.5, min(54.0, round(h_pt * 0.78 * 2.0) / 2.0))
+                        raw_words.append({
+                            "bbox": (x0, y0, x1, y1),
+                            "text": txt,
+                            "origin": (x0, y1 - max(1.0, h_pt * 0.18)),
+                            "size": sz,
+                            "chars": [],
+                        })
         ocr_applied = True
     elif has_hidden_ocr:
-        for w_item in page.get_text("words"):
-            x0, y0, x1, y1, txt = float(w_item[0]), float(w_item[1]), float(w_item[2]), float(w_item[3]), str(w_item[4]).strip()
-            if txt:
-                raw_words.append((x0, y0, x1, y1, txt))
+        rd = page.get_text("rawdict")
+        for b in rd.get("blocks", []):
+            if b.get("type") == 0:
+                for l in b.get("lines", []):
+                    for s in l.get("spans", []):
+                        w_txt = "".join(c["c"] for c in s.get("chars", []) if not c["c"].isspace()).strip()
+                        if not w_txt:
+                            continue
+                        raw_words.append({
+                            "bbox": (float(s["bbox"][0]), float(s["bbox"][1]), float(s["bbox"][2]), float(s["bbox"][3])),
+                            "text": w_txt,
+                            "origin": (float(s["origin"][0]), float(s["origin"][1])),
+                            "size": float(s.get("size", 10.0)),
+                            "chars": s.get("chars", []),
+                        })
+        if not raw_words:
+            for w_item in page.get_text("words"):
+                x0, y0, x1, y1, txt = float(w_item[0]), float(w_item[1]), float(w_item[2]), float(w_item[3]), str(w_item[4]).strip()
+                if txt:
+                    h_pt = y1 - y0
+                    sz = max(6.5, min(54.0, round(h_pt * 0.78 * 2.0) / 2.0))
+                    raw_words.append({
+                        "bbox": (x0, y0, x1, y1),
+                        "text": txt,
+                        "origin": (x0, y1 - max(1.0, h_pt * 0.18)),
+                        "size": sz,
+                        "chars": [],
+                    })
     elif not ocr_available:
         ocr_missing = True
 
     sx_inv, sy_inv = img_w / pt_w, img_h / pt_h
     cleaned_words: list[dict] = []
-    for x0, y0, x1, y1, txt in raw_words:
+    for item in raw_words:
+        x0, y0, x1, y1 = item["bbox"]
+        txt = item["text"]
         if x1 - x0 < 1.5 or y1 - y0 < 3.5:
             continue
         px0 = max(0, int(math.floor(x0 * sx_inv)))
@@ -1100,29 +1412,42 @@ def _extract_ocr_words(
         if len(patch_bg) >= 16 and float(np.max(np.std(patch_bg, axis=0))) > 42.0:
             continue
         photo_overlap = float(np.count_nonzero(photo_mask[py0:py1, px0:px1])) / max(1, (px1 - px0) * (py1 - py0))
-        if photo_overlap > 0.35:
-            patch_std = float(np.max(np.std(patch_bgr.reshape(-1, 3), axis=0))) if patch_bgr.size else 0.0
-            bg_std = float(np.max(np.std(patch_bg, axis=0))) if len(patch_bg) >= 8 else patch_std
-            if bg_std > 28.0 or patch_std > 35.0:
-                continue
-        color_int, is_bold = _estimate_word_style(bgr, ink_mask, paper_bgr, (x0, y0, x1, y1), pt_w, pt_h)
-        h_pt = y1 - y0
-        size_pt = max(6.5, min(54.0, round(h_pt * 0.78 * 2.0) / 2.0))
+        if photo_overlap > 0.25:
+            continue
+        color_int, is_bold, is_italic, font_fam = _estimate_word_style(
+            bgr, ink_mask, paper_bgr, (x0, y0, x1, y1), pt_w, pt_h, text=txt
+        )
         cleaned_words.append(
             {
                 "bbox": (x0, y0, x1, y1),
+                "origin": item["origin"],
                 "text": txt,
-                "size": size_pt,
+                "size": float(round(item["size"] * 2.0) / 2.0),
                 "color": color_int,
                 "bold": is_bold,
-                "italic": False,
+                "italic": is_italic,
+                "font_family": font_fam,
+                "chars": item["chars"],
             }
         )
+
+    # Suavizado de familia tipografica dominante en la pagina para coherencia visual
+    if cleaned_words:
+        from collections import Counter
+
+        fam_votes = Counter(w["font_family"] for w in cleaned_words if len(w["text"]) >= 3)
+        if fam_votes:
+            dominant_fam = fam_votes.most_common(1)[0][0]
+            dom_share = fam_votes[dominant_fam] / max(1, sum(fam_votes.values()))
+            if dom_share >= 0.45:
+                for w in cleaned_words:
+                    if w["font_family"] != "Courier New":
+                        w["font_family"] = dominant_fam
 
     return cleaned_words, ocr_applied, ocr_missing
 
 
-def _words_to_lines(words: list[dict]) -> list[dict]:
+def _words_to_lines(words: list[dict], page_width: float = 612.0) -> list[dict]:
     """Agrupa palabras por banda vertical Y en lineas compatibles con office_export."""
     if not words:
         return []
@@ -1162,11 +1487,16 @@ def _words_to_lines(words: list[dict]) -> list[dict]:
 
         for seg in segments:
             spans: list[dict] = []
-            # Unir palabras contiguas del mismo estilo en un mismo span limpio
             cur_words: list[dict] = [seg[0]]
             for w in seg[1:]:
                 prev_w = cur_words[-1]
-                same_style = (w["bold"] == prev_w["bold"] and w["color"] == prev_w["color"] and abs(w["size"] - prev_w["size"]) <= 2.5)
+                same_style = (
+                    w["bold"] == prev_w["bold"]
+                    and w.get("italic") == prev_w.get("italic")
+                    and w["color"] == prev_w["color"]
+                    and w.get("font_family") == prev_w.get("font_family")
+                    and abs(w["size"] - prev_w["size"]) <= 2.5
+                )
                 if same_style:
                     cur_words.append(w)
                 else:
@@ -1179,7 +1509,8 @@ def _words_to_lines(words: list[dict]) -> list[dict]:
             ly1 = max(sp["bbox"][3] for sp in spans)
             lines_out.append({"bbox": (lx0, ly0, lx1, ly1), "dir": (1.0, 0.0), "spans": spans})
 
-    lines_out.sort(key=lambda ln: (ln["bbox"][1], ln["bbox"][0]))
+    # Ordenar lineas topologicamente respetando columnas
+    lines_out = _topological_sort_lines(lines_out, page_width)
     return lines_out
 
 
@@ -1190,16 +1521,52 @@ def _words_to_span(words: list[dict], line_size: float) -> dict:
     y1 = max(w["bbox"][3] for w in words)
     text = " ".join(w["text"] for w in words)
     size = max(w["size"] for w in words) if len(words) == 1 else line_size
-    flags = 16 if any(w["bold"] for w in words) else 0
+    flags = 0
+    if any(w.get("bold") for w in words):
+        flags |= 16
+    if any(w.get("italic") for w in words):
+        flags |= 2
+
+    font_fam = words[0].get("font_family", "Arial")
+    if font_fam == "Times New Roman":
+        font_base = "TimesNewRoman"
+    elif font_fam == "Courier New":
+        font_base = "CourierNew"
+    elif font_fam == "Calibri":
+        font_base = "Calibri"
+    else:
+        font_base = "Arial"
+
+    suffix = ""
+    if (flags & 16) and (flags & 2):
+        suffix = "-BoldItalic"
+    elif flags & 16:
+        suffix = "-Bold"
+    elif flags & 2:
+        suffix = "-Italic"
+    font_str = font_base + suffix
+
+    origins = [w["origin"] for w in words if "origin" in w]
+    if origins:
+        origin_pt = (x0, float(np.median([o[1] for o in origins])))
+    else:
+        origin_pt = (x0, y1 - max(1.0, (y1 - y0) * 0.18))
+
+    chars = []
+    for w in words:
+        if w.get("chars"):
+            chars.extend(w["chars"])
+
     return {
         "bbox": (x0, y0, x1, y1),
-        "origin": (x0, y1 - max(1.0, (y1 - y0) * 0.18)),
+        "origin": origin_pt,
         "text": text,
-        "font": "Arial-Bold" if flags & 16 else "Arial",
+        "font": font_str,
         "size": float(round(size * 2.0) / 2.0),
         "flags": flags,
         "color": words[0]["color"],
-        "chars": [],
+        "words": [{"text": w["text"], "bbox": w["bbox"]} for w in words],
+        "chars": chars,
     }
 
 
@@ -1356,7 +1723,7 @@ def _detect_borderless_ocr_tables(
     return out_tables
 
 
-def _group_paragraphs(lines: list[dict], exclude_rects: list[pdf.Rect]) -> list[dict]:
+def _group_paragraphs(lines: list[dict], exclude_rects: list[pdf.Rect], page_width: float = 612.0) -> list[dict]:
     """Agrupa renglones contiguos fuera de tablas/figuras embebidas en bloques de parrafo editables."""
     free_lines = [
         ln for ln in lines
@@ -1364,6 +1731,9 @@ def _group_paragraphs(lines: list[dict], exclude_rects: list[pdf.Rect]) -> list[
     ]
     if not free_lines:
         return []
+
+    # Ordenar lineas topologicamente antes de agrupar para respetar columnas
+    free_lines = _topological_sort_lines(free_lines, page_width)
 
     paragraphs: list[dict] = []
     for ln in free_lines:
@@ -1388,6 +1758,26 @@ def _group_paragraphs(lines: list[dict], exclude_rects: list[pdf.Rect]) -> list[
                 placed = True
         if not placed:
             paragraphs.append({"bbox": lb, "lines": [ln], "size": lsize, "line_h": lh})
+
+    # Calcular alineacion para cada parrafo (center, right, justify, left)
+    for p in paragraphs:
+        p_lines = p["lines"]
+        px0, py0, px1, py1 = p["bbox"]
+        pw = px1 - px0
+        mid_x = (px0 + px1) / 2.0
+        if abs(mid_x - page_width / 2.0) <= 24.0 and pw < page_width * 0.72:
+            if all(abs(((l["bbox"][0] + l["bbox"][2]) / 2.0) - (page_width / 2.0)) <= 28.0 for l in p_lines):
+                p["align"] = "center"
+                continue
+        if page_width - px1 <= 54.0 and px0 >= page_width * 0.40:
+            if all(page_width - l["bbox"][2] <= 54.0 for l in p_lines):
+                p["align"] = "right"
+                continue
+        if len(p_lines) >= 3 and pw >= page_width * 0.50:
+            p["align"] = "justify"
+            continue
+        p["align"] = "left"
+
     return paragraphs
 
 
@@ -1400,6 +1790,7 @@ def _build_clean_backdrop(
     connectors: list[dict],
     pt_w: float,
     pt_h: float,
+    photo_mask: np.ndarray | None = None,
 ) -> bytes | None:
     """Construye fondo residual sin texto ni tablas ni diagramas ya vectorizados."""
     img_h, img_w = bgr.shape[:2]
@@ -1469,6 +1860,8 @@ def _build_clean_backdrop(
         py1 = min(img_h, int(math.ceil(by1 * sy_inv)) + 3)
         cv2.rectangle(text_mask, (px0, py0), (px1, py1), 255, -1)
     text_mask[erase_mask > 0] = 0
+    if photo_mask is not None and np.any(photo_mask > 0):
+        text_mask[photo_mask > 0] = 0
     if cv2.countNonZero(text_mask) > 0:
         clean = cv2.inpaint(clean, text_mask, 3, cv2.INPAINT_TELEA)
 
@@ -1477,7 +1870,11 @@ def _build_clean_backdrop(
     residual_mask = (residual_diff > 24).astype(np.uint8) * 255
     residual_mask = cv2.morphologyEx(residual_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     residual_count = cv2.countNonZero(residual_mask)
-    if residual_count < max(120, int(img_w * img_h * 0.0025)):
+    protected_ink = 0
+    if photo_mask is not None and np.any(photo_mask > 0):
+        protected_ink = cv2.countNonZero(cv2.bitwise_and(residual_mask, photo_mask))
+
+    if protected_ink < 25 and residual_count < max(120, int(img_w * img_h * 0.0025)):
         return None
 
     rgb = cv2.cvtColor(clean, cv2.COLOR_BGR2RGB)
@@ -1515,7 +1912,9 @@ def _analyze_bgr_region(
             bgr, ink_mask, table_mask, paper_bgr, pt_w, pt_h
         )
 
-    photo_mask = _detect_photo_artwork_mask(bgr, table_mask, shape_fill_mask, paper_bgr)
+    photo_mask = _detect_photo_artwork_mask(
+        bgr, table_mask, shape_fill_mask, paper_bgr, diagram_shapes=diagram_shapes, pt_w=pt_w, pt_h=pt_h
+    )
 
     # Enmascarar trazos largos y formas ya extraidas antes del OCR global para lectura nitida sin bordes
     ocr_erase = cv2.bitwise_or(long_rules, shape_fill_mask)
@@ -1573,7 +1972,7 @@ def _analyze_bgr_region(
         borderless_tables = _detect_borderless_ocr_tables(words, ruled_tables, diagram_shapes, pt_w, pt_h)
 
     all_tables = ruled_tables + borderless_tables
-    all_lines = _words_to_lines(words)
+    all_lines = _words_to_lines(words, pt_w)
 
     # Asociar lineas adicionales si alguna linea suelta cayo dentro de una figura grande de diagrama
     table_rects = [pdf.Rect(t["bbox"]) for t in all_tables]
@@ -1597,10 +1996,18 @@ def _analyze_bgr_region(
         shape["embedded_lines"] = inner
 
     remaining_lines = [ln for idx, ln in enumerate(all_lines) if idx not in assigned_line_ids]
-    paragraphs = _group_paragraphs(remaining_lines, table_rects)
+    paragraphs = _group_paragraphs(remaining_lines, table_rects, pt_w)
 
     backdrop_png = _build_clean_backdrop(
-        bgr, paper_bgr, words + shape_words, ruled_tables, diagram_shapes, diagram_connectors, pt_w, pt_h
+        bgr,
+        paper_bgr,
+        words + shape_words,
+        ruled_tables,
+        diagram_shapes,
+        diagram_connectors,
+        pt_w,
+        pt_h,
+        photo_mask=photo_mask,
     )
 
     # Eliminar campos temporales pesados (arrays NumPy) de shapes antes de serializar
@@ -1664,6 +2071,7 @@ def analyze_scanned_page_for_office(
                 "paragraphs": _group_paragraphs(
                     [ln for ln in native["lines"] if tuple(ln["dir"]) == (1.0, 0.0)],
                     exclude,
+                    pt_w,
                 ),
                 "backdrop_png": None,
                 "ocr_applied": False,
@@ -1804,7 +2212,16 @@ def _draw_vector_analysis_on_pdf_page(
                 continue
             c_int = int(sp.get("color", 0))
             col_u = (((c_int >> 16) & 255) / 255.0, ((c_int >> 8) & 255) / 255.0, (c_int & 255) / 255.0)
-            font_code = "hebo" if (sp.get("flags", 0) & 16) else "helv"
+            font_str = str(sp.get("font", "Arial"))
+            flags = int(sp.get("flags", 0))
+            is_b = bool(flags & 16)
+            is_it = bool(flags & 2)
+            if "Times" in font_str or "ti" in font_str.lower():
+                font_code = "tibi" if (is_b and is_it) else "tibo" if is_b else "tiit" if is_it else "tiro"
+            elif "Courier" in font_str or "co" in font_str.lower():
+                font_code = "cobi" if (is_b and is_it) else "cobo" if is_b else "coit" if is_it else "cour"
+            else:
+                font_code = "hebi" if (is_b and is_it) else "hebo" if is_b else "heit" if is_it else "helv"
             spx, spy = sp.get("origin", (sp["bbox"][0], sp["bbox"][3] - 1.5))
             target_page.insert_text((ox + spx, oy + spy), txt, fontname=font_code, fontsize=sp["size"], color=col_u)
     if analysis["ocr_applied"] or all_text_lines:

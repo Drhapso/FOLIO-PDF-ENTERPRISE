@@ -9,6 +9,13 @@ import pikepdf
 import pymupdf as pdf
 from PIL import Image
 
+import sys
+from pathlib import Path
+
+_tests_dir = str(Path(__file__).resolve().parent)
+if _tests_dir not in sys.path:
+    sys.path.insert(0, _tests_dir)
+
 import test_platform as base
 from test_platform import sample_pdf
 
