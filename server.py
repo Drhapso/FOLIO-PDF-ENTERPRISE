@@ -26,7 +26,7 @@ from settings import ROOT, load_settings
 from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
 from recovery_events import install_recovery, report_failure, request_recovery
 
-CLIENT_BUILD = "2026-11-21-v2-enterprise-3"
+CLIENT_BUILD = "2026-11-21-v2-enterprise-5"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
@@ -135,6 +135,21 @@ def create_app(root: Path = ROOT) -> Flask:
     app.extensions["workload_queue"] = queue
     app.extensions["pdf_settings"] = config
     app.extensions["spool_dir"] = spool
+    pending_cleanups: set[Path] = set()
+    app.extensions["pending_cleanups"] = pending_cleanups
+
+    def sweep_cleanups() -> None:
+        for folder in list(pending_cleanups):
+            try:
+                if folder.is_dir() and not folder.is_symlink():
+                    shutil.rmtree(folder)
+                elif folder.is_file():
+                    folder.unlink(missing_ok=True)
+                pending_cleanups.discard(folder)
+            except OSError:
+                pass
+
+    app.extensions["sweep_cleanups"] = sweep_cleanups
 
     @app.before_request
     def enforce_origin():
@@ -276,7 +291,13 @@ def create_app(root: Path = ROOT) -> Flask:
             ticket = queue.enter(token, operation, request.content_length)
         except AdmissionError as error:
             LOG.warning("Admision de trabajo: HTTP %s", error.status)
+            try:
+                if request.stream:
+                    request.stream.close()
+            except Exception:
+                pass
             response = jsonify(error=str(error))
+            response.headers["Connection"] = "close"
             if error.status in (429, 503):
                 response.headers["Retry-After"] = "5"
             return response, error.status
@@ -334,9 +355,9 @@ def create_app(root: Path = ROOT) -> Flask:
             environment["CT2_USE_MKL"] = "0"
             environment["PYTHONDONTWRITEBYTECODE"] = "1"
             job_memory_mb = config["max_job_memory_mb"]
-            if operation == "translate_layout":
+            if operation in HEAVY_OPERATIONS or operation == "translate_layout":
                 budget_mb = int(config.get("performance", {}).get("memory_budget_mb", job_memory_mb))
-                job_memory_mb = max(job_memory_mb, min(1536, budget_mb))
+                job_memory_mb = max(job_memory_mb, min(2048, max(1536, budget_mb)))
             tree = ProcessTree(job_memory_mb)
             try:
                 with subprocess.Popen(
@@ -351,7 +372,13 @@ def create_app(root: Path = ROOT) -> Flask:
                         tree.close()
                         if child.poll() is None:
                             child.kill()
-                        child.wait()
+                        try:
+                            try:
+                                child.wait(timeout=5)
+                            except TypeError:
+                                child.wait()
+                        except (subprocess.TimeoutExpired, OSError):
+                            pass
                 if child.returncode or not (folder / "result.json").is_file():
                     rc = child.returncode
                     # 0xC00000A1 (STATUS_WORKING_SET_QUOTA_EXCEEDED), 0xC0000128 (STATUS_PAGEFILE_QUOTA_EXCEEDED) o SIGKILL (-9)

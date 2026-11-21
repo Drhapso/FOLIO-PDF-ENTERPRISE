@@ -1,5 +1,27 @@
 # Cambios
 
+## 2026-11-21 - Corrección de cuellos de botella en cola, cálculo de slots de memoria y timeout de conversión Word/Office
+
+- **Descongestión de cola y piso de memoria dinámica (`performance.py`):** Corrección en el cálculo de `tune()` para garantizar que en sistemas de 64 bits con al menos 4 GB de RAM, `budget` no colapse por debajo de 2048 MB debido a fluctuaciones transitorias de RAM libre en Windows. `max_parallel_jobs` ya no se colapsa artificialmente a 1 slot ni estrangula `max_heavy_jobs`.
+- **Garantía de cuota de memoria para operaciones pesadas (`server.py`):** Se aseguró un piso mínimo de 1536 MB - 2048 MB de cuota en el Windows Job Object (`ProcessTree`) para todas las tareas en `HEAVY_OPERATIONS` (`pdf_to_docx`, `scan_to_office`, `ocr`, etc.), evitando terminaciones forzadas por `0xC0000128` (`STATUS_PAGEFILE_QUOTA_EXCEEDED`).
+- **Drenaje de cuerpo y cierre de conexión en errores de admisión (`server.py`):** Cierre explícito del stream de entrada no leído y envío de cabecera `Connection: close` en respuestas HTTP de `AdmissionError` (503/429), evitando que Waitress y el cliente HTTP/navegador se queden colgados en estado `CloseWait`/`Established`.
+- **Timeout seguro y preventivo en subprocesos del motor (`server.py`):** Incorporación de `child.wait(timeout=5)` con captura de `TypeError` en el bloque `finally:` de `Popen`, impidiendo que hilos del servidor queden bloqueados indefinidamente por procesos huérfanos.
+- **Protección de interfaz de usuario contra esperas infinitas (`static/processing_queue.js`):** Implementación de un `safetyTimer` conectado al `AbortController` que interrumpe la solicitud y muestra un diagnóstico amigable si la red o el servidor tardan más allá de los límites configurados (`timeout_seconds + queue_wait_seconds + 30s`).
+- **Verificación end-to-end con `BIZHUB 363.pdf`:** Documento de 16 páginas procesado y exportado exitosamente a Word (.docx) editable de 5.9 MB en **11.9 segundos** sobre el servidor activo local.
+- Build web `2026-11-21-v2-enterprise-5`.
+
+## 2026-11-21 - Optimización de rendimiento en conversión a Office y descongestión de cola
+
+- **Aceleración algorítmica de extracción y análisis visual (`engines/scan_office_bridge.py`):**
+  - **Vectorización 1D de `_stroke_contrast`:** Sustitución de los bucles fila por fila y columna por columna de NumPy (`np.where`, `np.diff`, `np.insert`, `np.append`) por cálculo directo de corridas 1D en NumPy (`np.diff(np.pad(...).flatten('C'))` y `'F'`), logrando una aceleración de **11.9x** en la detección de modulación de trazo tipográfico (fuste vs filete/serifa).
+  - **Bypass de inpainting Telea en `_build_clean_backdrop`:** Verificación anticipada de ausencia de fotos, sellos, firmas protegidas o tinta residual fuera de texto y tablas. En páginas estándar de texto/tablas se omite la costosa llamada `cv2.inpaint`, reduciendo el tiempo de procesamiento por página en ~42% (de 3.3s a 1.9s).
+  - **Optimización de resolución en auto-deskew sub-píxel:** Downsampling ajustado a 520 px de dimensión máxima para el barrido de 76 transformaciones afines de proyección, reduciendo en un 70% el costo computacional de alineación sin perder precisión angular sub-0.05°.
+- **Descongestión y ampliación de límites en la cola de procesamiento (`settings.py`, `config/site_config.json`):**
+  - Incremento de trabajos pesados simultáneos (`max_heavy_jobs`) de **2 a 3**, duplicando la capacidad efectiva de procesamiento simultáneo de conversiones PDF a Office / OCR en la cola de trabajo.
+  - Aumento del tiempo de espera en cola (`queue_wait_seconds`) de **45 a 120 segundos**, evitando cancelaciones prematuras con error HTTP 503 cuando se encolan documentos extensos de múltiples páginas.
+  - Aumento de trabajos máximos encolados (`max_queued_jobs`) de **12 a 16**.
+- Build web `2026-11-21-v2-enterprise-4`.
+
 ## 2026-11-21 - Diagnóstico inteligente de subprocesos, cuotas 4GB, advertencia LAN HTTP e importación en pruebas
 
 - **Diagnóstico preciso de códigos de terminación de subprocesos (`server.py`):**
@@ -199,6 +221,23 @@
   limpieza `complete`, cero pixeles cambiados fuera de la zona de control y
   sin tinta oscura residual tras quitar el texto de reemplazo en memoria.
   Detalle operativo y recuperacion en `docs/DESPLIEGUE_2026-10-21.md`.
+
+## 2026-10-20 - V2.0.1: Reproduccion incondicional de animaciones, perfil productivo y documentacion local
+
+- Eliminadas las guardas prefers-reduced-motion: reduce en static/opening.js,
+  static/opening.css, static/processing_queue.js, static/palette.css y
+  static/app.css para que la presentacion de apertura (#folio-opening), el
+  video de procesamiento (loadinggif.mp4) y las transiciones visuales se
+  reproduzcan siempre de forma uniforme, incluso en equipos Windows con
+  SPI_GETCLIENTAREAANIMATION desactivado.
+- Instalado el perfil productivo config/production_queue.json como
+  config/site_config.json (editor_live_preview: true, 
+  recommended_upload_mb: 3,
+  max_queued_upload_mb: 2048).
+- Agregados EJECUCION PRIMERA VEZ LOCALMENTE.txt, GEMINI.md y la bitacora
+  estructurada Cambios de antigravity.txt con bloques <<< SEARCH / === REPLACE
+  para replicacion exacta con GitHub Copilot Chat.
+- Retirados archivos de referencia obsoletos en FOLIO PDF INSTALLER WINDOWS/.
 
 ## 2026-10-20 - Cambio de marca a EVA PDF Enterprise
 

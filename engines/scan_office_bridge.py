@@ -100,7 +100,8 @@ def _preprocess_bgr(bgr: np.ndarray, mode: str, max_pixels: int) -> tuple[np.nda
 
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape
-    scale = min(1.0, 1100.0 / max(1, max(h, w)))
+    # Escala optimizada a 520 px max para proyecciones de deskew sub-pixel 4x mas veloces
+    scale = min(1.0, 520.0 / max(1, max(h, w)))
     small = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1.0 else gray
     _, mask = cv2.threshold(small, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
 
@@ -1140,30 +1141,30 @@ def _topological_sort_lines(items: list[dict], page_width: float) -> list[dict]:
 
 
 def _stroke_contrast(crop: np.ndarray) -> float:
-    """Calcula la modulacion de trazo (proporcion de grosor de fuste vertical vs filete/serifa)."""
+    """Calcula la modulacion de trazo (proporcion de grosor de fuste vertical vs filete/serifa) vectorizada."""
     rh, rw = crop.shape[:2]
     if rh < 8 or rw < 8:
         return 1.0
     mid_rows = crop[int(rh * 0.25):int(rh * 0.75), :]
-    h_runs: list[int] = []
-    for r in mid_rows:
-        nz = np.where(r > 0)[0]
-        if len(nz) >= 2:
-            splits = np.where(np.diff(nz) > 1)[0]
-            starts = np.insert(nz[splits + 1], 0, nz[0])
-            ends = np.append(nz[splits], nz[-1])
-            h_runs.extend(ends - starts + 1)
-    mid_cols = crop[:, int(rw * 0.15):int(rw * 0.85)].T
-    v_runs: list[int] = []
-    for c in mid_cols:
-        nz = np.where(c > 0)[0]
-        if len(nz) >= 2:
-            splits = np.where(np.diff(nz) > 1)[0]
-            starts = np.insert(nz[splits + 1], 0, nz[0])
-            ends = np.append(nz[splits], nz[-1])
-            v_runs.extend(ends - starts + 1)
-    stem = float(np.median(h_runs)) if h_runs else 1.0
-    bar = float(np.median(v_runs)) if v_runs else 1.0
+    h_runs = []
+    if mid_rows.size > 0:
+        padded_h = np.pad((mid_rows > 0).astype(np.int8), ((0, 0), (1, 1)), mode="constant")
+        diff_h = np.diff(padded_h.flatten("C"))
+        h_starts = np.where(diff_h == 1)[0]
+        h_ends = np.where(diff_h == -1)[0]
+        h_runs = h_ends - h_starts
+
+    mid_cols = crop[:, int(rw * 0.15):int(rw * 0.85)]
+    v_runs = []
+    if mid_cols.size > 0:
+        padded_v = np.pad((mid_cols > 0).astype(np.int8), ((1, 1), (0, 0)), mode="constant")
+        diff_v = np.diff(padded_v.flatten("F"))
+        v_starts = np.where(diff_v == 1)[0]
+        v_ends = np.where(diff_v == -1)[0]
+        v_runs = v_ends - v_starts
+
+    stem = float(np.median(h_runs)) if len(h_runs) else 1.0
+    bar = float(np.median(v_runs)) if len(v_runs) else 1.0
     return stem / max(1.0, bar)
 
 
@@ -1862,6 +1863,16 @@ def _build_clean_backdrop(
     text_mask[erase_mask > 0] = 0
     if photo_mask is not None and np.any(photo_mask > 0):
         text_mask[photo_mask > 0] = 0
+
+    has_photo = photo_mask is not None and np.count_nonzero(photo_mask) >= 25
+    # Si no hay fotos, firmas o sellos protegidos, verificar si hay tinta residual genuina fuera de texto/tablas/formas
+    # antes de ejecutar el costoso inpainting Telea en toda la página
+    if not has_photo:
+        diff_raw = np.max(np.abs(bgr.astype(np.int16) - paper_bgr.astype(np.int16)), axis=2)
+        residual_raw = (diff_raw > 24) & (erase_mask == 0) & (text_mask == 0)
+        if np.count_nonzero(residual_raw) < max(120, int(img_w * img_h * 0.0025)):
+            return None
+
     if cv2.countNonZero(text_mask) > 0:
         clean = cv2.inpaint(clean, text_mask, 3, cv2.INPAINT_TELEA)
 

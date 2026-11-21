@@ -13,8 +13,10 @@
 - **Procesamiento 100 % local u offline.** Sin APIs remotas, CDN ni fuentes externas; CSP estricta (`script-src 'self'`).
 - **Privacidad por diseño.** No guarda historial ni biblioteca documental: SQLite almacena únicamente la tabla técnica `settings`, y cada carpeta temporal (`runtime/job-*`) se elimina antes de entregar la respuesta (`EVA00.<ext>` o `EVA00.zip`).
 - **Más de 60 herramientas en 3 niveles.** Interfaz organizada por complejidad —**Edición básica** (18), **Edición avanzada** (28), **Edición profesional** (15)— más flujo encadenado **Edición múltiple** y tarjetas descriptivas emergentes (*tooltips*).
-- **Aislamiento y cuotas controladas.** Subprocesos independientes por trabajo, cola acotada (hasta 5 motores en paralelo y 2 pesados configurables), lotes de hasta 200 archivos dentro de una cuota de 1 GB y calibración local de hardware.
+- **Aislamiento y cuotas controladas.** Subprocesos independientes por trabajo, cola acotada (hasta 5 motores en paralelo y 3 pesados configurables), lotes de hasta 200 archivos dentro de una cuota de 1 GB y calibración local de hardware.
 - **Temas claro y oscuro** con diseño adaptable.
+de animaciones de Windows. No se guardan documentos ni datos personales para ello.
+>>>>>>> Stashed changes
 
 ---
 
@@ -107,3 +109,33 @@ Las pruebas generan únicamente documentos sintéticos y directorios temporales 
 - [Registro técnico detallado (`Cambios de antigravity.txt`)](Cambios%20de%20antigravity.txt)
 
 > EVA PDF Enterprise prioriza tareas documentales locales y controladas en red interna; revisa siempre resultados sensibles (censuras, OCR, conversiones y firmas) antes de distribuirlos.
+
+## Licencias y límites
+
+El proyecto implementa herramientas propias; no incorpora código de Acrobat
+ni iLovePDF. PyMuPDF/MuPDF usa licencia AGPL o comercial: revisar obligaciones
+de publicación del código para uso por red, o contratar licencia comercial
+antes de distribuir un producto cerrado. LibreOffice y los modelos Tesseract
+tienen sus propias licencias. La instalación descarga modelos oficiales de
+`tesseract-ocr/tessdata_fast`, revisión fijada en el script (Apache-2.0).
+La ampliación utiliza pikepdf (MPL-2.0) y su motor qpdf; revisar sus avisos
+y obligaciones de distribución junto con los de las otras dependencias.
+OCR avanzado utiliza OpenCV/NumPy; HEIC utiliza pillow-heif/libheif y sus códecs;
+la comprobación de firmas utiliza pyHanko y cryptography.
+
+Esta aplicación no es una caja de aislamiento de seguridad del sistema operativo.
+Desplegar con una cuenta dedicada **sin privilegios administrativos**, sin acceso
+a otras bases o carpetas sensibles; mantener motores actualizados y restringir
+salida de red del procesador en el entorno de producción. No ejecutar como SYSTEM.
+Para documentos no confiables se recomienda una máquina/VM dedicada.
+
+## Recuperación operativa
+
+Durante el envío, la espera, el procesamiento y la descarga, el aviso inferior
+derecho muestra el recurso `loadinggif.mp4` junto al estado. La animación se
+reproduce sin sonido, en bucle y con bordes difuminados; se detiene y libera al
+finalizar o cancelar, sin depender de prefers-reduced-motion.
+
+Los servicios disponen de eventos rotativos, scripts de reinicio manual y supervisor
+con reintentos limitados ante fallos de memoria, limpieza y E/S. Consulte
+[RECUPERACION_SERVICIOS.md](RECUPERACION_SERVICIOS.md) para más detalles.

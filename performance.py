@@ -38,7 +38,12 @@ def hardware() -> dict:
 def tune(config: dict, profile: dict | None = None) -> dict:
     machine = hardware()
     # Reserva RAM para Windows, el servidor, cargas y las demas aplicaciones.
-    budget = int(min(machine["total_memory_mb"] * .5, machine["available_memory_mb"] * .6))
+    # En sistemas de 64 bits con memoria virtual/paginacion, garantiza un presupuesto minimo viable.
+    raw_budget = min(machine["total_memory_mb"] * .5, machine["available_memory_mb"] * .6)
+    if machine.get("available_memory_mb", 0) >= 512 and machine.get("total_memory_mb", 0) >= 4096:
+        budget = int(max(raw_budget, min(machine["total_memory_mb"] * .35, 2048)))
+    else:
+        budget = int(raw_budget)
     if budget < 256:
         raise RuntimeError("Memoria disponible insuficiente para iniciar los motores PDF.")
     slots = min(config["max_parallel_jobs"], max(1, machine["cpu_count"] // 2),
