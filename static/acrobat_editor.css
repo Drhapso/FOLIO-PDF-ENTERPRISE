@@ -288,6 +288,32 @@
   background: transparent;
 }
 
+/* Bloques con dudas de OCR / sospechosos (Acrobat TouchUp::FEAT_GetSuspectList) */
+.acro-block.is-suspect {
+  border-bottom: 2px dashed #f59e0b !important;
+  background-color: rgba(245, 158, 11, 0.08) !important;
+}
+
+.acro-block.is-suspect::after {
+  content: "⚠️";
+  position: absolute;
+  top: -11px;
+  right: -7px;
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+#acro-tool-suspects {
+  color: #f59e0b;
+  font-weight: 600;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+#acro-tool-suspects:hover {
+  background-color: rgba(245, 158, 11, 0.15);
+}
+
 /* Modo contornos visibles (TouchUpOutline) */
 .acro-show-outlines .acro-block {
   border-color: rgba(20, 115, 230, 0.45);

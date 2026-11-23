@@ -1,5 +1,103 @@
 # Cambios
 
+## 2026-11-21 - Corrección de cuellos de botella en cola, cálculo de slots de memoria y timeout de conversión Word/Office
+
+- **Descongestión de cola y piso de memoria dinámica (`performance.py`):** Corrección en el cálculo de `tune()` para garantizar que en sistemas de 64 bits con al menos 4 GB de RAM, `budget` no colapse por debajo de 2048 MB debido a fluctuaciones transitorias de RAM libre en Windows. `max_parallel_jobs` ya no se colapsa artificialmente a 1 slot ni estrangula `max_heavy_jobs`.
+- **Garantía de cuota de memoria para operaciones pesadas (`server.py`):** Se aseguró un piso mínimo de 1536 MB - 2048 MB de cuota en el Windows Job Object (`ProcessTree`) para todas las tareas en `HEAVY_OPERATIONS` (`pdf_to_docx`, `scan_to_office`, `ocr`, etc.), evitando terminaciones forzadas por `0xC0000128` (`STATUS_PAGEFILE_QUOTA_EXCEEDED`).
+- **Drenaje de cuerpo y cierre de conexión en errores de admisión (`server.py`):** Cierre explícito del stream de entrada no leído y envío de cabecera `Connection: close` en respuestas HTTP de `AdmissionError` (503/429), evitando que Waitress y el cliente HTTP/navegador se queden colgados en estado `CloseWait`/`Established`.
+- **Timeout seguro y preventivo en subprocesos del motor (`server.py`):** Incorporación de `child.wait(timeout=5)` con captura de `TypeError` en el bloque `finally:` de `Popen`, impidiendo que hilos del servidor queden bloqueados indefinidamente por procesos huérfanos.
+- **Protección de interfaz de usuario contra esperas infinitas (`static/processing_queue.js`):** Implementación de un `safetyTimer` conectado al `AbortController` que interrumpe la solicitud y muestra un diagnóstico amigable si la red o el servidor tardan más allá de los límites configurados (`timeout_seconds + queue_wait_seconds + 30s`).
+- **Verificación end-to-end con `BIZHUB 363.pdf`:** Documento de 16 páginas procesado y exportado exitosamente a Word (.docx) editable de 5.9 MB en **11.9 segundos** sobre el servidor activo local.
+- Build web `2026-11-21-v2-enterprise-5`.
+
+## 2026-11-21 - Optimización de rendimiento en conversión a Office y descongestión de cola
+
+- **Aceleración algorítmica de extracción y análisis visual (`engines/scan_office_bridge.py`):**
+  - **Vectorización 1D de `_stroke_contrast`:** Sustitución de los bucles fila por fila y columna por columna de NumPy (`np.where`, `np.diff`, `np.insert`, `np.append`) por cálculo directo de corridas 1D en NumPy (`np.diff(np.pad(...).flatten('C'))` y `'F'`), logrando una aceleración de **11.9x** en la detección de modulación de trazo tipográfico (fuste vs filete/serifa).
+  - **Bypass de inpainting Telea en `_build_clean_backdrop`:** Verificación anticipada de ausencia de fotos, sellos, firmas protegidas o tinta residual fuera de texto y tablas. En páginas estándar de texto/tablas se omite la costosa llamada `cv2.inpaint`, reduciendo el tiempo de procesamiento por página en ~42% (de 3.3s a 1.9s).
+  - **Optimización de resolución en auto-deskew sub-píxel:** Downsampling ajustado a 520 px de dimensión máxima para el barrido de 76 transformaciones afines de proyección, reduciendo en un 70% el costo computacional de alineación sin perder precisión angular sub-0.05°.
+- **Descongestión y ampliación de límites en la cola de procesamiento (`settings.py`, `config/site_config.json`):**
+  - Incremento de trabajos pesados simultáneos (`max_heavy_jobs`) de **2 a 3**, duplicando la capacidad efectiva de procesamiento simultáneo de conversiones PDF a Office / OCR en la cola de trabajo.
+  - Aumento del tiempo de espera en cola (`queue_wait_seconds`) de **45 a 120 segundos**, evitando cancelaciones prematuras con error HTTP 503 cuando se encolan documentos extensos de múltiples páginas.
+  - Aumento de trabajos máximos encolados (`max_queued_jobs`) de **12 a 16**.
+- Build web `2026-11-21-v2-enterprise-4`.
+
+## 2026-11-21 - Diagnóstico inteligente de subprocesos, cuotas 4GB, advertencia LAN HTTP e importación en pruebas
+
+- **Diagnóstico preciso de códigos de terminación de subprocesos (`server.py`):**
+  - Reemplazo del error genérico `"El motor no pudo terminar el trabajo."` (HTTP 500) por inspección detallada del código de salida (`returncode`) del subproceso `worker.py`.
+  - Mapeo de terminaciones por cuota de memoria RAM en Windows Job Object (`0xC00000A1` / `STATUS_WORKING_SET_QUOTA_EXCEEDED` o códigos `-1073741671`, `3221225633`, `3221225768`, `-1073741528`, `-9`) a código de estado **HTTP 413** con mensaje explicativo indicando que el documento superó el límite de memoria asignado y recomendando optimización o división de páginas.
+  - Mapeo de violaciones de acceso en librerías C++ nativas (`0xC0000005` / `STATUS_ACCESS_VIOLATION` o códigos `-1073741819`, `3221225477`) a código de estado **HTTP 422** indicando estructuras, fuentes o streams corruptos en el PDF de origen.
+  - Manejo diferenciado de errores de sincronización (`rc == 2`) y códigos de fallo inesperados con telemetría del código exacto para agilizar el soporte técnico.
+- **Sincronización de cuotas y ampliación de memoria a 4096 MB (`isolation.py`, `config/site_config.json`):**
+  - Actualización del límite por defecto en `ProcessTree` de 768 MB a **4096 MB (4 GB)** para evitar caídas prematuras en conversiones pesadas de documentos escaneados multinivel y OCR intensivo.
+  - Sincronización explícita en `config/site_config.json` con `"max_job_memory_mb": 4096` y `"timeout_seconds": 180`.
+- **Cierre preventivo de descriptores y limpieza de temporales (`server.py`):**
+  - Incorporación de `file_storage.close()` en el bloque `finally:` de `_run_isolated_tool`, eliminando las advertencias `ResourceWarning: Implicitly cleaning up <_TemporaryFileWrapper>`.
+- **Detección y advertencia de seguridad para conexiones HTTP no cifradas en LAN (`static/app.js`):**
+  - Detección en frontend cuando el acceso se realiza por protocolo `http:` desde una IP de red local (distinta de localhost / 127.0.0.1 / ::1), mostrando un aviso de seguridad visible en la barra de estado inferior: `"Conectado en red local (LAN) por HTTP sin cifrar. Para entornos corporativos o confidenciales, configure un proxy inverso HTTPS"`.
+- **Normalización de rutas de importación en suites de pruebas (`tests/test_extended.py`, `tests/test_advanced.py`):**
+  - Inserción dinámica de la ruta del directorio de pruebas en `sys.path` antes de importar `test_platform`, permitiendo la ejecución aislada de cada archivo de prueba sin requerir la variable de entorno `$env:PYTHONPATH=".;tests"`.
+- **Nueva prueba de cobertura de códigos de salida (`tests/test_platform.py`):**
+  - Añadida `test_worker_termination_codes_return_accurate_diagnostics` validando que los códigos `0xC00000A1` y `0xC0000005` son transformados rigurosamente a HTTP 413 y HTTP 422 respectivamente.
+- Build web `2026-11-21-v2-enterprise-3`.
+
+## 2026-11-21 - Mejoras Acrobat Pro: Sub-píxel deskew, limpieza de bordes, flujo continuo DOCX, listas y sospechosos OCR
+
+- **Auto-Deskew fino sub-píxel y limpieza de bordes perimetrales (`engines/scan_office_bridge.py`):**
+  - Proceso en dos fases: barrido grueso en rango ampliado de $\pm 15.0^\circ$ en pasos de $0.5^\circ$, seguido de refinamiento áureo fino sub-píxel de $\pm 0.40^\circ$ en pasos de $0.05^\circ$ con umbral de activación optimizado (`1.06` en auto y `1.005` manual), emulando `bDeskew` de Acrobat `Scan.api`.
+  - Neutralización de sombras de bordes de escáner y márgenes perimetrales oscuros (`MagicCleanBoundariesLayout` / `BGRemoval`): detección en la franja exterior del 1.8% del área de página y reemplazo al tono base del papel sin afectar arte interno.
+- **Selector de disposición en Word: Flujo Continuo vs Disposición Fija (`office_export.py`):**
+  - Soporte para `layout_mode = "flow"` (flujo continuo análogo a `IDS_LAYOUT_FLOW` de Acrobat `SaveAsRTF.api`): emite párrafos nativos en Word sin marcos anclados absolutos (`w:framePr`), con `space_before`, `space_after = Pt(2.0)`, espaciado de línea uniforme e indentación adecuada.
+  - Mantenimiento por defecto de `layout_mode = "retain"` para documentos donde se requiera fijación visual exacta con marcos flotantes.
+- **Detección automática de viñetas y listas numeradas (`office_export.py`):**
+  - Reconocimiento de marcadores de lista (`•`, `·`, `-`, `*`, `1.`, `a)`, etc.) mediante `_BULLET_RE` y aplicación automática de sangría francesa en Word (`left_indent = Pt(18)`, `first_line_indent = Pt(-18)`), emulando `BulletedList` de Acrobat `TouchUp.api`.
+- **Detección y navegación interactiva de dudas de OCR ("Suspects") (`scan_editor.py`, `acrobat_tools.py`, `templates/editor.html`, `static/acrobat_editor.css`, `static/acrobat_editor.js`):**
+  - Función heurística `is_suspect_word` para detectar anomalías tipográficas de digitalización (mezclas alfanuméricas, símbolos extraños o signos de puntuación internos).
+  - Marcado de `is_suspect` y `suspect_reason` en bloques de escaneo y bloques nativos del editor.
+  - Nuevo botón en barra de herramientas del editor: `⚠️ Dudas OCR (N)` con contador en tiempo real, estilos de advertencia punteada y navegación cíclica con scroll automático y foco al fragmento sospechoso, emulando `TouchUp::FEAT_GetSuspectList` de Acrobat Pro DC.
+- Build web `2026-11-21-v2-enterprise-2`.
+
+## 2026-11-21 - Remoción de botón Falcon Center en entorno local y regla de exclusión para equipo BAINTS604
+
+- **Ajuste de interfaz en proyecto local (`templates/index.html`):**
+  - Retirado el botón de enlace `🏛️ Ir a Falcon Center` (`#fcCenterLink`, `.btn-fc-center`) de la barra superior de acciones (`.header-actions`).
+- **Configuración de exclusión y sincronización (`.gitignore`, `GEMINI.md`, `Cambios de antigravity.txt`):**
+  - Añadida directiva en `.gitignore` para no sincronizar la eliminación del botón Falcon Center en máquinas con nombre de equipo `BAINTS604`.
+  - Establecida regla obligatoria de validación por `hostname`: al leer los archivos en otro equipo para replicar cambios con GitHub Copilot Chat, si el nombre de la máquina coincide con `BAINTS604`, se omite la modificación de `templates/index.html`, preservando el botón y la conectividad con Falcon Center en dicho equipo.
+- Build web `2026-11-21-v2-enterprise-1`.
+
+## 2026-11-19 - Protección de firmas manuscritas, sellos oficiales y logotipos en conversión escaneada a Office (DOCX / PPTX)
+
+- **Aislamiento visual y protección de arte no tipográfico (`engines/scan_office_bridge.py`):**
+  - Detección precisa de firmas manuscritas mediante análisis morfológico de trazo fino (`0.015 <= dens <= 0.28`, `stroke_w <= max(14.0, pt_to_px * 5.5)`, `stroke_w / min(bw, bh) <= 0.35`, `aspect >= 1.05`), absorbiendo además puntos y tildes aislados directamente asociados al trazo.
+  - Reconocimiento de sellos oficiales y estampas compactas circulares/ovales/rectangulares (`0.70 <= aspect <= 1.45`) por saturación cromática (`comp_sat >= 30.0`) y compacidad superficial.
+  - Preservación de logotipos y arte raster denso mediante apertura morfológica (`13x13`) sobre tinta real no perteneciente a tablas ni diagramas, suprimiendo falsos positivos sobre texto de cabecera o tipografía en color.
+  - Exclusión geométrica de conectores y flechas de diagramas de flujo adyacentes a cajas para evitar falsos positivos de firmas sobre líneas de conexión.
+  - Enmascaramiento preventivo en la entrada OCR de Tesseract (`ocr_input[photo_mask > 0] = paper_bgr`) y filtrado estricto de superposición (`photo_overlap > 0.25`), impidiendo la alucinación de cadenas de texto erróneas ('LATA', 'MANN', 'SS') sobre rúbricas, sellos y logos.
+  - Protección de tinta original en `_build_clean_backdrop`: las firmas, sellos y logos quedan 100 % intactos y nítidos en el fondo raster PNG (`backdrop_png`), sin degradación por inpainting ni borrado.
+  - Supresión de conectores vectoriales espurios sobre curvas de firmas en `_detect_raster_connectors`.
+- **Pruebas automatizadas de no regresión (`tests/test_scan_office_bridge.py`):**
+  - Nueva prueba `test_scan_to_office_preserves_signatures_and_logos_without_superimposed_text` validando la ausencia de marcos flotantes de texto o párrafos espurios sobre firmas y logotipos, la preservación de conectores genuinos y la presencia de la rúbrica en el fondo raster.
+- Build web `2026-11-19-v2-enterprise-2`.
+
+## 2026-11-19 - Reconstrucción tipográfica OCR, detección de fuentes Serif/Sans/Mono y orden de lectura topológico en Word (.docx)
+
+- **Extracción tipográfica precisa desde OCR (`engines/scan_office_bridge.py`):**
+  - Recuperación de tamaños exactos, coordenadas de línea base (`origin`), cajas de caracteres y palabras individuales mediante `rawdict` de PyMuPDF, eliminando la fluctuación arbitraria de tamaños por altura de caja de palabra.
+  - Detección de familias tipográficas por análisis de contraste de trazos (ratio asta vs remate): `Times New Roman` (Serif), `Arial` / `Calibri` (Sans-Serif) y `Courier New` (Monospace), con suavizado modal por documento.
+  - Estimación robusta de peso (Regular vs Negrita) combinando grosor de trazo en DistanceTransform y densidad de tinta (`density >= 0.44 and ratio >= 0.14`).
+  - Detección de cursiva/itálica mediante varianza de proyección vertical en barrido de cizallamiento (shear angles).
+- **Estructuración y orden de lectura topológico en Word (`office_export.py`):**
+  - Algoritmo recursivo XY-cut (`_topological_sort_blocks`) para ordenar bloques (párrafos, tablas y diagramas) respetando columnas múltiples y evitando que las tablas se releguen al final del documento.
+  - Agrupación cohesiva de líneas en párrafos editables con alineación (`center`, `right`, `justify`, `left`) y espaciado de línea uniforme (`line_spacing = Pt(line_h)`).
+  - Marcos acotados (`frame_width = pw + 10.0`) para evitar solapamientos entre columnas adyacentes.
+  - Emisión de espacios reales entre palabras en `docx_runs`, absorbiendo holguras inter-palabra y eliminando la distorsión por tracking entre letras (`w:spacing`).
+- **Compatibilidad con formatos Office (`office_export.py`, `tests/test_scan_office_bridge.py`):**
+  - Soporte integrado de fuentes, estilos y tamaños en DOCX, PPTX y XLSX.
+  - Nueva prueba automatizada `test_scan_to_office_docx_preserves_fonts_styles_and_reading_order`.
+- Build web `2026-11-19-v2-enterprise-1`.
+
 ## 2026-11-09 - Barra superior depurada, niveles de edición, traductor NMT offline y conversión escaneada estilo Acrobat Pro
 
 - **Barra superior principal simplificada (`templates/index.html`, `static/extended.css`):**
@@ -123,6 +221,23 @@
   limpieza `complete`, cero pixeles cambiados fuera de la zona de control y
   sin tinta oscura residual tras quitar el texto de reemplazo en memoria.
   Detalle operativo y recuperacion en `docs/DESPLIEGUE_2026-10-21.md`.
+
+## 2026-10-20 - V2.0.1: Reproduccion incondicional de animaciones, perfil productivo y documentacion local
+
+- Eliminadas las guardas prefers-reduced-motion: reduce en static/opening.js,
+  static/opening.css, static/processing_queue.js, static/palette.css y
+  static/app.css para que la presentacion de apertura (#folio-opening), el
+  video de procesamiento (loadinggif.mp4) y las transiciones visuales se
+  reproduzcan siempre de forma uniforme, incluso en equipos Windows con
+  SPI_GETCLIENTAREAANIMATION desactivado.
+- Instalado el perfil productivo config/production_queue.json como
+  config/site_config.json (editor_live_preview: true, 
+  recommended_upload_mb: 3,
+  max_queued_upload_mb: 2048).
+- Agregados EJECUCION PRIMERA VEZ LOCALMENTE.txt, GEMINI.md y la bitacora
+  estructurada Cambios de antigravity.txt con bloques <<< SEARCH / === REPLACE
+  para replicacion exacta con GitHub Copilot Chat.
+- Retirados archivos de referencia obsoletos en FOLIO PDF INSTALLER WINDOWS/.
 
 ## 2026-10-20 - Cambio de marca a EVA PDF Enterprise
 

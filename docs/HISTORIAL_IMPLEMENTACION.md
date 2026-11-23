@@ -88,7 +88,7 @@ esquinas y luces sutiles indican construccion sin usar logotipos de terceros.
 3. Emergente con relieve de papel, bruma, particulas y profundidad.
 4. Estado actual: pantalla completa sin recuadro ni boton de omitir, fondo real
    desenfocado, haces y estelas originales, cierre automatico a 4.5 s, Escape
-   y omision con `prefers-reduced-motion`. Sin sonido ni contenido remoto.
+   y reproduccion incondicional (desde V2.0.1 no se omite con `prefers-reduced-motion`). Sin sonido ni contenido remoto.
 
 Las referencias cinematograficas se usaron solo como orientacion general de
 movimiento/luz: no se incorporaron GIFs, montanas, coronas de estrellas,

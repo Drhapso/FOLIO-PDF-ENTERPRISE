@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 
 import pymupdf as pdf
+
+_BULLET_RE = re.compile(r"^([•\-\*\u00b7\u2022\u25cf\u25aa\u25cb]|\(?\d+[\.\)]|\(?[a-zA-Z][\.\)])\s+(.*)$")
 
 
 def contains(rect, bbox) -> bool:
@@ -164,7 +167,29 @@ def word_segments(span: dict) -> list[tuple[str, float, float, bool]]:
     """Split a span into words with exact PDF positions and whether whitespace precedes each word."""
     from pdf_engine import clean_text
 
+    if span.get("words"):
+        segments = []
+        for i, w in enumerate(span["words"]):
+            txt = clean_text(w.get("text", "")).strip()
+            if txt:
+                wb = w.get("bbox", span["bbox"])
+                segments.append((txt, float(wb[0]), float(wb[2]), i > 0))
+        if segments:
+            return segments
+
     if not span.get("chars"):
+        txt = clean_text(span.get("text", "")).strip()
+        parts = txt.split()
+        if len(parts) > 1:
+            total_chars = max(1, sum(len(p) for p in parts))
+            span_w = max(1.0, span["bbox"][2] - span["bbox"][0])
+            cur_x = span["bbox"][0]
+            segs = []
+            for i, p in enumerate(parts):
+                pw = span_w * (len(p) / total_chars)
+                segs.append((p, cur_x, cur_x + pw, i > 0))
+                cur_x += pw + (span_w * 0.04 / max(1, len(parts) - 1))
+            return segs
         return [(clean_text(span["text"]).strip(), span["bbox"][0], span["bbox"][2], span["text"][:1].isspace())]
     segments, word, start, end, spaced = [], "", 0.0, 0.0, False
     for char in span["chars"]:
@@ -183,7 +208,7 @@ def word_segments(span: dict) -> list[tuple[str, float, float, bool]]:
     return [segment for i, segment in enumerate(segments) if segment[0] or i == 0]
 
 
-def docx_runs(paragraph, lines: list[dict]) -> None:
+def docx_runs(paragraph, lines: list[dict], line_origin_x: float | None = None, allow_leading_space: bool = True) -> None:
     import math
     from docx.shared import Pt, RGBColor
 
@@ -210,13 +235,13 @@ def docx_runs(paragraph, lines: list[dict]) -> None:
             paragraph.add_run().add_break()
         cursor = previous = None
         # Gaps are measured from Word's emitted position so rounding never accumulates.
-        position = min(span["bbox"][0] for span in line["spans"])
+        position = line_origin_x if line_origin_x is not None else min(span["bbox"][0] for span in line["spans"])
         for span in line["spans"]:
             for order, (text, x0, x1, spaced) in enumerate(word_segments(span)):
                 if not text:
                     continue
                 spaced = spaced or (not order and cursor is not None and x0 - cursor > 1)
-                if (cursor is None and x0 - position > 0.5) or (cursor is not None and spaced):
+                if (cursor is None and allow_leading_space and x0 - position > 0.5) or (cursor is not None and spaced):
                     position += styled(" ", previous or span, max(0.0, x0 - position))
                 position += styled(text, span, x1 - x0)
                 cursor, previous = x1, span
@@ -251,7 +276,7 @@ def word_background(paragraph, image: bytes, width: float, height: float) -> Non
     inline.getparent().replace(inline, anchor)
 
 
-def word_frame(paragraph, bbox, page_width: float) -> None:
+def word_frame(paragraph, bbox, page_width: float, frame_width: float | None = None, line_height: float | None = None) -> None:
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.shared import Pt
@@ -259,15 +284,49 @@ def word_frame(paragraph, bbox, page_width: float) -> None:
     x0, y0, x1, y1 = bbox
     paragraph.paragraph_format.space_before = Pt(0)
     paragraph.paragraph_format.space_after = Pt(0)
-    paragraph.paragraph_format.line_spacing = Pt(max(1, y1 - y0))
+    lh = (y1 - y0) if line_height is None else line_height
+    paragraph.paragraph_format.line_spacing = Pt(max(1.0, lh))
     frame = OxmlElement("w:framePr")
+    fw = (page_width - x0) if frame_width is None else frame_width
+    fw = min(max(1.0, fw), max(1.0, page_width - x0))
     for key, value in {
         "x": str(round(x0 * 20)), "y": str(round(y0 * 20)),
-        "w": str(round(max(1, page_width - x0) * 20)),
+        "w": str(round(fw * 20)),
         "hAnchor": "page", "vAnchor": "page", "wrap": "none",
     }.items():
         frame.set(qn("w:" + key), value)
     paragraph._p.get_or_add_pPr().append(frame)
+
+
+def _topological_sort_blocks(items: list[dict], page_width: float) -> list[dict]:
+    """Orden de lectura topologico XY-Cut recursivo para bloques (parrafos, tablas, lineas)."""
+    if len(items) <= 1:
+        return items
+    pw = max(1.0, float(page_width))
+    mid_candidates = [pw * r for r in (0.50, 0.33, 0.67, 0.40, 0.60)]
+    best = None
+    for split_x in mid_candidates:
+        left = [b for b in items if b["bbox"][2] <= split_x + 12.0]
+        right = [b for b in items if b["bbox"][0] >= split_x - 12.0]
+        spanning = [b for b in items if b not in left and b not in right]
+        if len(left) >= 1 and len(right) >= 1 and (len(left) + len(right)) > len(spanning) * 0.8:
+            top_y = min((b["bbox"][1] for b in left + right), default=0.0)
+            bot_y = max((b["bbox"][3] for b in left + right), default=pw)
+            top_span = [b for b in spanning if b["bbox"][1] < top_y + 8.0]
+            bot_span = [b for b in spanning if b["bbox"][3] > bot_y - 8.0]
+            mid_span = [b for b in spanning if b not in top_span and b not in bot_span]
+            if len(mid_span) <= max(1, len(items) // 10):
+                best = (split_x, left, right, top_span, bot_span, mid_span)
+                break
+    if best:
+        split_x, left, right, top_span, bot_span, mid_span = best
+        sorted_top = sorted(top_span, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+        sorted_bot = sorted(bot_span, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+        sorted_mid = sorted(mid_span, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+        sorted_left = _topological_sort_blocks(left, split_x)
+        sorted_right = _topological_sort_blocks(right, pw - split_x)
+        return sorted_top + sorted_left + sorted_right + sorted_mid + sorted_bot
+    return sorted(items, key=lambda b: (round(b["bbox"][1] / 6.0), b["bbox"][0]))
 
 
 def word_table(result, content: dict, lines: list[dict], *, drawings: list[dict] | None = None, show_borders: bool = False) -> None:
@@ -415,6 +474,7 @@ def word_document(doc: pdf.Document, selected: list[int], output: Path, config: 
 
     opts = options or {}
     scan_editable = bool(opts.get("scan_editable_mode", False))
+    layout_mode = str(opts.get("layout_mode", "retain")).strip().lower()
     raw_dpi = opts.get("ocr_dpi", opts.get("dpi", 200))
     dpi = integer(200 if raw_dpi in (None, "") else raw_dpi, 100, 300, "DPI")
     stats = {"refined_pages": 0, "tables": 0, "diagrams": 0, "ocr_used": False}
@@ -453,20 +513,137 @@ def word_document(doc: pdf.Document, selected: list[int], output: Path, config: 
             bg_img = _render_diagrams_backdrop_for_word(scanned, config)
             if bg_img:
                 word_background(anchor, bg_img, sw, sh_pt)
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+
             lines = list(scanned["lines"])
             for sh in scanned["diagrams"]:
                 lines.extend(sh.get("embedded_lines", []))
-            for line in sorted(lines, key=lambda item: (item["bbox"][1], item["bbox"][0])):
-                spans = [span for span in line["spans"]
-                         if not any(contains(table["bbox"], span["bbox"]) for table in scanned["tables"])]
-                if not spans:
-                    continue
-                box = pdf.Rect(word_line_box(spans))
-                paragraph = result.add_paragraph()
-                word_frame(paragraph, tuple(box), sw)
-                docx_runs(paragraph, [{**line, "spans": spans}])
-            for table in scanned["tables"]:
-                word_table(result, table, lines, show_borders=True)
+
+            # Bloques estructurados para preservar orden de lectura de tablas, columnas y parrafos
+            blocks: list[dict] = []
+            for p in scanned.get("paragraphs", []):
+                clean_lines = []
+                for ln in p["lines"]:
+                    s_clean = [sp for sp in ln["spans"] if not any(contains(tbl["bbox"], sp["bbox"]) for tbl in scanned["tables"])]
+                    if s_clean:
+                        clean_lines.append({**ln, "spans": s_clean})
+                if clean_lines:
+                    blocks.append({
+                        "kind": "paragraph",
+                        "bbox": p["bbox"],
+                        "item": {**p, "lines": clean_lines},
+                    })
+
+            for tbl in scanned["tables"]:
+                blocks.append({
+                    "kind": "table",
+                    "bbox": tbl["bbox"],
+                    "item": tbl,
+                })
+
+            for sh in scanned["diagrams"]:
+                for el in sh.get("embedded_lines", []):
+                    blocks.append({
+                        "kind": "diagram_line",
+                        "bbox": el["bbox"],
+                        "item": el,
+                    })
+
+            if not any(b["kind"] == "paragraph" for b in blocks):
+                for line in scanned.get("lines", []):
+                    spans = [span for span in line["spans"]
+                             if not any(contains(table["bbox"], span["bbox"]) for table in scanned["tables"])]
+                    if spans:
+                        blocks.append({
+                            "kind": "line",
+                            "bbox": line["bbox"],
+                            "item": {**line, "spans": spans},
+                        })
+
+            sorted_blocks = _topological_sort_blocks(blocks, sw)
+
+            prev_bottom = 0.0
+            for block in sorted_blocks:
+                kind = block["kind"]
+                if kind == "paragraph":
+                    para_data = block["item"]
+                    p_lines = para_data["lines"]
+                    if not p_lines:
+                        continue
+                    px0, py0, px1, py1 = para_data["bbox"]
+                    align_str = para_data.get("align", "left")
+                    line_count = len(p_lines)
+                    line_h = float(para_data.get("line_h", max(6.0, (py1 - py0) / max(1, line_count))))
+                    pw = max(1.0, px1 - px0)
+
+                    paragraph = result.add_paragraph()
+                    p_full_text = " ".join("".join(s.get("text", "") for s in ln.get("spans", [])) for ln in p_lines).strip()
+                    is_bullet = bool(_BULLET_RE.match(p_full_text))
+
+                    if align_str == "center":
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    elif align_str == "right":
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    elif align_str == "justify":
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                    else:
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+                    if layout_mode == "flow":
+                        paragraph.paragraph_format.space_before = Pt(max(0.0, min(14.0, py0 - prev_bottom)))
+                        paragraph.paragraph_format.space_after = Pt(2.0)
+                        paragraph.paragraph_format.line_spacing = Pt(max(10.0, line_h))
+                        if is_bullet:
+                            paragraph.paragraph_format.left_indent = Pt(18.0)
+                            paragraph.paragraph_format.first_line_indent = Pt(-18.0)
+                        elif px0 > 24.0:
+                            paragraph.paragraph_format.left_indent = Pt(min(72.0, px0))
+                        docx_runs(paragraph, p_lines, line_origin_x=None, allow_leading_space=False)
+                    else:
+                        if is_bullet:
+                            paragraph.paragraph_format.left_indent = Pt(18.0)
+                            paragraph.paragraph_format.first_line_indent = Pt(-18.0)
+                        if align_str == "center":
+                            if abs(((px0 + px1) / 2.0) - (sw / 2.0)) <= 28.0:
+                                word_frame(paragraph, (0.0, py0, sw, py1), sw, frame_width=sw, line_height=line_h)
+                            else:
+                                word_frame(paragraph, (px0, py0, px1, py1), sw, frame_width=pw + 12.0, line_height=line_h)
+                            docx_runs(paragraph, p_lines, line_origin_x=None, allow_leading_space=False)
+                        elif align_str == "right":
+                            word_frame(paragraph, (px0, py0, px1, py1), sw, frame_width=pw + 12.0, line_height=line_h)
+                            docx_runs(paragraph, p_lines, line_origin_x=None, allow_leading_space=False)
+                        elif align_str == "justify":
+                            word_frame(paragraph, (px0, py0, px1, py1), sw, frame_width=pw + 10.0, line_height=line_h)
+                            docx_runs(paragraph, p_lines, line_origin_x=px0)
+                        else:
+                            word_frame(paragraph, (px0, py0, px1, py1), sw, frame_width=pw + 10.0, line_height=line_h)
+                            docx_runs(paragraph, p_lines, line_origin_x=px0)
+                    prev_bottom = py1
+
+                elif kind == "table":
+                    word_table(result, block["item"], lines, show_borders=True)
+
+                elif kind in ("diagram_line", "line"):
+                    line = block["item"]
+                    spans = line.get("spans", [])
+                    if not spans:
+                        continue
+                    box = pdf.Rect(word_line_box(spans))
+                    paragraph = result.add_paragraph()
+                    lw = max(1.0, box.x1 - box.x0)
+                    line_text = " ".join(s.get("text", "") for s in spans).strip()
+                    if _BULLET_RE.match(line_text):
+                        paragraph.paragraph_format.left_indent = Pt(18.0)
+                        paragraph.paragraph_format.first_line_indent = Pt(-18.0)
+                    if layout_mode == "flow":
+                        paragraph.paragraph_format.space_before = Pt(max(0.0, min(14.0, box.y0 - prev_bottom)))
+                        paragraph.paragraph_format.space_after = Pt(2.0)
+                        paragraph.paragraph_format.line_spacing = Pt(max(10.0, box.height))
+                    else:
+                        word_frame(paragraph, tuple(box), sw, frame_width=lw + 10.0)
+                    docx_runs(paragraph, [line])
+                    prev_bottom = box.y1
+
             end = result.add_paragraph()
             end.paragraph_format.space_after = Pt(0)
             end.paragraph_format.line_spacing = Pt(1)
@@ -498,7 +675,15 @@ def word_document(doc: pdf.Document, selected: list[int], output: Path, config: 
                 continue
             box = pdf.Rect(word_line_box(spans))
             paragraph = result.add_paragraph()
-            word_frame(paragraph, tuple(box), page.rect.width)
+            line_text = " ".join(s.get("text", "") for s in spans).strip()
+            if _BULLET_RE.match(line_text):
+                paragraph.paragraph_format.left_indent = Pt(18.0)
+                paragraph.paragraph_format.first_line_indent = Pt(-18.0)
+            if layout_mode == "flow":
+                paragraph.paragraph_format.space_after = Pt(2.0)
+                paragraph.paragraph_format.line_spacing = Pt(max(10.0, box.height))
+            else:
+                word_frame(paragraph, tuple(box), page.rect.width)
             docx_runs(paragraph, [{**line, "spans": spans}])
         for table in tables:
             word_table(result, table, lines)
@@ -521,6 +706,7 @@ def excel_document(doc: pdf.Document, selected: list[int], output: Path, config:
 
     opts = options or {}
     scan_editable = bool(opts.get("scan_editable_mode", False))
+    layout_mode = str(opts.get("layout_mode", "retain")).strip().lower()
     raw_dpi = opts.get("ocr_dpi", opts.get("dpi", 200))
     dpi = integer(200 if raw_dpi in (None, "") else raw_dpi, 100, 300, "DPI")
     stats = {"refined_pages": 0, "tables": 0, "diagrams": 0, "ocr_used": False}
@@ -777,6 +963,7 @@ def powerpoint_document(doc: pdf.Document, selected: list[int], output: Path, co
 
     opts = options or {}
     scan_editable = bool(opts.get("scan_editable_mode", False))
+    layout_mode = str(opts.get("layout_mode", "retain")).strip().lower()
     raw_dpi = opts.get("ocr_dpi", opts.get("dpi", 200))
     dpi = integer(200 if raw_dpi in (None, "") else raw_dpi, 100, 300, "DPI")
     stats = {"refined_pages": 0, "tables": 0, "diagrams": 0, "ocr_used": False}

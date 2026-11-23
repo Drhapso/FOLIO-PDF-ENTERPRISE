@@ -670,8 +670,10 @@ fetch("/api/capabilities").then(response=>{if(!response.ok)throw new Error();ret
   caps=data; const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente",data.addons?.nmt_offline?"Traducción ES↔EN offline lista":"Traducción NMT pendiente"];
   if (data.scanners && data.scanners.available) engines.push(`Escáner listo (${data.scanners.count})`);
   const hasStaleTools=tools.some(unavailableInBackend);
+  const isLanHttp = location.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(location.hostname);
   $("connection").textContent=`Motor local conectado · ${engines.join(" · ")} · ${limitLabel(data.max_upload_mb)} por sesión` +
-    (hasStaleTools ? " · ⚠ Servidor en memoria desactualizado: reinicia 'servidor local.bat' y recarga (Ctrl+F5)." : "");
+    (hasStaleTools ? " · ⚠ Servidor en memoria desactualizado: reinicia 'servidor local.bat' y recarga (Ctrl+F5)." : "") +
+    (isLanHttp ? " · ⚠ Acceso LAN sin cifrar (HTTP): active HTTPS/TLS en el servidor para proteger contraseñas y documentos." : "");
   renderTools();
   applyDesktopCapabilities(data);
   if($("workspace").open && current) {

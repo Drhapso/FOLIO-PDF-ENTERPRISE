@@ -51,6 +51,7 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
   if (signal?.aborted) abort();
   let finished = false;
   let timer;
+  let safetyTimer;
   let lastState = "";
   let lastMessage = "";
   let settings;
@@ -131,6 +132,13 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
       update("Carga superior al rango recomendado",
         "El archivo se admite, pero puede tardar más. Para una respuesta ágil, divide el lote si es posible.");
     }
+    const maxWaitSeconds = Math.max(
+      (settings?.timeout_seconds || 120) + (settings?.queue?.max_wait_seconds || 120) + 30,
+      240
+    );
+    safetyTimer = setTimeout(() => {
+      controller.abort();
+    }, maxWaitSeconds * 1000);
     timer = setTimeout(poll, 400);
     const result = await fetch("/api/process/" + operation, {
       method: "POST", body: form,
@@ -151,6 +159,7 @@ window.folioProcess = async function(operation, form, {signal} = {}) {
   } finally {
     finished = true;
     clearTimeout(timer);
+    clearTimeout(safetyTimer);
     controller.abort();
     signal?.removeEventListener("abort", abort);
     animation.pause();

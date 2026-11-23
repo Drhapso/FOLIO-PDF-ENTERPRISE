@@ -17,10 +17,13 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# 3. (Opcional pero recomendado) Descargar los modelos locales de OCR (espanol e ingles)
+# 3. Instalar el perfil de configuracion productivo (ignorado por Git)
+Copy-Item .\config\production_queue.json .\config\site_config.json -Force
+
+# 4. (Opcional pero recomendado) Descargar los modelos locales de OCR (espanol e ingles)
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\install-ocr.ps1
 
-# 4. (Opcional) Calibrar los motores segun el hardware de tu equipo
+# 5. (Opcional) Calibrar los motores segun el hardware de tu equipo
 .\.venv\Scripts\python.exe .\server.py --calibrate
 
 NOTA SOBRE OFFICE A PDF:
@@ -52,4 +55,3 @@ Con la consola del servidor abierta, entra en tu navegador a:
 - Aplicacion principal:          http://127.0.0.1:8090/
 - Editor PDF estilo Acrobat:     http://127.0.0.1:8090/editor
 - Estado de salud (JSON):        http://127.0.0.1:8090/health
-

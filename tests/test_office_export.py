@@ -295,6 +295,61 @@ class OfficeExportTests(unittest.TestCase):
                     self.assertGreater(sum(pixels[i + 1] > 80 and pixels[i] < 50 and pixels[i + 2] < 50
                                            for i in range(0, len(pixels), 3)), 100)
 
+    def test_word_flow_layout_mode_and_bullet_hanging_indent(self):
+        from docx.oxml.ns import qn
+        with pdf.open() as bullet_doc:
+            p = bullet_doc.new_page(width=400, height=300)
+            p.insert_text((40, 50), "• Elemento de lista con viñeta", fontname="helv", fontsize=11)
+            p.insert_text((40, 80), "1. Segundo elemento numerado", fontname="helv", fontsize=11)
+            p.insert_text((40, 110), "Parrafo continuo regular", fontname="helv", fontsize=11)
+            out_flow = self.folder / "flow.docx"
+            export_office("pdf_to_docx", bullet_doc, [0], self.folder, self.config, options={"layout_mode": "flow"})
+            doc_flow = Document(self.folder / "documento.docx")
+            
+            bullet_p = next(it for it in doc_flow.paragraphs if "Elemento de lista con viñeta" in it.text)
+            self.assertIsNone(bullet_p._p.pPr.find(qn("w:framePr")) if bullet_p._p.pPr is not None else None)
+            self.assertIsNotNone(bullet_p.paragraph_format.left_indent)
+            self.assertAlmostEqual(bullet_p.paragraph_format.left_indent.pt, 18.0, places=1)
+            self.assertAlmostEqual(bullet_p.paragraph_format.first_line_indent.pt, -18.0, places=1)
+
+            num_p = next(it for it in doc_flow.paragraphs if "Segundo elemento numerado" in it.text)
+            self.assertIsNone(num_p._p.pPr.find(qn("w:framePr")) if num_p._p.pPr is not None else None)
+            self.assertIsNotNone(num_p.paragraph_format.left_indent)
+            self.assertAlmostEqual(num_p.paragraph_format.left_indent.pt, 18.0, places=1)
+            self.assertAlmostEqual(num_p.paragraph_format.first_line_indent.pt, -18.0, places=1)
+
+            regular_p = next(it for it in doc_flow.paragraphs if "Parrafo continuo regular" in it.text)
+            self.assertIsNone(regular_p._p.pPr.find(qn("w:framePr")) if regular_p._p.pPr is not None else None)
+            self.assertAlmostEqual(regular_p.paragraph_format.space_after.pt, 2.0, places=1)
+
+    def test_ocr_suspect_word_detection(self):
+        from scan_editor import is_suspect_word
+        from acrobat_tools import extract_page_blocks
+
+        # Verificación de heurísticas de sospecha (Acrobat TouchUp::FEAT_GetSuspectList)
+        self.assertTrue(is_suspect_word("l1ke")[0])
+        self.assertTrue(is_suspect_word("cl0se")[0])
+        self.assertTrue(is_suspect_word("c0mp4ny")[0])
+        self.assertTrue(is_suspect_word("doc~ment")[0])
+        self.assertTrue(is_suspect_word("in|fo")[0])
+        self.assertTrue(is_suspect_word("auto.matic")[0])
+
+        self.assertFalse(is_suspect_word("Informe")[0])
+        self.assertFalse(is_suspect_word("Ventas")[0])
+        self.assertFalse(is_suspect_word("1250.00")[0])
+        self.assertFalse(is_suspect_word("OK")[0])
+
+        with pdf.open() as sdoc:
+            sp = sdoc.new_page(width=300, height=200)
+            sp.insert_text((30, 40), "Normal", fontname="helv", fontsize=12)
+            sp.insert_text((30, 70), "Suspect12w", fontname="helv", fontsize=12)
+            blocks = extract_page_blocks(sp)
+            normal_blk = next(b for b in blocks if "Normal" in b["text"])
+            suspect_blk = next(b for b in blocks if "Suspect12w" in b["text"])
+            self.assertFalse(normal_blk["is_suspect"])
+            self.assertTrue(suspect_blk["is_suspect"])
+            self.assertIn("alfanuméricos", suspect_blk["suspect_reason"])
+
     def test_http_conversion_keeps_editable_tables_and_fixed_export_names(self):
         from server import CLIENT_BUILD, create_app
 

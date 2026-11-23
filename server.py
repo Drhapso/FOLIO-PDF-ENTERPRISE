@@ -27,7 +27,7 @@ from settings import ROOT, load_settings
 from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
 from recovery_events import install_recovery, report_failure, request_recovery
 
-CLIENT_BUILD = "2026-11-10-v2-enterprise-8"
+CLIENT_BUILD = "2026-11-21-v2-enterprise-5"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
@@ -165,6 +165,21 @@ def create_app(root: Path = ROOT) -> Flask:
     app.extensions["workload_queue"] = queue
     app.extensions["pdf_settings"] = config
     app.extensions["spool_dir"] = spool
+    pending_cleanups: set[Path] = set()
+    app.extensions["pending_cleanups"] = pending_cleanups
+
+    def sweep_cleanups() -> None:
+        for folder in list(pending_cleanups):
+            try:
+                if folder.is_dir() and not folder.is_symlink():
+                    shutil.rmtree(folder)
+                elif folder.is_file():
+                    folder.unlink(missing_ok=True)
+                pending_cleanups.discard(folder)
+            except OSError:
+                pass
+
+    app.extensions["sweep_cleanups"] = sweep_cleanups
 
     if os.environ.get("PDF_TRUSTED_PROXY") == "1":
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
@@ -313,7 +328,13 @@ def create_app(root: Path = ROOT) -> Flask:
             ticket = queue.enter(token, operation, request.content_length)
         except AdmissionError as error:
             LOG.warning("Admision de trabajo: HTTP %s", error.status)
+            try:
+                if request.stream:
+                    request.stream.close()
+            except Exception:
+                pass
             response = jsonify(error=str(error))
+            response.headers["Connection"] = "close"
             if error.status in (429, 503):
                 response.headers["Retry-After"] = "5"
             return response, error.status
@@ -390,9 +411,9 @@ def create_app(root: Path = ROOT) -> Flask:
             environment["CT2_USE_MKL"] = "0"
             environment["PYTHONDONTWRITEBYTECODE"] = "1"
             job_memory_mb = config["max_job_memory_mb"]
-            if operation == "translate_layout":
+            if operation in HEAVY_OPERATIONS or operation == "translate_layout":
                 budget_mb = int(config.get("performance", {}).get("memory_budget_mb", job_memory_mb))
-                job_memory_mb = max(job_memory_mb, min(1536, budget_mb))
+                job_memory_mb = max(job_memory_mb, min(2048, max(1536, budget_mb)))
             tree = ProcessTree(job_memory_mb)
             try:
                 with subprocess.Popen(
@@ -407,9 +428,37 @@ def create_app(root: Path = ROOT) -> Flask:
                         tree.close()
                         if child.poll() is None:
                             child.kill()
-                        child.wait()
+                        try:
+                            try:
+                                child.wait(timeout=5)
+                            except TypeError:
+                                child.wait()
+                        except (subprocess.TimeoutExpired, OSError):
+                            pass
                 if child.returncode or not (folder / "result.json").is_file():
-                    raise ProcessingError("El motor no pudo terminar el trabajo.", 500)
+                    rc = child.returncode
+                    # 0xC00000A1 (STATUS_WORKING_SET_QUOTA_EXCEEDED), 0xC0000128 (STATUS_PAGEFILE_QUOTA_EXCEEDED) o SIGKILL (-9)
+                    if rc in (3221225633, -1073741671, 3221225768, -1073741528, -9):
+                        raise ProcessingError(
+                            f"El documento excedió la cuota de memoria RAM asignada al proceso ({job_memory_mb} MB). "
+                            "Reduzca la resolución DPI o procese menos páginas.",
+                            413,
+                        )
+                    # 0xC0000005 (STATUS_ACCESS_VIOLATION / Segfault en C++)
+                    if rc in (-1073741819, 3221225477):
+                        raise ProcessingError(
+                            "El documento contiene estructuras o fuentes malformadas que provocaron un fallo en el motor nativo. "
+                            "Pruebe primero a usar la herramienta 'Reparar PDF'.",
+                            422,
+                        )
+                    if rc == 2:
+                        raise ProcessingError("Error de sincronización con el subproceso del motor.", 500)
+                    if rc:
+                        raise ProcessingError(
+                            f"El motor terminó inesperadamente (código {rc}). El documento podría estar dañado o exceder los recursos del sistema.",
+                            500,
+                        )
+                    raise ProcessingError("El motor finalizó pero no generó el archivo de resultado.", 500)
             finally:
                 tree.close()
             result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
@@ -438,8 +487,16 @@ def create_app(root: Path = ROOT) -> Flask:
             failure = ("No se pudo completar el trabajo. Consulte al administrador.", 500)
         finally:
             try:
+                for file_storage in request.files.getlist("files"):
+                    try:
+                        file_storage.close()
+                    except Exception:
+                        pass
                 for upload in uploads:
-                    upload.close()
+                    try:
+                        upload.close()
+                    except Exception:
+                        pass
                 if folder is not None:
                     remove_job_folder(folder)
             except OSError as error:
