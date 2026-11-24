@@ -118,7 +118,7 @@
   }
 
   function urlFalconCenter() {
-    const host = window.location.hostname || "127.0.0.1";
+    const host = (window.location.hostname && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") ? window.location.hostname : "172.23.174.11";
     return `http://${host}:8000/`;
   }
 

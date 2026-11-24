@@ -20,6 +20,7 @@ import pymupdf as pdf
 from PIL import Image
 from flask import Flask, Request, jsonify, render_template, request, send_file
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from engines.registry import allowed_upload_suffixes
 from isolation import InstanceLock, ProcessTree, worker_command
@@ -32,17 +33,46 @@ CLIENT_BUILD = "2026-11-21-v2-enterprise-5"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
+MAX_ORPHAN_FOLDERS = 20
+_quarantine_folders: set[Path] = set()
+_quarantine_lock = threading.Lock()
+
+
+def _async_sweep_quarantine() -> None:
+    with _quarantine_lock:
+        to_sweep = list(_quarantine_folders)
+    for folder in to_sweep:
+        try:
+            shutil.rmtree(folder)
+            with _quarantine_lock:
+                _quarantine_folders.discard(folder)
+        except OSError:
+            pass
 mimetypes.add_type("application/wasm", ".wasm")
 mimetypes.add_type("application/octet-stream", ".evacrypt")
 mimetypes.add_type("application/json", ".evaboard")
 mimetypes.add_type("application/json", ".evatpl")
 
 
+def _handle_readonly_rmtree(func, path, exc_info):
+    import stat
+    exc = exc_info[1] if isinstance(exc_info, tuple) else exc_info
+    if getattr(exc, "winerror", None) == 5 or getattr(exc, "errno", None) == 13:
+        try:
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+            func(path)
+            return
+        except OSError:
+            pass
+    if exc:
+        raise exc
+
+
 def remove_job_folder(folder: Path) -> None:
     delays = (0.1, 0.2, 0.4, 0.8, 1.6)
     for attempt in range(len(delays) + 1):
         try:
-            shutil.rmtree(folder)
+            shutil.rmtree(folder, onerror=_handle_readonly_rmtree)
             return
         except FileNotFoundError:
             if not folder.exists():
@@ -153,6 +183,9 @@ def create_app(root: Path = ROOT) -> Flask:
 
     app.extensions["sweep_cleanups"] = sweep_cleanups
 
+    if os.environ.get("PDF_TRUSTED_PROXY") == "1":
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+
     @app.before_request
     def enforce_origin():
         if request.method == "POST":
@@ -242,6 +275,8 @@ def create_app(root: Path = ROOT) -> Flask:
 
     @app.get("/api/queue/<token>")
     def queue_status(token: str):
+        if not re.fullmatch(r"[a-f0-9]{32}", token):
+            return jsonify(error="Identificador de solicitud no valido."), 400
         status = queue.status(token)
         if status is None:
             return jsonify(error="Solicitud no registrada o ya finalizada."), 404
@@ -249,6 +284,8 @@ def create_app(root: Path = ROOT) -> Flask:
 
     @app.post("/api/queue/<token>/cancel")
     def queue_cancel(token: str):
+        if not re.fullmatch(r"[a-f0-9]{32}", token):
+            return jsonify(error="Identificador de solicitud no valido."), 400
         if not queue.cancel(token):
             return jsonify(error="La solicitud ya inicio o finalizo; no se puede cancelar en cola."), 409
         return jsonify(state="cancelled")
@@ -432,8 +469,27 @@ def create_app(root: Path = ROOT) -> Flask:
                 if suffix not in allowed_suffixes:
                     raise ProcessingError("Extension no admitida.")
                 name = f"entrada-{index:03}{suffix}"
-                upload.save(folder / name)
+                saved_path = folder / name
+                upload.save(saved_path)
                 upload.close()
+
+                prefix = f"Archivo {index + 1}: " if len(uploads) > 1 else ""
+                header = saved_path.read_bytes()[:16]
+                if suffix == ".pdf" and not header.startswith(b"%PDF-"):
+                    raise ProcessingError(f"{prefix}El documento no es un PDF valido.", 422)
+                elif suffix in (".docx", ".xlsx", ".pptx") and not header.startswith(b"PK\x03\x04"):
+                    raise ProcessingError(f"{prefix}El archivo de Office no tiene formato OpenXML válido.", 422)
+                elif suffix in (".jpg", ".jpeg") and not header.startswith(b"\xff\xd8\xff"):
+                    raise ProcessingError(f"{prefix}La imagen no coincide con el formato JPEG.", 422)
+                elif suffix == ".png" and not header.startswith(b"\x89PNG\r\n\x1a\n"):
+                    raise ProcessingError(f"{prefix}La imagen no coincide con el formato PNG.", 422)
+                elif suffix == ".webp" and not (header.startswith(b"RIFF") and len(header) >= 12 and header[8:12] == b"WEBP"):
+                    raise ProcessingError(f"{prefix}La imagen no coincide con el formato WebP.", 422)
+                elif suffix == ".bmp" and not header.startswith(b"BM"):
+                    raise ProcessingError(f"{prefix}La imagen no coincide con el formato BMP.", 422)
+                elif suffix in (".tif", ".tiff") and not (header.startswith(b"II*\x00") or header.startswith(b"MM\x00*")):
+                    raise ProcessingError(f"{prefix}La imagen no coincide con el formato TIFF.", 422)
+
                 files.append(name)
             (folder / "job.json").write_text(json.dumps({
                 "operation": operation, "files": files, "options": options, "config": config,
