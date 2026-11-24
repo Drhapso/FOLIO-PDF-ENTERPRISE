@@ -26,6 +26,9 @@
         <button type="button" id="acro-tool-add" class="acro-tool-btn" title="Hacer clic en la página para insertar un nuevo bloque de texto (TouchUpAddTextbox)">+ Agregar texto</button>
         <button type="button" id="acro-tool-outlines" class="acro-tool-btn active" title="Mostrar contornos de cuadros delimitadores de párrafos (TouchUpOutline)">▦ Contornos</button>
         <button type="button" id="acro-tool-find" class="acro-tool-btn" title="Buscar y reemplazar texto en el documento (TouchUpFindReplace)">⌕ Buscar</button>
+        <button type="button" id="acro-tool-sign" class="acro-tool-btn" title="Insertar firma manuscrita con eliminación de fondo">✍ Firmar</button>
+        <button type="button" id="acro-tool-snippet-ocr" class="acro-tool-btn" title="Seleccionar área para copiar texto con OCR al portapapeles">🔲 OCR de Área</button>
+        <button type="button" id="acro-tool-flatten" class="acro-tool-btn" title="Aplanar anotaciones, firmas y formularios en la página">▰ Aplanar</button>
         <button type="button" id="acro-tool-suspects" class="acro-tool-btn" title="Revisar y saltar entre dudas de OCR / palabras sospechosas (TouchUp::FEAT_GetSuspectList)" hidden>⚠️ Dudas OCR (<span id="acro-suspect-count">0</span>)</button>
         <button type="button" id="acro-tool-delete" class="acro-tool-btn" title="Eliminar el bloque de texto seleccionado">🗑 Eliminar</button>
       </div>
@@ -105,6 +108,7 @@
               <option value="rectangle">Rectángulo</option>
               <option value="note">Nota</option>
               <option value="redact">Censura irreversible</option>
+              <option value="snippet_ocr">🔲 OCR de Área (Copiar al portapapeles)</option>
             </select>
           </div>
           <div class="acro-form-group">
@@ -242,10 +246,10 @@
         </div>
       </aside>
 
-      <!-- Drawer Modular V2: Reflujo, Liquid PDF, Fuentes, LaTeX Vectorial, Traductor, WCAG + Audio-Tags y Co-Piloto -->
+      <!-- Drawer Modular V2: Reflujo, Liquid PDF, Fuentes, LaTeX Vectorial, Traductor, WCAG + Audio-Tags -->
       <aside id="acro-v2-drawer" class="acro-v2-drawer" aria-label="Herramientas avanzadas Suite V2" hidden>
         <div class="acro-rhp-title">SUITE INTELIGENTE V2</div>
-        <p id="v2-editor-status" class="v2-status-bar" role="status">Abre un PDF para usar Reflujo, LaTeX, Traducción, WCAG y Co-Piloto.</p>
+        <p id="v2-editor-status" class="v2-status-bar" role="status">Abre un PDF para usar Reflujo, LaTeX, Traducción y WCAG.</p>
         <div class="v2-field">
           <label for="v2-editor-pdf">PDF activo en Suite V2 (sincronizado al abrir)</label>
           <input id="v2-editor-pdf" type="file" accept=".pdf">
@@ -253,20 +257,6 @@
         <div id="v2-download-box" hidden><a id="v2-download-link" class="primary">Descargar resultado V2</a></div>
 
         <details open>
-          <summary><strong>#7 Co-Piloto Agéntico (Plan + Vista Previa)</strong></summary>
-          <div class="v2-field">
-            <label for="v2-copilot-prompt">Instrucción en lenguaje natural</label>
-            <textarea id="v2-copilot-prompt" rows="2" placeholder="Ej. Censurar todos los correos, agregar marca de agua CONFIDENCIAL y limpiar rastreo"></textarea>
-          </div>
-          <div class="v2-row">
-            <button id="v2-copilot-plan-btn" type="button" class="secondary">1. Generar Plan</button>
-            <button id="v2-copilot-apply-btn" type="button" class="primary" disabled>2. Aprobar y Aplicar</button>
-          </div>
-          <div id="v2-copilot-thumbs" class="v2-thumb-grid"></div>
-          <pre id="v2-copilot-json" class="v2-output-pre" hidden></pre>
-        </details>
-
-        <details>
           <summary><strong>#1 Reflujo Inteligente &amp; #3 Liquid PDF</strong></summary>
           <div class="v2-row">
             <button id="v2-reflow-btn" type="button" class="secondary">Reflujo Story (.pdf)</button>
@@ -310,6 +300,46 @@
         </details>
       </aside>
     </div>
+
+    <!-- Modal de Firma Manuscrita -->
+    <dialog id="acro-sign-dialog" class="acro-modal-dialog" aria-labelledby="acro-sign-title">
+      <div class="acro-modal-header">
+        <h3 id="acro-sign-title">✍ Insertar Firma Manuscrita</h3>
+        <button type="button" id="acro-sign-close" class="icon-button" aria-label="Cerrar firma">✕</button>
+      </div>
+      <div class="acro-modal-body">
+        <div class="acro-btn-group" style="margin-bottom: 0.75rem;">
+          <button type="button" id="acro-sign-tab-draw" class="acro-format-btn active">Trazar firma</button>
+          <button type="button" id="acro-sign-tab-upload" class="acro-format-btn">Cargar imagen</button>
+        </div>
+        <div id="acro-sign-pane-draw" class="acro-sign-pane">
+          <canvas id="acro-sign-canvas" width="480" height="160" class="acro-sign-canvas"></canvas>
+          <div class="acro-canvas-controls">
+            <button type="button" id="acro-sign-clear" class="secondary small">Limpiar</button>
+            <label><input type="color" id="acro-sign-color" value="#0f2042"> Color</label>
+            <label><input type="range" id="acro-sign-width" min="1" max="5" value="2"> Grosor</label>
+          </div>
+        </div>
+        <div id="acro-sign-pane-upload" class="acro-sign-pane" hidden>
+          <label class="primary acro-open-label" style="display:inline-block; margin-bottom: 0.5rem; cursor: pointer;">
+            Seleccionar archivo de firma
+            <input type="file" id="acro-sign-file" accept="image/*" hidden>
+          </label>
+          <div style="margin: 0.5rem 0;">
+            <label><input type="checkbox" id="acro-sign-autoremove-bg" checked> Eliminar fondo blanco de papel automáticamente</label>
+          </div>
+          <div id="acro-sign-preview-wrap" hidden>
+            <img id="acro-sign-preview" alt="Vista previa de firma" style="max-height: 100px; border: 1px dashed #888; background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 16px 16px;">
+          </div>
+        </div>
+      </div>
+      <div class="acro-modal-footer" style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <button type="button" id="acro-sign-cancel" class="secondary">Cancelar</button>
+        <button type="button" id="acro-sign-insert" class="primary">Insertar firma en la página</button>
+      </div>
+    </dialog>
+
+    <div id="acro-toast" class="acro-toast" hidden></div>
 
     <!-- Barra Inferior de Estado -->
     <footer class="acro-footer">

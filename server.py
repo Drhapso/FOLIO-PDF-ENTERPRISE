@@ -16,6 +16,8 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import pymupdf as pdf
+from PIL import Image
 from flask import Flask, Request, jsonify, render_template, request, send_file
 from werkzeug.exceptions import HTTPException
 
@@ -277,6 +279,98 @@ def create_app(root: Path = ROOT) -> Flask:
         except Exception as error:
             LOG.error("Fallo al iniciar accion de escritorio: %s", error)
             return jsonify(error="No se pudo iniciar la accion en el sistema."), 500
+
+    @app.post("/api/copilot/chat")
+    def copilot_chat():
+        from engines.copilot_service import process_copilot_request
+        prompt = request.form.get("prompt") or request.form.get("message") or ""
+        if not prompt and request.is_json:
+            data = request.get_json(silent=True) or {}
+            prompt = data.get("prompt") or data.get("message") or ""
+
+        file = request.files.get("file")
+        pdf_bytes = None
+        filename = "documento.pdf"
+        if file and file.filename:
+            filename = file.filename
+            pdf_bytes = file.read()
+
+        res = process_copilot_request(prompt, pdf_bytes, filename, config)
+        return jsonify(res)
+
+    @app.post("/api/signature/remove_background")
+    def signature_remove_bg():
+        import numpy as np
+        file = request.files.get("image") or request.files.get("file")
+        if not file:
+            return jsonify(error="No se envio imagen de firma."), 400
+        threshold = int(request.form.get("threshold", 215))
+        try:
+            img = Image.open(file.stream).convert("RGBA")
+            arr = np.array(img)
+            r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+            bright = 0.299 * r + 0.587 * g + 0.114 * b
+            max_diff = np.maximum(np.abs(r.astype(int) - g.astype(int)), np.abs(r.astype(int) - b.astype(int)))
+            is_bg = (bright > threshold) & (max_diff < 40)
+            arr[is_bg & (bright >= 240), 3] = 0
+            semi = is_bg & (bright < 240)
+            arr[semi, 3] = np.clip(255 * (1.0 - (bright[semi] - threshold) / max(240 - threshold, 1)), 0, 255).astype(np.uint8)
+            out_img = Image.fromarray(arr, "RGBA")
+            buf = io.BytesIO()
+            out_img.save(buf, format="PNG")
+            buf.seek(0)
+            return send_file(buf, mimetype="image/png", as_attachment=False)
+        except Exception as e:
+            LOG.error("Fallo al remover fondo: %s", e)
+            return jsonify(error="No se pudo procesar la imagen de firma."), 422
+
+    @app.post("/api/ocr_snippet")
+    def ocr_snippet():
+        file = request.files.get("file")
+        if not file:
+            return jsonify(error="Se requiere archivo PDF."), 400
+        page_num = int(request.form.get("page", 1))
+        x = float(request.form.get("x", 0))
+        y = float(request.form.get("y", 0))
+        w = float(request.form.get("w", 100))
+        h = float(request.form.get("h", 100))
+        password = request.form.get("password", "")
+
+        try:
+            pdf_bytes = file.read()
+            with pdf.open(stream=pdf_bytes, filetype="pdf") as doc:
+                if doc.needs_pass and not doc.authenticate(password):
+                    return jsonify(error="Contraseña incorrecta."), 403
+                if not (1 <= page_num <= len(doc)):
+                    return jsonify(error="Pagina fuera de rango."), 400
+                page = doc[page_num - 1]
+
+                pw, ph = page.rect.width, page.rect.height
+                rx0 = page.rect.x0 + pw * (x / 100.0)
+                ry0 = page.rect.y0 + ph * (y / 100.0)
+                rx1 = rx0 + pw * (w / 100.0)
+                ry1 = ry0 + ph * (h / 100.0)
+                clip_rect = pdf.Rect(rx0, ry0, rx1, ry1) & page.rect
+
+                if clip_rect.is_empty:
+                    return jsonify(text="", page=page_num, source="none")
+
+                native_text = page.get_text("text", clip=clip_rect).strip()
+                if len(native_text) >= 5:
+                    return jsonify(text=native_text, page=page_num, source="native")
+
+                caps = capabilities(config, root)
+                if caps.get("ocr"):
+                    import pytesseract
+                    pix = page.get_pixmap(clip=clip_rect, dpi=300)
+                    pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                    ocr_text = pytesseract.image_to_string(pil_img, lang="spa+eng").strip()
+                    return jsonify(text=ocr_text or native_text, page=page_num, source="ocr")
+
+                return jsonify(text=native_text, page=page_num, source="native")
+        except Exception as e:
+            LOG.error("Fallo en OCR de area: %s", e)
+            return jsonify(error=f"Error en OCR de area: {e}"), 500
 
     @app.post("/api/process/<operation>")
     def handle(operation: str):

@@ -175,7 +175,7 @@ function renderTools() {
   const visible = tools.filter(t => (activeCategory === "all" || t.level === activeCategory) && normalized(t.name+" "+t.desc+" "+(t.detail||"")+" "+(t.keywords||"")+" "+(LEVEL_LABELS[t.level]||"")).includes(query));
   for (const tool of visible) {
     const card = document.createElement("button");
-    card.className = "tool-card"; card.dataset.category = tool.category; card.dataset.level = tool.level || "basic";
+    card.className = "tool-card"; card.dataset.category = tool.category; card.dataset.level = tool.level || "basic"; card.dataset.toolId = tool.id;
     const icon = document.createElement("span"); icon.className="tool-icon"; icon.textContent=tool.icon; icon.setAttribute("aria-hidden","true");
     const title = document.createElement("h3"); title.textContent=tool.name;
     const desc = document.createElement("p"); desc.textContent=tool.desc;
@@ -328,7 +328,17 @@ function openTool(tool,{keepSessionFile=false}={}) {
   if(tool.id==="split") field("groups","Grupos de páginas",{placeholder:"Ej. 1-3;4-6;7",hint:"Separa grupos con punto y coma. Vacío: un PDF por página."});
   if(tool.id==="rotate") field("angle","Ángulo de giro",{choices:[["90","90° a la derecha"],["180","180°"],["270","90° a la izquierda"]],value:"90"});
   if(tool.id==="compress") {
-    field("compression","Tipo de compresión",{choices:[["lossless","Estructural, sin pérdida"],["raster","Visual, con pérdida (120 DPI)"]],value:"lossless",hint:"La compresión visual elimina texto seleccionable, OCR, formularios y enlaces. No se usa JBIG2 con pérdida."});
+    field("compression","Nivel de compresión",{
+      choices:[
+        ["medium","Equilibrada (Recomendada - Preserva texto y vectores)"],
+        ["low","Baja (Mínima reducción, máxima calidad visual)"],
+        ["high","Alta (Máxima reducción preservando texto y vectores)"],
+        ["lossless","Estructural, sin pérdida (Compacta estructura interna)"],
+        ["raster","Extrema / Rasterizada (120 DPI - Aplana a imagen)"]
+      ],
+      value:"medium",
+      hint:"Las opciones Equilibrada, Baja y Alta optimizan imágenes selectivamente conservando texto seleccionable, fuentes, formularios y enlaces intactos."
+    });
   }
   if(["ocr","pdf_to_images"].includes(tool.id)) field("dpi","Resolución (DPI)",{type:"number",value:tool.id==="ocr"?"200":"144",min:tool.id==="ocr"?100:72,max:300});
   if(tool.id==="ocr") field("preprocess","Preparación del escaneo",{choices:[["none","Sin preprocesamiento"],["deskew","Enderezar hasta 5°"],["clean","Enderezar y limpiar en blanco y negro"]],value:"none",hint:"No corrige giros de 90°/180°. La limpieza puede eliminar sellos o trazos tenues; revisa el resultado."});
@@ -345,6 +355,18 @@ function openTool(tool,{keepSessionFile=false}={}) {
     ["x","Izquierda %","10"],["y","Arriba %",tool.id==="stamp"?"70":"10"],
     ["width","Ancho %",tool.id==="stamp"?"30":"80"],["height","Alto %",tool.id==="stamp"?"15":"80"],
   ]) field(key,label,{type:"number",value,min:key==="width"||key==="height"?1:0,max:100});
+  if(tool.id==="stamp") {
+    field("remove_background","Eliminar fondo blanco",{
+      choices:[["true","Sí, eliminar fondo blanco de papel (firmas manuscritas)"],["false","No, mantener fondo original"]],
+      value:"true",
+      hint:"Vuelve transparentes los fondos blancos o claros de fotografías o escaneos para que solo resalte el trazo de tinta."
+    });
+    field("flatten","Aplanar documento",{
+      choices:[["false","No, mantener como capa/estampa"],["true","Sí, aplanar permanentemente (bancarizar)"]],
+      value:"false",
+      hint:"Bancariza e integra permanentemente la firma y campos en el flujo de la página para que nadie pueda extraerla o alterarla."
+    });
+  }
   if(["resize","nup"].includes(tool.id)) field("paper","Papel de salida",{choices:[["a4","A4"],["letter","Carta"],["legal","Oficio / Legal"]],value:"a4"});
   if(tool.id==="nup") field("per_sheet","Páginas por hoja",{choices:[["2","2"],["4","4"]],value:"4"});
   if(tool.id==="overlay") field("layer","Plantilla",{choices:[["foreground","Encima del documento"],["background","Como fondo"]],value:"foreground"});
@@ -850,3 +872,15 @@ $("desktop-print")?.addEventListener("click", async () => {
     window.print();
   }
 });
+
+window.openToolById = function(toolId, file) {
+  const t = tools.find(x => x.id === toolId);
+  if (t) {
+    openTool(t);
+    if (file) {
+      setTimeout(() => {
+        try { addFiles([file]); } catch(e){}
+      }, 80);
+    }
+  }
+};

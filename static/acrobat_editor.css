@@ -667,3 +667,76 @@
 .acro-status-dot.dirty {
   background: #e68a00;
 }
+
+/* Modal Dialogs (Firma, Snippet) */
+.acro-modal-dialog {
+  width: 90vw;
+  max-width: 520px;
+  border: 1px solid var(--border, rgba(198, 190, 246, 0.3));
+  border-radius: 12px;
+  background: var(--surface, #1e1b2e);
+  color: var(--text, #d5d1e6);
+  padding: 1.25rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  margin: auto;
+}
+
+.acro-modal-dialog::backdrop {
+  background: rgba(10, 15, 25, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.acro-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.acro-modal-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.acro-sign-canvas {
+  width: 100%;
+  height: 160px;
+  border: 1.5px dashed var(--border, #6259aa);
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.acro-canvas-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.acro-toast {
+  position: fixed;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e1b2e;
+  border: 1.5px solid #6259aa;
+  color: #ffffff;
+  padding: 0.65rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: acroToastIn 0.25s ease-out;
+}
+
+@keyframes acroToastIn {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}

@@ -45,7 +45,7 @@ window.saveFileForEditor = saveFileForEditor;
 window.retrieveFileForEditor = retrieveFileForEditor;
 
 (function() {
-  const regionLabels = { highlight: "Resaltado", rectangle: "Rectángulo", note: "Nota", redact: "Censura irreversible" };
+  const regionLabels = { highlight: "Resaltado", rectangle: "Rectángulo", note: "Nota", redact: "Censura irreversible", snippet_ocr: "OCR de Área" };
   const savedTheme = localStorage.getItem("folio-theme");
   if (savedTheme === "dark" || savedTheme === "light") document.documentElement.dataset.theme = savedTheme;
 
@@ -102,6 +102,10 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     dom.btnToolAdd = document.getElementById("acro-tool-add");
     dom.btnToolOutlines = document.getElementById("acro-tool-outlines");
     dom.btnToolFind = document.getElementById("acro-tool-find");
+    dom.btnToolSign = document.getElementById("acro-tool-sign");
+    dom.btnToolSnippetOcr = document.getElementById("acro-tool-snippet-ocr");
+    dom.btnToolFlatten = document.getElementById("acro-tool-flatten");
+    dom.toast = document.getElementById("acro-toast");
     dom.btnToolSuspects = document.getElementById("acro-tool-suspects");
     dom.suspectCount = document.getElementById("acro-suspect-count");
     dom.btnToolDelete = document.getElementById("acro-tool-delete");
@@ -253,7 +257,11 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       regionStart = null;
       dom.overlay.releasePointerCapture(event.pointerId);
       dom.overlay.querySelector(".acro-region-draft")?.remove();
-      addRegion(bbox);
+      if (state.activeTool === "snippet_ocr") {
+        performSnippetOcr(bbox);
+      } else {
+        addRegion(bbox);
+      }
     });
     dom.overlay.addEventListener("pointercancel", () => {
       regionStart = null;
@@ -275,6 +283,21 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     dom.btnFindClose.addEventListener("click", () => {
       dom.findBar.hidden = true;
       dom.btnToolFind.classList.remove("active");
+    });
+
+    dom.btnToolSnippetOcr?.addEventListener("click", () => {
+      setTool("snippet_ocr");
+      showToast("Modo OCR de Área activo: arrastra un recuadro sobre cualquier zona para copiar texto.");
+    });
+
+    dom.btnToolSign?.addEventListener("click", () => {
+      openSignDialog();
+    });
+
+    dom.btnToolFlatten?.addEventListener("click", async () => {
+      if (!state.file) return;
+      if (!confirm("¿Deseas aplanar el documento? Todas las firmas, notas y formularios se integrarán permanentemente.")) return;
+      saveChanges({ flatten: true });
     });
 
     if (dom.btnToolSuspects) {
@@ -443,6 +466,266 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     refreshBlockPositions();
   }
 
+  function showToast(message, duration = 4000) {
+    if (!dom.toast) return;
+    dom.toast.textContent = message;
+    dom.toast.hidden = false;
+    clearTimeout(dom.toast._timer);
+    dom.toast._timer = setTimeout(() => {
+      dom.toast.hidden = true;
+    }, duration);
+  }
+
+  async function performSnippetOcr(bbox) {
+    const x = Math.max(0, (bbox[0] / state.pageWidth) * 100);
+    const y = Math.max(0, (bbox[1] / state.pageHeight) * 100);
+    const w = Math.min(100 - x, ((bbox[2] - bbox[0]) / state.pageWidth) * 100);
+    const h = Math.min(100 - y, ((bbox[3] - bbox[1]) / state.pageHeight) * 100);
+
+    if (w < 1 || h < 1) return;
+
+    showToast("Reconociendo texto en el área seleccionada...");
+    try {
+      const fd = new FormData();
+      fd.append("file", state.file);
+      fd.append("page", state.currentPage);
+      fd.append("x", x.toFixed(2));
+      fd.append("y", y.toFixed(2));
+      fd.append("w", w.toFixed(2));
+      fd.append("h", h.toFixed(2));
+      const buildMeta = document.querySelector('meta[name="client-build"]')?.content || "";
+      const r = await fetch("/api/ocr_snippet", {
+        method: "POST",
+        headers: { "X-PDF-Client": buildMeta },
+        body: fd,
+      });
+      if (!r.ok) throw new Error("Fallo al reconocer texto.");
+      const data = await r.json();
+      const text = data.text || "";
+      if (text) {
+        await navigator.clipboard.writeText(text);
+        showToast("✓ Copiado al portapapeles (" + text.length + " caracteres): " + (text.length > 50 ? text.slice(0, 47) + "..." : text));
+      } else {
+        showToast("No se detectó texto en el área seleccionada.");
+      }
+    } catch (err) {
+      showToast("Error en OCR de área: " + err.message);
+    }
+  }
+
+  function renderSignatureBlock(block) {
+    const el = document.createElement("div");
+    el.className = "acro-block acro-block-added acro-signature-block";
+    el.dataset.id = block.id;
+    updateElementGeometry(el, block.bbox);
+    el.style.width = ((block.bbox[2] - block.bbox[0]) * state.currentScale) + "px";
+    el.style.height = ((block.bbox[3] - block.bbox[1]) * state.currentScale) + "px";
+    el.style.cursor = "move";
+    el.style.border = "1.5px dashed #00897b";
+    el.style.borderRadius = "4px";
+
+    const img = document.createElement("img");
+    img.src = block.image_data;
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.objectFit = "contain";
+    img.style.pointerEvents = "none";
+    el.appendChild(img);
+
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectBlock(block.id);
+    });
+
+    let isDragging = false;
+    let dragStart = null;
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      isDragging = true;
+      dragStart = [e.clientX, e.clientY];
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!isDragging || !dragStart) return;
+      const dx = (e.clientX - dragStart[0]) / state.currentScale;
+      const dy = (e.clientY - dragStart[1]) / state.currentScale;
+      dragStart = [e.clientX, e.clientY];
+      block.bbox[0] += dx;
+      block.bbox[1] += dy;
+      block.bbox[2] += dx;
+      block.bbox[3] += dy;
+      updateElementGeometry(el, block.bbox);
+      markDirty();
+    });
+    el.addEventListener("pointerup", (e) => {
+      isDragging = false;
+      dragStart = null;
+      try { el.releasePointerCapture(e.pointerId); } catch(ex){}
+    });
+
+    dom.overlay.appendChild(el);
+  }
+
+  let sigPadInitialized = false;
+  let activeSignatureData = null;
+
+  function openSignDialog() {
+    const dlg = document.getElementById("acro-sign-dialog");
+    if (!dlg) return;
+    dlg.showModal();
+    if (!sigPadInitialized) initSignaturePad();
+  }
+
+  function initSignaturePad() {
+    sigPadInitialized = true;
+    const dlg = document.getElementById("acro-sign-dialog");
+    const canvas = document.getElementById("acro-sign-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const tabDraw = document.getElementById("acro-sign-tab-draw");
+    const tabUpload = document.getElementById("acro-sign-tab-upload");
+    const paneDraw = document.getElementById("acro-sign-pane-draw");
+    const paneUpload = document.getElementById("acro-sign-pane-upload");
+    const btnClear = document.getElementById("acro-sign-clear");
+    const colorPicker = document.getElementById("acro-sign-color");
+    const widthSlider = document.getElementById("acro-sign-width");
+    const fileInput = document.getElementById("acro-sign-file");
+    const previewWrap = document.getElementById("acro-sign-preview-wrap");
+    const previewImg = document.getElementById("acro-sign-preview");
+    const checkRemoveBg = document.getElementById("acro-sign-autoremove-bg");
+    const btnInsert = document.getElementById("acro-sign-insert");
+    const btnCancel = document.getElementById("acro-sign-cancel");
+    const btnClose = document.getElementById("acro-sign-close");
+
+    let isDrawing = false;
+    let hasDrawn = false;
+
+    tabDraw?.addEventListener("click", () => {
+      tabDraw.classList.add("active");
+      tabUpload?.classList.remove("active");
+      if (paneDraw) paneDraw.hidden = false;
+      if (paneUpload) paneUpload.hidden = true;
+    });
+    tabUpload?.addEventListener("click", () => {
+      tabUpload.classList.add("active");
+      tabDraw?.classList.remove("active");
+      if (paneUpload) paneUpload.hidden = false;
+      if (paneDraw) paneDraw.hidden = true;
+    });
+
+    function getCanvasPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return [(e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY];
+    }
+
+    canvas.addEventListener("pointerdown", (e) => {
+      isDrawing = true;
+      hasDrawn = true;
+      ctx.beginPath();
+      const [x, y] = getCanvasPos(e);
+      ctx.moveTo(x, y);
+      ctx.strokeStyle = colorPicker?.value || "#0f2042";
+      ctx.lineWidth = parseInt(widthSlider?.value || 2, 10);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      canvas.setPointerCapture(e.pointerId);
+    });
+
+    canvas.addEventListener("pointermove", (e) => {
+      if (!isDrawing) return;
+      const [x, y] = getCanvasPos(e);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    });
+
+    canvas.addEventListener("pointerup", (e) => {
+      isDrawing = false;
+      try { canvas.releasePointerCapture(e.pointerId); } catch(ex){}
+    });
+
+    btnClear?.addEventListener("click", () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      hasDrawn = false;
+    });
+
+    fileInput?.addEventListener("change", async (e) => {
+      if (!e.target.files || !e.target.files[0]) return;
+      const f = e.target.files[0];
+      const buildMeta = document.querySelector('meta[name="client-build"]')?.content || "";
+
+      if (checkRemoveBg?.checked) {
+        showToast("Eliminando fondo blanco de papel...");
+        try {
+          const fd = new FormData();
+          fd.append("image", f);
+          const r = await fetch("/api/signature/remove_background", {
+            method: "POST",
+            headers: { "X-PDF-Client": buildMeta },
+            body: fd,
+          });
+          if (r.ok) {
+            const blob = await r.blob();
+            const reader = new FileReader();
+            reader.onload = () => {
+              activeSignatureData = reader.result;
+              if (previewImg) previewImg.src = reader.result;
+              if (previewWrap) previewWrap.hidden = false;
+              showToast("✓ Fondo blanco eliminado con éxito.");
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+        } catch (err) {}
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        activeSignatureData = reader.result;
+        if (previewImg) previewImg.src = reader.result;
+        if (previewWrap) previewWrap.hidden = false;
+      };
+      reader.readAsDataURL(f);
+    });
+
+    [btnCancel, btnClose].forEach(b => b?.addEventListener("click", () => dlg.close()));
+
+    btnInsert?.addEventListener("click", () => {
+      let dataUrl = null;
+      if (paneDraw && !paneDraw.hidden && hasDrawn) {
+        dataUrl = canvas.toDataURL("image/png");
+      } else if (paneUpload && !paneUpload.hidden && activeSignatureData) {
+        dataUrl = activeSignatureData;
+      }
+
+      if (!dataUrl) {
+        alert("Por favor traza una firma o selecciona una imagen antes de insertar.");
+        return;
+      }
+
+      const w = 180;
+      const h = 70;
+      const x0 = Math.max(20, (state.pageWidth - w) / 2);
+      const y0 = Math.max(20, (state.pageHeight - h) / 2);
+      const signBlock = {
+        id: "sig_" + Date.now(),
+        page: state.currentPage,
+        action: "signature",
+        bbox: [x0, y0, x0 + w, y0 + h],
+        image_data: dataUrl,
+      };
+
+      if (!state.addedBlocks.has(state.currentPage)) state.addedBlocks.set(state.currentPage, []);
+      state.addedBlocks.get(state.currentPage).push(signBlock);
+      renderSignatureBlock(signBlock);
+      markDirty();
+      dlg.close();
+      showToast("✓ Firma manuscrita insertada en la página. Haz clic en 'Guardar PDF editado' para consolidar.");
+    });
+  }
+
   // Inicialización y carga de documento
   window.openAcrobatEditor = async function(file) {
     if (!dom.viewport) initDom();
@@ -582,6 +865,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
     const addedList = state.addedBlocks.get(state.currentPage) || [];
     addedList.forEach(block => {
       if (regionLabels[block.action]) renderRegion(block);
+      else if (block.action === "signature" && block.image_data) renderSignatureBlock(block);
       else createBlockElement(block.id, block.bbox, block.text, block.font, block.size, block.color, block.bold, block.italic, block.align, true, true);
     });
     renderRegionList();
@@ -1127,7 +1411,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
   }
 
   // Guardar todas las modificaciones y descargar el PDF procesado
-  async function saveChanges() {
+  async function saveChanges(extraOptions = {}) {
     if (state.processing) return;
     const payloadChanges = [];
 
@@ -1159,7 +1443,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       list.forEach(b => payloadChanges.push(b));
     });
 
-    if (payloadChanges.length === 0) {
+    if (payloadChanges.length === 0 && !extraOptions.flatten) {
       alert("No hay modificaciones pendientes para guardar.");
       return;
     }
@@ -1179,6 +1463,7 @@ window.retrieveFileForEditor = retrieveFileForEditor;
       form.append("options", JSON.stringify({
         changes: payloadChanges, editor_preview: true, page: state.currentPage,
         experimental_preview: new URLSearchParams(window.location.search).get("multi") === "1",
+        ...(extraOptions || {})
       }));
 
       const res = await window.folioProcess("edit_text_pro", form);

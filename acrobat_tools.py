@@ -13,7 +13,7 @@ import pymupdf as pdf
 from pdf_engine import ProcessingError, check_size, integer, open_pdf, save
 
 ACROBAT_OPERATIONS = {"edit", "edit_text_pro"}
-REGION_ACTIONS = {"highlight", "rectangle", "note", "redact"}
+REGION_ACTIONS = {"highlight", "rectangle", "note", "redact", "stamp", "signature"}
 
 # Fuentes estándar de Windows y mapeo de fuentes comunes
 WINDOWS_FONTS_DIR = Path("C:/Windows/Fonts")
@@ -449,11 +449,19 @@ def process_acrobat(operation: str, sources: list[Path], options: dict, folder: 
                     annot.update()
                 elif action == "note":
                     page.add_text_annot(rect.top_left, change["text"])
+                elif action in ("stamp", "signature"):
+                    raw_data = change.get("image_data") or change.get("image")
+                    if raw_data:
+                        if "," in raw_data:
+                            raw_data = raw_data.split(",", 1)[1]
+                        page.insert_image(rect, stream=base64.b64decode(raw_data), overlay=True)
         if operation == "edit" or any(change.get("action") == "redact" for change in changes):
             doc.set_metadata({})
             doc.del_xml_metadata()
             for index in range(doc.embfile_count() - 1, -1, -1):
                 doc.embfile_del(index)
+        if options.get("flatten") in (True, "true", "1", 1):
+            doc.bake(annots=True, widgets=True)
         save(doc, output)
         if (options.get("editor_preview") is True
                 and options.get("experimental_preview") is True

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pikepdf
 import pymupdf as pdf
+import numpy as np
 from PIL import Image, ImageChops
 
 from pdf_engine import ProcessingError, check_size, integer, open_pdf, pages_from, render, save
@@ -380,14 +381,29 @@ def process_extended(operation: str, sources: list[Path], options: dict,
                     if image.width * image.height > config["max_render_pixels"]:
                         raise ProcessingError("Imagen demasiado grande.")
                     image = image.convert("RGBA")
+                    if options.get("remove_background") in (True, "true", "1", 1):
+                        arr = np.array(image)
+                        r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+                        bright = 0.299 * r + 0.587 * g + 0.114 * b
+                        max_diff = np.maximum(np.abs(r.astype(int) - g.astype(int)), np.abs(r.astype(int) - b.astype(int)))
+                        th = integer(options.get("bg_threshold", 215), 100, 254, "Umbral de fondo")
+                        is_bg = (bright > th) & (max_diff < 40)
+                        arr[is_bg & (bright >= 240), 3] = 0
+                        semi = is_bg & (bright < 240)
+                        arr[semi, 3] = np.clip(255 * (1.0 - (bright[semi] - th) / max(240 - th, 1)), 0, 255).astype(np.uint8)
+                        image = Image.fromarray(arr, "RGBA")
                     buffer = io.BytesIO()
                     image.save(buffer, format="PNG")
                 for index in selected:
                     page = doc[index]
                     unrotated(page)
                     page.insert_image(box(options, page), stream=buffer.getvalue(), overlay=True)
+                if options.get("flatten") in (True, "true", "1", 1):
+                    doc.bake(annots=True, widgets=True)
                 save(doc, output)
                 notice = "Imagen o firma visual, no firma digital con certificado ni prueba de identidad."
+                if options.get("flatten") in (True, "true", "1", 1):
+                    notice += " Documento aplanado: apariencia fijada permanentemente."
     check_size(output, config)
     return {"file": output.name, "notice": notice}
 
@@ -427,10 +443,24 @@ def compare_documents(left: pdf.Document, right: pdf.Document, folder: Path, con
             buffer = io.BytesIO()
             difference.save(buffer, format="PNG")
             archive.writestr(f"pagina-{index + 1:03}-diferencias.png", buffer.getvalue())
+            if changed and canvases[0] is not None and canvases[1] is not None:
+                arr0 = np.array(canvases[0])
+                arr1 = np.array(canvases[1])
+                diff_mask = np.any(np.abs(arr0.astype(int) - arr1.astype(int)) > 20, axis=2)
+                color_diff = arr1.copy()
+                del_mask = diff_mask & (np.mean(arr0, axis=2) < np.mean(arr1, axis=2))
+                add_mask = diff_mask & ~del_mask
+                color_diff[del_mask] = [230, 40, 40]
+                color_diff[add_mask] = [0, 160, 200]
+                buf_color = io.BytesIO()
+                Image.fromarray(color_diff).save(buf_color, format="PNG")
+                archive.writestr(f"pagina-{index + 1:03}-resaltado-color.png", buf_color.getvalue())
             check_size(output, config)
         report = folder / "informe.pdf"
         report_pdf(lines, report, config)
         archive.write(report, "informe.pdf")
-        archive.writestr("LEAME.txt", "Mapas: negro = sin diferencias; colores = diferencias. "
-                         "Cambios de posicion tambien producen diferencias. No compara semantica ni firmas.")
+        archive.writestr("LEAME.txt", "Mapas de diferencias:\n"
+                         "- pagina-XXX-diferencias.png: mapa binario directo (negro = sin diferencias).\n"
+                         "- pagina-XXX-resaltado-color.png: mapa intuitivo con resaltado (rojo = contenido original eliminado/modificado, cian = contenido nuevo agregado).\n"
+                         "Revise tambien los archivos .diff para cambios exactos de texto.")
     return output

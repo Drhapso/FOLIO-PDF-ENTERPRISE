@@ -19,6 +19,8 @@
   <script src="{{ url_for('static', filename='acrobat_editor.js', v=build) }}" defer></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='fc-transition.css', v=build) }}">
   <script src="{{ url_for('static', filename='fc-transition.js', v=build) }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='copilot.css', v=build) }}">
+  <script src="{{ url_for('static', filename='copilot.js', v=build) }}" defer></script>
 </head>
 <body data-fc-plataforma="eva_pdf" data-fc-sin-entrada="1">
   <dialog id="folio-opening" tabindex="-1" aria-label="Bienvenido a EVA PDF Enterprise" aria-describedby="opening-tagline">
@@ -77,6 +79,7 @@
     <a class="brand" href="/" aria-label="EVA PDF Enterprise, inicio"><span class="brand-icon">E</span>EVA<span class="brand-dot">.</span><span class="brand-suffix">PDF Enterprise</span></a>
     <div class="header-actions">
       <span class="network"><span></span> Entorno local</span>
+      <a href="#eva-copilot" class="header-copilot-link">✦ Copiloto IA Local</a>
       <a href="#privacidad" class="header-privacy-link">Privacidad</a>
       <button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button>
     </div>
@@ -88,6 +91,62 @@
       <p>Organiza, convierte y edita documentos desde tu navegador.<br class="wide-only"> Procesamiento local, sin nubes ni archivos olvidados.</p>
       <div class="hero-features"><span>✓ Sin registro</span><span>✓ Sin servicios externos</span><span>✓ Borrado al terminar</span></div>
       <div id="connection" class="connection" role="status">Comprobando motores locales…</div>
+    </section>
+
+    <!-- Sección Copiloto IA Local -->
+    <section id="eva-copilot" class="copilot-section" aria-labelledby="copilot-title">
+      <div class="copilot-container">
+        <div class="copilot-header">
+          <div class="copilot-badge">
+            <span class="copilot-sparkle">✦</span> ASISTENTE COPILOTO LOCAL · 100% PRIVADO & AGÉNTICO
+          </div>
+          <h2 id="copilot-title">¿En qué puedo ayudarte hoy con tus PDF?</h2>
+          <p class="copilot-subtitle">Pregúntame cómo realizar cualquier tarea, busca herramientas o arrastra un PDF para resumirlo, hacerle preguntas o ejecutar acciones agénticas.</p>
+        </div>
+
+        <div class="copilot-box">
+          <div class="copilot-input-row">
+            <div class="copilot-input-wrapper">
+              <span class="copilot-input-icon">✦</span>
+              <input type="text" id="copilot-input" class="copilot-input" placeholder="Escribe tu consulta o tarea (ej. ¿cómo comprimo sin perder texto?, censurar correos, comparar contratos...)" aria-label="Consulta para el Copiloto EVA">
+              <button type="button" id="copilot-send" class="copilot-btn-send" title="Consultar al Copiloto">Consultar</button>
+            </div>
+          </div>
+
+          <div class="copilot-chips" aria-label="Sugerencias rápidas">
+            <button type="button" class="copilot-chip" data-prompt="¿Cómo reduzco el tamaño de mi PDF manteniendo la calidad de texto y vectores?">⚡ Reducir peso de PDF</button>
+            <button type="button" class="copilot-chip" data-prompt="¿Cómo firmo un documento con mi firma manuscrita y le quito el fondo blanco?">✍ Firmar manuscrito</button>
+            <button type="button" class="copilot-chip" data-prompt="¿Cómo censuro información confidencial o DNI de forma irreversible?">🛡 Censurar datos sensibles</button>
+            <button type="button" class="copilot-chip" data-prompt="¿Cómo comparo visualmente dos versiones de un PDF?">⚖ Comparar dos versiones</button>
+            <button type="button" class="copilot-chip" data-prompt="Quiero reconocer texto de un PDF escaneado con OCR">🔍 Reconocer texto (OCR)</button>
+            <button type="button" class="copilot-chip" data-prompt="¿Cómo uno varios archivos PDF en un solo documento?">📑 Unir varios PDF</button>
+          </div>
+
+          <div class="copilot-dropzone" id="copilot-dropzone">
+            <input type="file" id="copilot-file-input" accept=".pdf" hidden>
+            <div class="copilot-drop-content" id="copilot-drop-content">
+              <span class="copilot-drop-icon">📄</span>
+              <div class="copilot-drop-text">
+                <strong>Arrastra un archivo PDF aquí</strong> o <label for="copilot-file-input" class="copilot-upload-link">haz clic para seleccionarlo</label>
+                <small>Para resumir su contenido, hacerle preguntas específicas o aplicar planes de censura/marca de agua.</small>
+              </div>
+            </div>
+            <div class="copilot-file-loaded" id="copilot-file-loaded" hidden>
+              <div class="copilot-loaded-info">
+                <span class="copilot-loaded-badge">PDF Activo</span>
+                <span id="copilot-loaded-name" class="copilot-loaded-name">documento.pdf</span>
+                <span id="copilot-loaded-meta" class="copilot-loaded-meta"></span>
+              </div>
+              <div class="copilot-loaded-actions">
+                <button type="button" id="copilot-btn-summarize" class="secondary small">📄 Resumir</button>
+                <button type="button" id="copilot-btn-remove-file" class="icon-button small" title="Quitar archivo">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="copilot-feed" class="copilot-feed" hidden></div>
+        </div>
+      </div>
     </section>
 
     <section id="herramientas" class="tools-section" aria-labelledby="tools-title">

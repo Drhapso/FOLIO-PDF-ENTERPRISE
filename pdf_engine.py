@@ -179,6 +179,65 @@ def save(document: pdf.Document, path: Path, **kwargs):
     document.save(path, garbage=4, deflate=True, use_objstms=1, **kwargs)
 
 
+def compress_embedded_images(doc: pdf.Document, target_dpi: int, quality: int) -> int:
+    """Optimiza imagenes XObject incrustadas reduciendo DPI excesivo y re-comprimiendo sin alterar texto ni vectores."""
+    processed_xrefs: dict[int, tuple[pdf.Page, float, float]] = {}
+    for page in doc:
+        for img_info in page.get_images(full=True):
+            xref = img_info[0]
+            if xref in processed_xrefs:
+                continue
+            rects = page.get_image_rects(xref)
+            if rects:
+                max_w = max(r.width for r in rects)
+                max_h = max(r.height for r in rects)
+            else:
+                max_w = page.rect.width
+                max_h = page.rect.height
+            processed_xrefs[xref] = (page, max(max_w, 1.0), max(max_h, 1.0))
+
+    replaced_count = 0
+    for xref, (page, disp_w, disp_h) in processed_xrefs.items():
+        try:
+            base_img = doc.extract_image(xref)
+            if not base_img:
+                continue
+            orig_bytes = base_img["image"]
+            orig_w = base_img["width"]
+            orig_h = base_img["height"]
+
+            if orig_w < 64 or orig_h < 64:
+                continue
+
+            eff_dpi = max((orig_w / disp_w) * 72.0, (orig_h / disp_h) * 72.0)
+            needs_downsample = eff_dpi > (target_dpi * 1.15)
+
+            pil_img = Image.open(io.BytesIO(orig_bytes))
+            if needs_downsample:
+                target_w = max(int(disp_w * target_dpi / 72.0), 32)
+                target_h = max(int(disp_h * target_dpi / 72.0), 32)
+                ratio = min(target_w / orig_w, target_h / orig_h)
+                if ratio < 0.95:
+                    new_size = (max(int(orig_w * ratio), 16), max(int(orig_h * ratio), 16))
+                    pil_img = pil_img.resize(new_size, Image.Resampling.LANCZOS)
+
+            out_buf = io.BytesIO()
+            if pil_img.mode in ("RGBA", "LA", "P"):
+                pil_img.save(out_buf, format="PNG", optimize=True)
+            else:
+                if pil_img.mode != "RGB":
+                    pil_img = pil_img.convert("RGB")
+                pil_img.save(out_buf, format="JPEG", quality=quality, optimize=True)
+
+            new_data = out_buf.getvalue()
+            if len(new_data) < len(orig_bytes):
+                page.replace_image(xref, stream=new_data)
+                replaced_count += 1
+        except Exception:
+            continue
+    return replaced_count
+
+
 def inspect_document(doc: pdf.Document, options: dict, config: dict) -> dict:
     from acrobat_tools import extract_page_blocks, text_background
     from scan_editor import editable_blocks
@@ -398,8 +457,19 @@ def process(operation: str, sources: list[Path], options: dict, folder: Path, co
                 save(doc, output)
             elif operation == "compress":
                 mode = options.get("compression", "lossless")
+                notice = "Compresion completada."
                 if mode == "lossless":
                     save(doc, output)
+                    notice = "Compresion estructural sin perdida: estructura compactada preservando fidelidad visual y datos."
+                elif mode in ("low", "medium", "high"):
+                    dpi_map = {"low": (200, 85), "medium": (150, 75), "high": (100, 62)}
+                    target_dpi, quality = dpi_map[mode]
+                    cnt = compress_embedded_images(doc, target_dpi, quality)
+                    save(doc, output)
+                    pct = 0
+                    if sources[0].stat().st_size > 0:
+                        pct = max(0, round((1.0 - output.stat().st_size / sources[0].stat().st_size) * 100))
+                    notice = f"Compresion {mode} completada ({pct}% de reduccion): {cnt} imagenes optimizadas; texto, formularios y vectores preservados."
                 elif mode == "raster":
                     with pdf.open() as reduced:
                         dpi = integer(options.get("dpi", 120), 72, 200, "DPI")
