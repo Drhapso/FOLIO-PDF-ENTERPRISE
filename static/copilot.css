@@ -346,3 +346,24 @@
 .copilot-plan-steps li {
   margin-bottom: 0.3rem;
 }
+
+.copilot-file-loaded[hidden],
+.copilot-drop-content[hidden],
+.copilot-feed[hidden] {
+  display: none;
+}
+
+.copilot-card-title-error {
+  color: #e57373;
+}
+
+.copilot-tools-row {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.copilot-apply-btn {
+  margin-top: 0.5rem;
+}

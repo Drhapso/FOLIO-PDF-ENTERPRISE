@@ -4816,3 +4816,139 @@ const BULK_TOOLS=new Set([...BATCH_TOOLS,"merge","images_to_pdf","dossier","sema
   - Comando 3 (Validación de test_office_export): `.\.venv\Scripts\python.exe -m unittest tests.test_office_export` -> 13 pruebas ejecutadas, 100% aprobadas.
   - Comando 4 (Prueba end-to-end con BIZHUB 363.pdf en servidor en vivo build 2026-11-21-v2-enterprise-5): `curl.exe -s -X POST "http://127.0.0.1:8090/api/process/pdf_to_docx" ...` -> Conversión exitosa en **11.93 segundos**, generando archivo Word editable de 5,935,666 bytes con 33 archivos XML internos íntegros.
 --------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+## [CAMBIO-026] 2026-11-24 07:26 - Endurecimiento CSP, visibilidad `[hidden]` y diagnostico HTTP 404 en AI Copilot
+- **Resumen / Motivo**: Al diagnosticar el error `Error en el servicio Copiloto (HTTP 404)` se confirmo que el proceso vivo de EVA PDF en el puerto 8090 seguia ejecutando una compilacion anterior (`2026-11-10-v2-enterprise-8`, iniciada el 2026-11-17) sin la ruta `POST /api/copilot/chat` cargada en memoria. Adicionalmente se corrigieron 3 atributos `style="..."` en linea dentro de `static/copilot.js` que violaban la politica estricta `Content-Security-Policy: style-src 'self'`, se aseguro que `.copilot-file-loaded[hidden]` / `.copilot-drop-content[hidden]` / `.copilot-feed[hidden]` respeten `[hidden]` frente a `display: flex`, se mejoro el manejo de errores HTTP (leyendo `errData.error` y orientando en caso de 404 por servidor sin reiniciar) y se actualizo `CLIENT_BUILD` a `"2026-11-24-copilot-1"`.
+- **Archivos modificados**:
+  - `server.py` (modificado)
+  - `static/copilot.css` (modificado)
+  - `static/copilot.js` (modificado)
+- **Detalle de implementacion para GitHub Copilot Chat**:
+  Archivo: `server.py` (Linea 32)
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-21-v2-enterprise-5"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-24-copilot-1"
+  >>> END
+
+  Archivo: `static/copilot.css` (Final del archivo)
+  <<< SEARCH
+  .copilot-plan-steps li {
+    margin-bottom: 0.3rem;
+  }
+  === REPLACE
+  .copilot-plan-steps li {
+    margin-bottom: 0.3rem;
+  }
+
+  .copilot-file-loaded[hidden],
+  .copilot-drop-content[hidden],
+  .copilot-feed[hidden] {
+    display: none;
+  }
+
+  .copilot-card-title-error {
+    color: #e57373;
+  }
+
+  .copilot-tools-row {
+    margin-top: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .copilot-apply-btn {
+    margin-top: 0.5rem;
+  }
+  >>> END
+
+  Archivo: `static/copilot.js` (Lineas 130-210)
+  <<< SEARCH
+          if (!res.ok) {
+            throw new Error(`Error en el servicio Copiloto (HTTP ${res.status})`);
+          }
+
+          const data = await res.json();
+          renderResponse(data);
+        } catch (err) {
+          feed.innerHTML = `
+            <div class="copilot-card-response">
+              <div class="copilot-card-title" style="color: #e57373;">⚠️ No se pudo completar la consulta</div>
+              <p class="copilot-reply-text">${escapeHtml(err.message)}</p>
+            </div>
+          `;
+        }
+      }
+
+      function renderResponse(data) {
+        let html = `<div class="copilot-card-response">`;
+
+        if (data.type === "summary") {
+          html += `
+            <div class="copilot-card-title"><span class="copilot-sparkle">✦</span> Resumen del Documento</div>
+            <p class="copilot-reply-text">${escapeHtml(data.reply)}</p>
+          `;
+          if (data.data && data.data.suggested_tools && data.data.suggested_tools.length) {
+            html += `<div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">`;
+            data.data.suggested_tools.forEach((t) => {
+              html += `<button type="button" class="copilot-tool-cta" data-tool="${t.id}">${t.icon} ${escapeHtml(t.name)}</button>`;
+            });
+            html += `</div>`;
+          }
+  === REPLACE
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            if (res.status === 404) {
+              throw new Error(
+                "Error en el servicio Copiloto (HTTP 404): la ruta /api/copilot/chat no está cargada en el servidor activo. Reinicie el servicio EVA PDF (puerto 8090) y recargue la página."
+              );
+            }
+            throw new Error(errData.error || `Error en el servicio Copiloto (HTTP ${res.status})`);
+          }
+
+          const data = await res.json();
+          renderResponse(data);
+        } catch (err) {
+          feed.innerHTML = `
+            <div class="copilot-card-response">
+              <div class="copilot-card-title copilot-card-title-error">⚠️ No se pudo completar la consulta</div>
+              <p class="copilot-reply-text">${escapeHtml(err.message)}</p>
+            </div>
+          `;
+        }
+      }
+
+      function renderResponse(data) {
+        let html = `<div class="copilot-card-response">`;
+
+        if (data.type === "summary") {
+          html += `
+            <div class="copilot-card-title"><span class="copilot-sparkle">✦</span> Resumen del Documento</div>
+            <p class="copilot-reply-text">${escapeHtml(data.reply)}</p>
+          `;
+          if (data.data && data.data.suggested_tools && data.data.suggested_tools.length) {
+            html += `<div class="copilot-tools-row">`;
+            data.data.suggested_tools.forEach((t) => {
+              html += `<button type="button" class="copilot-tool-cta" data-tool="${t.id}">${t.icon} ${escapeHtml(t.name)}</button>`;
+            });
+            html += `</div>`;
+          }
+  >>> END
+
+  <<< SEARCH
+            </ol>
+            <button type="button" id="copilot-apply-plan-btn" class="copilot-btn-send" style="margin-top: 0.5rem;">Aprobar y Ejecutar Plan</button>
+          `;
+  === REPLACE
+            </ol>
+            <button type="button" id="copilot-apply-plan-btn" class="copilot-btn-send copilot-apply-btn">Aprobar y Ejecutar Plan</button>
+          `;
+  >>> END
+- **Verificacion**:
+  - Comando 1: `node --check static/copilot.js` -> OK (sin errores de sintaxis).
+  - Comando 2: `.\.venv\Scripts\python.exe -m unittest tests.test_pdfgear_enhancements -v` -> 5/5 pruebas OK (incluyendo `test_04_copilot_chat_guidance_and_doc_qa`).
+  - Nota operativa: Reiniciar el servicio EVA PDF (puerto 8090) mediante `SCRIPTS_OPERACION_Y_DESPLIEGUE\reiniciar-folio.ps1` o `FOLIO PDF ENTERPRISE\servidor para LAN.bat` para que la nueva ruta `/api/copilot/chat` quede cargada en memoria.
+--------------------------------------------------------------------------------

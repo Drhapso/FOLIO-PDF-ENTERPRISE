@@ -128,7 +128,13 @@
         });
 
         if (!res.ok) {
-          throw new Error(`Error en el servicio Copiloto (HTTP ${res.status})`);
+          const errData = await res.json().catch(() => ({}));
+          if (res.status === 404) {
+            throw new Error(
+              "Error en el servicio Copiloto (HTTP 404): la ruta /api/copilot/chat no está cargada en el servidor activo. Reinicie el servicio EVA PDF (puerto 8090) y recargue la página."
+            );
+          }
+          throw new Error(errData.error || `Error en el servicio Copiloto (HTTP ${res.status})`);
         }
 
         const data = await res.json();
@@ -136,7 +142,7 @@
       } catch (err) {
         feed.innerHTML = `
           <div class="copilot-card-response">
-            <div class="copilot-card-title" style="color: #e57373;">⚠️ No se pudo completar la consulta</div>
+            <div class="copilot-card-title copilot-card-title-error">⚠️ No se pudo completar la consulta</div>
             <p class="copilot-reply-text">${escapeHtml(err.message)}</p>
           </div>
         `;
@@ -152,7 +158,7 @@
           <p class="copilot-reply-text">${escapeHtml(data.reply)}</p>
         `;
         if (data.data && data.data.suggested_tools && data.data.suggested_tools.length) {
-          html += `<div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">`;
+          html += `<div class="copilot-tools-row">`;
           data.data.suggested_tools.forEach((t) => {
             html += `<button type="button" class="copilot-tool-cta" data-tool="${t.id}">${t.icon} ${escapeHtml(t.name)}</button>`;
           });
@@ -196,7 +202,7 @@
         });
         html += `
           </ol>
-          <button type="button" id="copilot-apply-plan-btn" class="copilot-btn-send" style="margin-top: 0.5rem;">Aprobar y Ejecutar Plan</button>
+          <button type="button" id="copilot-apply-plan-btn" class="copilot-btn-send copilot-apply-btn">Aprobar y Ejecutar Plan</button>
         `;
       } else if (data.recommended_tool) {
         const t = data.recommended_tool;
