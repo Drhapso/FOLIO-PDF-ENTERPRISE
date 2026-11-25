@@ -136,7 +136,7 @@ function showToolTooltip(tool, card) {
   const head = document.createElement("div"); head.className = "tool-tooltip-head";
   const ico = document.createElement("span"); ico.className = "tool-tooltip-icon"; ico.textContent = tool.icon; ico.setAttribute("aria-hidden", "true");
   const title = document.createElement("span"); title.className = "tool-tooltip-title"; title.textContent = tool.name;
-  const tier = document.createElement("span"); tier.className = "tool-tooltip-tier"; tier.textContent = LEVEL_LABELS[tool.level] || "Local";
+  const tier = document.createElement("span"); tier.className = "tool-tooltip-tier"; tier.textContent = tool.tierLabel || LEVEL_LABELS[tool.level] || "Local";
   head.append(ico, title, tier);
   const body = document.createElement("p"); body.className = "tool-tooltip-body"; body.textContent = tool.detail || tool.desc;
   tip.append(head, body);
@@ -755,44 +755,247 @@ async function captureFile(video,name) {
   if(!blob)throw new Error("No se pudo crear la imagen.");
   return new File([blob],name,{type:"image/jpeg"});
 }
-function captureError(error) {
-  const messages={NotAllowedError:"Permiso denegado o captura cancelada. No se tomó ninguna imagen.",
-    NotFoundError:"No se encontró una cámara o fuente compatible.",NotReadableError:"El dispositivo está ocupado o no puede utilizarse."};
-  $("connection").textContent=messages[error.name] || error.message;
+let desktopStatusActionHandler = null;
+function setDesktopStatus(message, {isError = false, actionLabel = "", onAction = null} = {}) {
+  const box = $("desktop-status");
+  const textEl = $("desktop-status-text");
+  const actionBtn = $("desktop-status-action");
+  if (!box || !textEl) return;
+  if (!message) {
+    box.hidden = true;
+    box.classList.remove("is-error");
+    desktopStatusActionHandler = null;
+    if (actionBtn) actionBtn.hidden = true;
+    return;
+  }
+  textEl.textContent = message;
+  box.classList.toggle("is-error", Boolean(isError));
+  box.hidden = false;
+  desktopStatusActionHandler = typeof onAction === "function" ? onAction : null;
+  if (actionBtn) {
+    if (actionLabel && desktopStatusActionHandler) {
+      actionBtn.textContent = actionLabel;
+      actionBtn.hidden = false;
+    } else {
+      actionBtn.hidden = true;
+    }
+  }
 }
-$("camera-open").addEventListener("click",async()=>{
-  if(cameraStarting)return;
-  if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){
-    $("connection").textContent="Cámara no disponible: usa HTTPS en la LAN o importa una foto desde tu equipo.";return;
-  }
-  cameraStarting=true;stopCamera();$("camera-status").textContent="Solicitando permiso…";$("camera-shot").disabled=true;$("camera-dialog").showModal();
-  try{
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}},audio:false});
-    if(!$("camera-dialog").open || document.hidden){stream.getTracks().forEach(track=>track.stop());return;}
-    cameraStream=stream;$("camera-video").srcObject=stream;await $("camera-video").play();
-    $("camera-status").textContent="Cámara activa. Pulsa Capturar cuando estés listo.";$("camera-shot").disabled=false;
-  }catch(error){closeCamera();captureError(error);}
-  finally{cameraStarting=false;}
+$("desktop-status-action")?.addEventListener("click", () => {
+  if (typeof desktopStatusActionHandler === "function") desktopStatusActionHandler();
 });
-$("camera-shot").addEventListener("click",async()=>{
-  $("camera-shot").disabled=true;
-  try{
-    const file=await captureFile($("camera-video"),"captura-camara.jpg");
-    closeCamera();openTool(tools.find(tool=>tool.id==="images_to_pdf"));addFiles([file]);
-  }catch(error){closeCamera();captureError(error);}
-});
-$("screen-capture").addEventListener("click",async()=>{
-  if(!window.isSecureContext || !navigator.mediaDevices?.getDisplayMedia){
-    $("connection").textContent="Captura no disponible: usa HTTPS y un navegador compatible, o importa una captura guardada.";return;
+
+const DESKTOP_ACTIONS_INFO = {
+  "desktop-scan": {
+    id: "desktop-scan",
+    icon: "🖥️",
+    name: "Complemento Windows · Escáner WIA",
+    tierLabel: "Hardware local",
+    detail: "Abre el asistente nativo de escaneo WIA de Windows en tu equipo para digitalizar hojas desde tu escáner físico y guardarlas en PNG de alta calidad. Desde otro equipo de la red descarga el complemento local EVA-Desktop.ps1.",
+    io: "Entrada: Escáner WIA físico · Salida: Imagen PNG local → Imágenes a PDF",
+  },
+  "camera-open": {
+    id: "camera-open",
+    icon: "📷",
+    name: "Tomar foto para PDF",
+    tierLabel: "Cámara local",
+    detail: "Activa la cámara de tu equipo o dispositivo para fotografiar documentos, facturas o actas y cargarlos automáticamente en la herramienta Imágenes a PDF. En conexiones HTTP sin HTTPS abre el selector nativo de cámara/foto.",
+    io: "Entrada: Cámara o fotografía · Salida: Foto cargada en Imágenes a PDF",
+  },
+  "screen-capture": {
+    id: "screen-capture",
+    icon: "🖼️",
+    name: "Capturar pantalla para PDF",
+    tierLabel: "Captura local",
+    detail: "Captura una ventana, pestaña o pantalla completa directamente desde el navegador y envía la imagen automáticamente a Imágenes a PDF para convertirla en PDF. Requiere HTTPS o localhost (en HTTP facilita abrir Imágenes a PDF).",
+    io: "Entrada: Ventana o pantalla · Salida: Captura cargada en Imágenes a PDF",
+  },
+  "desktop-print": {
+    id: "desktop-print",
+    icon: "🖨️",
+    name: "Imprimir documento",
+    tierLabel: "Impresión local",
+    detail: "Abre el selector de archivos PDF para enviarlo a tu impresora física de Windows o a Microsoft Print to PDF. Desde otros equipos de la LAN permite seleccionar un PDF local y abrirlo en una pestaña lista para imprimir con Ctrl+P.",
+    io: "Entrada: Archivo .pdf local · Salida: Cola de impresión local",
+  },
+  "desktop-help": {
+    id: "desktop-help",
+    icon: "❓",
+    name: "¿Cómo usar esta función?",
+    tierLabel: "Guía rápida",
+    detail: "Abre la guía paso a paso con el listado de dispositivos detectados en el equipo y explica cómo usar el escáner WIA, la cámara, la captura de pantalla y la impresión local.",
+    io: "Ventana de ayuda interactiva · Sin envío de archivos",
+  },
+};
+
+function attachDesktopActionTooltips() {
+  Object.entries(DESKTOP_ACTIONS_INFO).forEach(([id, info]) => {
+    const btn = $(id);
+    if (!btn || btn.dataset.tooltipBound === "1") return;
+    btn.dataset.tooltipBound = "1";
+    btn.title = info.detail;
+    btn.addEventListener("pointerenter", (e) => {
+      if (e.pointerType !== "touch") scheduleToolTooltip(info, btn, 150);
+    });
+    btn.addEventListener("pointerleave", hideToolTooltip);
+    btn.addEventListener("pointerdown", hideToolTooltip);
+    btn.addEventListener("focus", () => {
+      if (btn.matches(":focus-visible")) scheduleToolTooltip(info, btn, 60);
+    });
+    btn.addEventListener("blur", hideToolTooltip);
+  });
+}
+attachDesktopActionTooltips();
+
+function waitForVideoReady(video, timeoutMs = 4000) {
+  if (video.videoWidth > 0 && video.videoHeight > 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (fn, arg) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      video.removeEventListener("loadedmetadata", onReady);
+      video.removeEventListener("loadeddata", onReady);
+      fn(arg);
+    };
+    const onReady = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) done(resolve);
+    };
+    const timer = setTimeout(() => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) done(resolve);
+      else done(reject, new Error("La fuente de vídeo aún no está lista. Inténtalo de nuevo."));
+    }, timeoutMs);
+    video.addEventListener("loadedmetadata", onReady);
+    video.addEventListener("loadeddata", onReady);
+  });
+}
+
+function openImagesToPdfWithFiles(fileList) {
+  const imgTool = tools.find((tool) => tool.id === "images_to_pdf");
+  if (!imgTool) return;
+  openTool(imgTool);
+  if (fileList && fileList.length) {
+    addFiles(Array.from(fileList));
   }
-  let stream=null,video=null;
-  try{
-    stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
-    video=document.createElement("video");video.muted=true;video.srcObject=stream;await video.play();
-    const file=await captureFile(video,"captura-pantalla.jpg");
-    openTool(tools.find(tool=>tool.id==="images_to_pdf"));addFiles([file]);
-  }catch(error){captureError(error);}
-  finally{if(stream)stream.getTracks().forEach(track=>track.stop());if(video)video.srcObject=null;}
+}
+
+$("desktop-photo-fallback")?.addEventListener("change", (e) => {
+  const picked = e.target.files;
+  if (!picked || !picked.length) return;
+  openImagesToPdfWithFiles(picked);
+  setDesktopStatus("Imagen cargada en Imágenes a PDF. Pulsa Procesar documento para generar tu PDF.");
+  e.target.value = "";
+});
+
+$("desktop-print-fallback")?.addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const blobUrl = URL.createObjectURL(file);
+  const win = window.open(blobUrl, "_blank");
+  if (win) {
+    setDesktopStatus(`PDF "${file.name}" abierto en una nueva pestaña. Usa Ctrl+P para elegir tu impresora e imprimir.`);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+  } else {
+    URL.revokeObjectURL(blobUrl);
+    setDesktopStatus("El navegador bloqueó la pestaña emergente para imprimir. Permite ventanas emergentes o abre el PDF directamente con Ctrl+P.", {isError: true});
+  }
+  e.target.value = "";
+});
+
+function captureError(error) {
+  const messages = {
+    NotAllowedError: "Permiso denegado o captura cancelada. No se tomó ninguna imagen.",
+    NotFoundError: "No se encontró una cámara o fuente compatible en este equipo.",
+    NotReadableError: "El dispositivo está ocupado por otra aplicación o no puede utilizarse.",
+    AbortError: "La captura fue cancelada antes de completarse.",
+  };
+  const msg = messages[error?.name] || error?.message || "No se pudo completar la captura.";
+  setDesktopStatus(msg, {isError: true});
+  if ($("connection")) $("connection").textContent = msg;
+}
+
+$("camera-open").addEventListener("click", async () => {
+  if (cameraStarting) return;
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    setDesktopStatus(
+      "La cámara en vivo del navegador requiere HTTPS o localhost. Selecciona o toma una foto desde tu equipo para cargarla directamente en Imágenes a PDF.",
+      {
+        actionLabel: "📷 Elegir / tomar foto",
+        onAction: () => $("desktop-photo-fallback")?.click(),
+      }
+    );
+    $("desktop-photo-fallback")?.click();
+    return;
+  }
+  cameraStarting = true;
+  stopCamera();
+  setDesktopStatus("Solicitando acceso a la cámara local…");
+  $("camera-status").textContent = "Solicitando permiso…";
+  $("camera-shot").disabled = true;
+  $("camera-dialog").showModal();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: "environment"}, width: {ideal: 1920}, height: {ideal: 1080}}, audio: false});
+    if (!$("camera-dialog").open || document.hidden) { stream.getTracks().forEach((track) => track.stop()); return; }
+    cameraStream = stream;
+    $("camera-video").srcObject = stream;
+    await $("camera-video").play();
+    await waitForVideoReady($("camera-video"));
+    $("camera-status").textContent = "Cámara activa. Pulsa Capturar cuando estés listo.";
+    $("camera-shot").disabled = false;
+    setDesktopStatus("Cámara activa. Captura tu documento para convertirlo a PDF.");
+  } catch (error) {
+    closeCamera();
+    captureError(error);
+  } finally {
+    cameraStarting = false;
+  }
+});
+
+$("camera-shot").addEventListener("click", async () => {
+  $("camera-shot").disabled = true;
+  try {
+    const file = await captureFile($("camera-video"), "captura-camara.jpg");
+    closeCamera();
+    openImagesToPdfWithFiles([file]);
+    setDesktopStatus("Foto capturada y cargada en Imágenes a PDF.");
+  } catch (error) {
+    closeCamera();
+    captureError(error);
+  }
+});
+
+$("screen-capture").addEventListener("click", async () => {
+  if (!window.isSecureContext || !navigator.mediaDevices?.getDisplayMedia) {
+    setDesktopStatus(
+      "La captura directa de pantalla desde el navegador requiere HTTPS o localhost. En HTTP LAN puedes capturar con Win+Shift+S, guardar la imagen y cargarla en Imágenes a PDF.",
+      {
+        isError: true,
+        actionLabel: "Abrir Imágenes a PDF",
+        onAction: () => openImagesToPdfWithFiles([]),
+      }
+    );
+    return;
+  }
+  let stream = null, video = null;
+  setDesktopStatus("Selecciona la ventana o pantalla que deseas capturar…");
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({video: true, audio: false});
+    video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    await video.play();
+    await waitForVideoReady(video);
+    const file = await captureFile(video, "captura-pantalla.jpg");
+    openImagesToPdfWithFiles([file]);
+    setDesktopStatus("Captura de pantalla realizada y cargada en Imágenes a PDF.");
+  } catch (error) {
+    captureError(error);
+  } finally {
+    if (stream) stream.getTracks().forEach((track) => track.stop());
+    if (video) video.srcObject = null;
+  }
 });
 
 function applyDesktopCapabilities(data) {
@@ -817,20 +1020,25 @@ function applyDesktopCapabilities(data) {
   const caption = $("desktop-caption");
   if (caption) caption.textContent = "HARDWARE LOCAL VINCULADO · PROCESAMIENTO PRIVADO";
   const legend = $("desktop-legend");
-  if (legend) legend.textContent = "Herramientas de escritorio activas:";
+  if (legend) legend.textContent = "Herramientas de escritorio activas (pasa el cursor sobre cada botón para ver qué hace):";
   const actions = $("desktop-actions");
   if (actions) {
+    actions.disabled = false;
     actions.removeAttribute("disabled");
     actions.classList.add("enabled");
+    actions.setAttribute("aria-label", "Herramientas de escritorio activas");
     for (const btn of actions.querySelectorAll("button")) {
+      btn.disabled = false;
       btn.removeAttribute("disabled");
     }
   }
   const detectedList = $("desktop-detected-list");
   if (detectedList) detectedList.textContent = `Dispositivos detectados: ${devicesText}`;
+  attachDesktopActionTooltips();
 }
 
 $("desktop-help")?.addEventListener("click", () => {
+  hideToolTooltip();
   const guide = $("desktop-guide-dialog");
   if (guide && !guide.open) guide.showModal();
 });
@@ -840,47 +1048,136 @@ $("close-desktop-guide")?.addEventListener("click", () => {
 $("desktop-guide-ok")?.addEventListener("click", () => {
   $("desktop-guide-dialog")?.close();
 });
+$("desktop-guide-dialog")?.addEventListener("click", (e) => {
+  if (e.target === $("desktop-guide-dialog")) $("desktop-guide-dialog").close();
+});
+
 $("desktop-scan")?.addEventListener("click", async () => {
+  hideToolTooltip();
+  const btn = $("desktop-scan");
+  if (btn) btn.disabled = true;
+  setDesktopStatus("Abriendo asistente de escaneo local WIA en Windows…");
   try {
-    setStatus("Abriendo asistente de escaneo local en Windows...");
-    const res = await fetch("/desktop/launch/Scan", {method: "POST"});
-    const result = await res.json();
-    if (result.ok) {
-      setStatus("Diálogo de escaneo abierto en tu equipo. Guarda el escaneo y selecciónalo en Imágenes a PDF.");
+    const res = await fetch("/desktop/launch/Scan", {
+      method: "POST",
+      headers: {"X-PDF-Client": BUILD},
+    });
+    const result = await res.json().catch(() => ({}));
+    if (res.ok && result.ok) {
+      setDesktopStatus(
+        "✓ Asistente de escaneo WIA iniciado en tu equipo. Guarda la imagen escaneada y conviértela con Imágenes a PDF.",
+        {
+          actionLabel: "Abrir Imágenes a PDF",
+          onAction: () => openImagesToPdfWithFiles([]),
+        }
+      );
     } else if (result.local_only) {
+      setDesktopStatus(
+        "⬇ Estás accediendo desde otro equipo de la red: se descargó EVA-Desktop.ps1. Ejecútalo con clic derecho → Ejecutar con PowerShell para escanear con tu escáner local.",
+        {
+          actionLabel: "Abrir Imágenes a PDF",
+          onAction: () => openImagesToPdfWithFiles([]),
+        }
+      );
       window.location.href = "/desktop/download";
     } else {
-      setStatus(result.error || "No se pudo iniciar el escáner.", true);
+      setDesktopStatus(result.error || `No se pudo iniciar el escáner (HTTP ${res.status}).`, {isError: true});
     }
   } catch {
+    setDesktopStatus("No se pudo conectar con el lanzador local; descargando complemento EVA-Desktop.ps1…");
     window.location.href = "/desktop/download";
+  } finally {
+    if (btn) btn.disabled = false;
   }
 });
+
 $("desktop-print")?.addEventListener("click", async () => {
+  hideToolTooltip();
+  const btn = $("desktop-print");
+  if (btn) btn.disabled = true;
+  setDesktopStatus("Abriendo selector de impresión local…");
   try {
-    setStatus("Abriendo selector de impresión local...");
-    const res = await fetch("/desktop/launch/Print", {method: "POST"});
-    const result = await res.json();
-    if (result.ok) {
-      setStatus("Selector de impresión abierto en Windows.");
+    const res = await fetch("/desktop/launch/Print", {
+      method: "POST",
+      headers: {"X-PDF-Client": BUILD},
+    });
+    const result = await res.json().catch(() => ({}));
+    if (res.ok && result.ok) {
+      setDesktopStatus("✓ Selector de impresión local abierto en Windows. Elige el PDF que deseas enviar a tu impresora.");
     } else if (result.local_only) {
-      window.print();
+      setDesktopStatus(
+        "Selecciona el archivo PDF de tu equipo para abrirlo en una pestaña lista para imprimir con Ctrl+P.",
+        {
+          actionLabel: "🖨️ Seleccionar PDF",
+          onAction: () => $("desktop-print-fallback")?.click(),
+        }
+      );
+      $("desktop-print-fallback")?.click();
     } else {
-      setStatus(result.error || "No se pudo iniciar la impresión.", true);
+      setDesktopStatus(result.error || `No se pudo iniciar la impresión (HTTP ${res.status}).`, {isError: true});
     }
   } catch {
-    window.print();
+    setDesktopStatus("Selecciona el archivo PDF local para abrirlo e imprimir con Ctrl+P.");
+    $("desktop-print-fallback")?.click();
+  } finally {
+    if (btn) btn.disabled = false;
   }
 });
 
 window.openToolById = function(toolId, file) {
-  const t = tools.find(x => x.id === toolId);
-  if (t) {
-    openTool(t);
+  if (toolId === "multi_edit") {
+    startMultiEdit();
     if (file) {
       setTimeout(() => {
         try { addFiles([file]); } catch(e){}
       }, 80);
     }
+    return true;
   }
+  const t = tools.find(x => x.id === toolId);
+  if (!t) return false;
+  if (t.workspaceUrl) {
+    window.location.href = t.workspaceUrl;
+    return true;
+  }
+  openTool(t);
+  if (file) {
+    setTimeout(() => {
+      try { addFiles([file]); } catch(e){}
+    }, 80);
+  }
+  return true;
+};
+
+window.getEvaToolsCatalog = function() {
+  const multiItem = {
+    id: MULTI_EDIT_START.id,
+    name: MULTI_EDIT_START.name,
+    icon: MULTI_EDIT_START.icon,
+    category: MULTI_EDIT_START.category,
+    level: MULTI_EDIT_START.level,
+    levelLabel: "Edición múltiple",
+    desc: MULTI_EDIT_START.desc,
+    detail: MULTI_EDIT_START.desc,
+    keywords: "multiple sesion cadena editar varias funciones",
+    io: "Entrada: .pdf · Salida: PDF editado en sesión",
+    workspaceUrl: null,
+    unavailable: false,
+    pendingMotor: false,
+  };
+  return [multiItem].concat(tools.map((t) => ({
+    id: t.id,
+    name: t.name,
+    icon: t.icon,
+    category: t.category,
+    level: t.level || "basic",
+    levelLabel: LEVEL_LABELS[t.level] || "Local",
+    desc: t.desc || "",
+    detail: t.detail || "",
+    keywords: t.keywords || "",
+    io: t.io || "",
+    workspaceUrl: t.workspaceUrl || null,
+    unavailable: Boolean(unavailableInBackend(t)),
+    pendingMotor: Boolean(caps && t.requires && !caps[t.requires]),
+  })));
 };

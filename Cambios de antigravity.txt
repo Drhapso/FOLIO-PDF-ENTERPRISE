@@ -4952,3 +4952,198 @@ const BULK_TOOLS=new Set([...BATCH_TOOLS,"merge","images_to_pdf","dossier","sema
   - Comando 2: `.\.venv\Scripts\python.exe -m unittest tests.test_pdfgear_enhancements -v` -> 5/5 pruebas OK (incluyendo `test_04_copilot_chat_guidance_and_doc_qa`).
   - Nota operativa: Reiniciar el servicio EVA PDF (puerto 8090) mediante `SCRIPTS_OPERACION_Y_DESPLIEGUE\reiniciar-folio.ps1` o `FOLIO PDF ENTERPRISE\servidor para LAN.bat` para que la nueva ruta `/api/copilot/chat` quede cargada en memoria.
 --------------------------------------------------------------------------------
+
+[CAMBIO-027] - 2026-11-24 16:12 - Botón flotante fijo del Asistente Copiloto Local con búsqueda integrada de funciones y regla interna de visibilidad al desplazar la UI
+- **Resumen / Motivo**:
+  Se agregó en la interfaz principal de EVA PDF Enterprise un botón flotante fijo (`#copilot-fab-btn`) con panel emergente responsivo (`#copilot-fab-panel`) que integra:
+  1. **Búsqueda instantánea de funciones** sobre todo el catálogo local de herramientas (`window.getEvaToolsCatalog()`), con filtro por nivel (`Todas`, `Básica`, `Avanzada`, `Profesional`), navegación con teclado (`↑`/`↓` + `Enter`), apertura directa de cada herramienta/estudio y escalamiento con un clic al Copiloto IA.
+  2. **Asistente Copiloto IA Local** sincronizado con el archivo PDF activo (`activeFile`) y el mismo flujo `/api/copilot/chat` y `/api/process/copilot_apply`.
+  3. **Regla interna de visibilidad al desplazar (`shouldActivateFloatingButton`)**: combinando `IntersectionObserver` sobre `#eva-copilot` y `#herramientas .toolbar`, listener pasivo de `scroll`/`resize` (`requestAnimationFrame`) y `MutationObserver` sobre `<dialog open>`, el botón flotante se activa únicamente cuando el usuario desplaza la UI principal hacia abajo (`scrollY >= 140`) y las opciones fijas superiores (`#eva-copilot` y `.toolbar`) salen de la vista (`rect.bottom <= 8`), ocultándose automáticamente al volver arriba o mientras exista un diálogo modal abierto. Atajo global `Ctrl+K` / `Cmd+K` y cierre con `Esc`.
+  4. **Arquitectura y CSP**: cero estilos inline (`style-src 'self'`), panel responsivo adaptado a escritorio, tablet (`<= 900px`) y móvil (`<= 720px`), y actualización de `CLIENT_BUILD` a `2026-11-24-copilot-fab-2` para invalidar caché en LAN.
+- **Archivos modificados**:
+  - `server.py` (modificado)
+  - `templates/index.html` (modificado)
+  - `static/app.js` (modificado)
+  - `static/copilot.js` (modificado)
+  - `static/copilot.css` (modificado)
+  - `tests/test_pdfgear_enhancements.py` (modificado)
+- **Detalle de implementación para GitHub Copilot Chat**:
+  Archivo: `server.py`
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-24-copilot-1"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-24-copilot-fab-2"
+  >>> END
+
+  Archivo: `static/app.js`
+  <<< SEARCH
+  window.openToolById = function(toolId, file) {
+    const t = tools.find(x => x.id === toolId);
+    if (t) {
+      openTool(t);
+      if (file) {
+        setTimeout(() => {
+          try { addFiles([file]); } catch(e){}
+        }, 80);
+      }
+    }
+  };
+  === REPLACE
+  window.openToolById = function(toolId, file) {
+    if (toolId === "multi_edit") {
+      startMultiEdit();
+      if (file) {
+        setTimeout(() => {
+          try { addFiles([file]); } catch(e){}
+        }, 80);
+      }
+      return true;
+    }
+    const t = tools.find(x => x.id === toolId);
+    if (!t) return false;
+    if (t.workspaceUrl) {
+      window.location.href = t.workspaceUrl;
+      return true;
+    }
+    openTool(t);
+    if (file) {
+      setTimeout(() => {
+        try { addFiles([file]); } catch(e){}
+      }, 80);
+    }
+    return true;
+  };
+
+  window.getEvaToolsCatalog = function() {
+    const multiItem = {
+      id: MULTI_EDIT_START.id,
+      name: MULTI_EDIT_START.name,
+      icon: MULTI_EDIT_START.icon,
+      category: MULTI_EDIT_START.category,
+      level: MULTI_EDIT_START.level,
+      levelLabel: "Edición múltiple",
+      desc: MULTI_EDIT_START.desc,
+      detail: MULTI_EDIT_START.desc,
+      keywords: "multiple sesion cadena editar varias funciones",
+      io: "Entrada: .pdf · Salida: PDF editado en sesión",
+      workspaceUrl: null,
+      unavailable: false,
+      pendingMotor: false,
+    };
+    return [multiItem].concat(tools.map((t) => ({
+      id: t.id,
+      name: t.name,
+      icon: t.icon,
+      category: t.category,
+      level: t.level || "basic",
+      levelLabel: LEVEL_LABELS[t.level] || "Local",
+      desc: t.desc || "",
+      detail: t.detail || "",
+      keywords: t.keywords || "",
+      io: t.io || "",
+      workspaceUrl: t.workspaceUrl || null,
+      unavailable: Boolean(unavailableInBackend(t)),
+      pendingMotor: Boolean(caps && t.requires && !caps[t.requires]),
+    })));
+  };
+  >>> END
+
+  Archivo: `templates/index.html`
+  <<< SEARCH
+    <aside id="tool-tooltip" class="tool-tooltip" role="tooltip" aria-hidden="true" hidden></aside>
+  </body>
+  </html>
+  === REPLACE
+    <aside id="tool-tooltip" class="tool-tooltip" role="tooltip" aria-hidden="true" hidden></aside>
+
+    <!-- Botón flotante fijo y panel responsivo del Asistente Copiloto Local + Búsqueda de funciones -->
+    <div id="copilot-fab-shell" class="copilot-fab-shell" aria-live="polite">
+      <section id="copilot-fab-panel" class="copilot-fab-panel" role="dialog" aria-modal="false" aria-labelledby="copilot-fab-title" hidden>
+        <!-- Encabezado fijo, pestañas (#copilot-fab-tab-search / #copilot-fab-tab-ai), cuerpo con búsqueda de funciones (#copilot-fab-tool-input, #copilot-fab-cats, #copilot-fab-results) y vista Copiloto IA (#copilot-fab-ai-input, #copilot-fab-ai-feed), y pie con Ctrl+K / Ir arriba -->
+      </section>
+      <button type="button" id="copilot-fab-btn" class="copilot-fab-btn" aria-controls="copilot-fab-panel" aria-expanded="false" aria-hidden="true" tabindex="-1" title="Abrir Asistente Copiloto Local y búsqueda de funciones (Ctrl+K)">
+        <span class="copilot-fab-sparkle" aria-hidden="true">✦</span>
+        <span class="copilot-fab-label">Copiloto · Buscar</span>
+        <span class="copilot-fab-badge" id="copilot-fab-file-badge" hidden>PDF</span>
+      </button>
+    </div>
+  </body>
+  </html>
+  >>> END
+
+  Archivo: `static/copilot.js` y `static/copilot.css`
+  - En `static/copilot.js`: se refactorizó `submitQuery(promptText, targetFeed)` y `renderResponse(data, targetFeed)` para compartir el motor local entre el bloque `#eva-copilot` y el panel flotante; se sincronizó `activeFile` entre ambas vistas; se añadió el buscador integrado de funciones (`renderFabTools`, `highlightFabResult`, `escalateSearchToAi`) y la regla interna de visibilidad `shouldActivateFloatingButton()` + `evaluateFloatingVisibility()` expuesta en `window.evaCopilotFab` (observando `#eva-copilot`, `#herramientas .toolbar`, `scroll`/`resize` y `<dialog open>`).
+  - En `static/copilot.css`: se añadieron las reglas `.copilot-fab-shell`, `.copilot-fab-btn` / `.copilot-fab-btn.is-visible`, `.copilot-fab-panel` (flex con encabezado/pestañas/pie fijos y cuerpo con scroll interno, `width: min(460px, calc(100vw - 24px))`, `max-height: min(640px, calc(100dvh - 32px))`), estilos de resultados/tabs compatibles con modo claro y oscuro, y breakpoints responsivos `<= 900px` y `<= 720px` (`width: calc(100vw - 16px); max-height: calc(100dvh - 20px)`).
+  - En `tests/test_pdfgear_enhancements.py`: se agregó `test_06_floating_copilot_fab_search_and_scroll_rule` verificando el marcado del botón flotante, ausencia de `style=` inline (CSP), regla `shouldActivateFloatingButton` / `IntersectionObserver` y estilos responsivos.
+- **Verificación**:
+  - `node --check static/app.js` -> OK (exit 0).
+  - `node --check static/copilot.js` -> OK (exit 0).
+  - `.\.venv\Scripts\python.exe -m unittest tests.test_pdfgear_enhancements -v` -> 6/6 pruebas OK.
+  - `.\.venv\Scripts\python.exe -m unittest tests.test_platform -v` -> 42/42 pruebas OK.
+--------------------------------------------------------------------------------
+
+[CAMBIO-028] - 2026-11-24 16:32 - Corrección de bloqueo en Módulo Local (Dispositivos Detectados) y tooltips descriptivos al pasar el cursor
+- **Resumen / Motivo**:
+  Se diagnosticaron y corrigieron las 4 causas que bloqueaban o dejaban sin respuesta visible las funciones del módulo **Módulo Local · Dispositivos Detectados** (`#desktop-tools`):
+  1. **Bloqueo HTTP 403 en `POST /desktop/launch/Scan` y `POST /desktop/launch/Print`**: `static/app.js` enviaba ambos `fetch` sin la cabecera obligatoria `X-PDF-Client: BUILD`, por lo que `enforce_origin()` en `server.py` rechazaba cada clic con HTTP 403.
+  2. **Mensajes invisibles al usuario**: `desktop-scan` y `desktop-print` escribían estado/errores en `setStatus(...)` dentro del `<dialog id="workspace">` cerrado, mientras `camera-open` y `screen-capture` escribían en `#connection` en la parte superior de la página. Se incorporó la barra visible `#desktop-status` con acción rápida directa dentro de `#desktop-tools`.
+  3. **Falta de `-STA` en PowerShell para diálogos Windows Forms / WIA**: `server.py` ahora invoca `powershell.exe` con `-STA` al ejecutar `desktop/EVA-Desktop.ps1`.
+  4. **Respaldos funcionales en HTTP LAN y condición de carrera en captura de pantalla**: se agregó `waitForVideoReady()` para evitar fallos cuando `videoWidth === 0` en el primer fotograma, respaldo con selector de foto/cámara (`#desktop-photo-fallback`) cuando el navegador restringe `getUserMedia` sobre HTTP LAN, acceso directo a `Imágenes a PDF` cuando `getDisplayMedia` requiere HTTPS, y selector local de PDF (`#desktop-print-fallback`) para imprimir en clientes LAN (`local_only`).
+  5. **Tooltips al posar el cursor**: se integraron las 5 funciones (`desktop-scan`, `camera-open`, `screen-capture`, `desktop-print`, `desktop-help`) al sistema nativo `#tool-tooltip` (`DESKTOP_ACTIONS_INFO` + `attachDesktopActionTooltips`) mostrando exactamente qué hace cada función, su entrada y salida al pasar el mouse o enfocar con teclado.
+  6. `CLIENT_BUILD` actualizado a `2026-11-24-desktop-fix-3` y diálogo `#desktop-guide-dialog` ajustado a las reglas de modales responsivos (`<= 720px`).
+- **Archivos modificados**:
+  - `server.py` (modificado)
+  - `templates/index.html` (modificado)
+  - `static/app.js` (modificado)
+  - `static/palette.css` (modificado)
+  - `tests/test_pdfgear_enhancements.py` (modificado)
+- **Detalle de implementación para GitHub Copilot Chat**:
+  Archivo: `server.py`
+  <<< SEARCH
+  CLIENT_BUILD = "2026-11-24-copilot-fab-2"
+  === REPLACE
+  CLIENT_BUILD = "2026-11-24-desktop-fix-3"
+  >>> END
+
+  <<< SEARCH
+              subprocess.Popen(
+                  ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Action", action],
+                  creationflags=creationflags,
+              )
+  === REPLACE
+              subprocess.Popen(
+                  ["powershell.exe", "-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Action", action],
+                  creationflags=creationflags,
+              )
+  >>> END
+
+  Archivo: `templates/index.html`
+  <<< SEARCH
+          <button type="button" id="desktop-help" class="secondary" disabled>¿Cómo usar esta función?</button>
+        </fieldset>
+      </section>
+  === REPLACE
+          <button type="button" id="desktop-help" class="secondary" disabled>¿Cómo usar esta función?</button>
+        </fieldset>
+        <div id="desktop-status" class="desktop-status" role="status" aria-live="polite" hidden>
+          <span id="desktop-status-text" class="desktop-status-text"></span>
+          <button type="button" id="desktop-status-action" class="secondary desktop-status-action" hidden></button>
+        </div>
+        <input type="file" id="desktop-photo-fallback" accept="image/*" capture="environment" hidden>
+        <input type="file" id="desktop-print-fallback" accept=".pdf,application/pdf" hidden>
+      </section>
+  >>> END
+
+  Archivo: `static/app.js`
+  - En `showToolTooltip`: `tier.textContent = tool.tierLabel || LEVEL_LABELS[tool.level] || "Local";`.
+  - Se añadieron `setDesktopStatus`, `DESKTOP_ACTIONS_INFO`, `attachDesktopActionTooltips`, `waitForVideoReady`, `openImagesToPdfWithFiles`, respaldos `#desktop-photo-fallback` y `#desktop-print-fallback`, envío de cabecera `headers: {"X-PDF-Client": BUILD}` en `POST /desktop/launch/Scan` y `POST /desktop/launch/Print`, desbloqueo explícito `disabled = false` en `applyDesktopCapabilities`, y cierre por clic externo en `#desktop-guide-dialog`.
+
+  Archivo: `static/palette.css`
+  - Se agregaron estilos `.desktop-status`, `.desktop-status.is-error`, `.desktop-status-action`, hover en `.construction-actions.enabled .secondary:hover`, y dimensiones responsivas para `.desktop-guide-dialog` (`width: min(640px, calc(100vw - 24px))`, móvil `<= 720px`: `width: calc(100vw - 16px); max-height: calc(100dvh - 20px)`).
+
+  Archivo: `tests/test_pdfgear_enhancements.py`
+  - Se añadió `test_07_desktop_module_unblocked_headers_and_hover_tooltips` validando rechazo 403 sin `X-PDF-Client`, ejecución con `-STA` en localhost, respuesta `local_only` en LAN, barra `#desktop-status` y tooltips de los 5 botones.
+- **Verificación**:
+  - `node --check static/app.js` -> OK (exit 0).
+  - `.\.venv\Scripts\python.exe -m unittest tests.test_pdfgear_enhancements tests.test_platform -v` -> 49/49 pruebas OK.
+--------------------------------------------------------------------------------

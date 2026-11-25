@@ -180,6 +180,100 @@ class PDFgearEnhancementsTests(unittest.TestCase):
             self.assertGreaterEqual(png_count, 2)
             self.assertTrue(any(n.endswith(".pdf") for n in namelist))
 
+    def test_06_floating_copilot_fab_search_and_scroll_rule(self):
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        html = res.get_data(as_text=True)
+
+        # Verificar estructura del botón flotante fijo y búsqueda integrada de funciones
+        for marker in (
+            'id="copilot-fab-shell"',
+            'id="copilot-fab-btn"',
+            'id="copilot-fab-panel"',
+            'id="copilot-fab-tool-input"',
+            'id="copilot-fab-results"',
+            'id="copilot-fab-tab-search"',
+            'id="copilot-fab-tab-ai"',
+            'id="copilot-fab-ai-input"',
+            'aria-hidden="true"',
+        ):
+            self.assertIn(marker, html)
+
+        # Verificar cumplimiento estricto de CSP (sin atributos style= en el widget flotante)
+        fab_start = html.index('id="copilot-fab-shell"')
+        fab_fragment = html[fab_start:]
+        self.assertNotIn("style=", fab_fragment)
+
+        # Verificar regla interna de scroll en copilot.js y catálogo en app.js
+        base = Path(__file__).resolve().parents[1]
+        copilot_js = (base / "static" / "copilot.js").read_text(encoding="utf-8")
+        app_js = (base / "static" / "app.js").read_text(encoding="utf-8")
+        copilot_css = (base / "static" / "copilot.css").read_text(encoding="utf-8")
+
+        self.assertIn("shouldActivateFloatingButton", copilot_js)
+        self.assertIn("IntersectionObserver", copilot_js)
+        self.assertIn("window.evaCopilotFab", copilot_js)
+        self.assertIn("window.getEvaToolsCatalog", app_js)
+        self.assertIn(".copilot-fab-btn.is-visible", copilot_css)
+        self.assertIn("calc(100vw - 16px)", copilot_css)
+
+    def test_07_desktop_module_unblocked_headers_and_hover_tooltips(self):
+        from unittest.mock import patch
+
+        # Sin cabecera X-PDF-Client el servidor rechaza con 403 (causa original del bloqueo)
+        res_no_hdr = self.client.post("/desktop/launch/Scan", headers={"Origin": "http://localhost"})
+        self.assertEqual(res_no_hdr.status_code, 403)
+
+        # Con cabecera X-PDF-Client en localhost lanza PowerShell con -STA
+        with patch("server.subprocess.Popen") as mock_popen:
+            res_scan = self.client.post(
+                "/desktop/launch/Scan",
+                headers=self.headers,
+                environ_base={"REMOTE_ADDR": "127.0.0.1"},
+            )
+            self.assertEqual(res_scan.status_code, 200)
+            self.assertTrue(res_scan.get_json().get("ok"))
+            cmd_scan = mock_popen.call_args[0][0]
+            self.assertIn("-STA", cmd_scan)
+            self.assertIn("Scan", cmd_scan)
+
+            res_print = self.client.post(
+                "/desktop/launch/Print",
+                headers=self.headers,
+                environ_base={"REMOTE_ADDR": "127.0.0.1"},
+            )
+            self.assertEqual(res_print.status_code, 200)
+            self.assertTrue(res_print.get_json().get("ok"))
+            cmd_print = mock_popen.call_args[0][0]
+            self.assertIn("-STA", cmd_print)
+            self.assertIn("Print", cmd_print)
+
+        # Desde cliente LAN responde local_only=True sin bloquear con error 403
+        res_lan = self.client.post(
+            "/desktop/launch/Print",
+            headers=self.headers,
+            environ_base={"REMOTE_ADDR": "172.23.174.50"},
+        )
+        self.assertEqual(res_lan.status_code, 200)
+        self.assertTrue(res_lan.get_json().get("local_only"))
+
+        # Verificar en frontend los headers X-PDF-Client, barra de estado y tooltips de los 5 botones
+        res_home = self.client.get("/")
+        html = res_home.get_data(as_text=True)
+        self.assertIn('id="desktop-status"', html)
+        self.assertIn('id="desktop-photo-fallback"', html)
+        self.assertIn('id="desktop-print-fallback"', html)
+
+        base = Path(__file__).resolve().parents[1]
+        app_js = (base / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("DESKTOP_ACTIONS_INFO", app_js)
+        self.assertIn("attachDesktopActionTooltips", app_js)
+        self.assertIn("setDesktopStatus", app_js)
+        self.assertIn("waitForVideoReady", app_js)
+        for btn_id in ("desktop-scan", "camera-open", "screen-capture", "desktop-print", "desktop-help"):
+            self.assertIn(f'"{btn_id}"', app_js)
+        self.assertGreaterEqual(app_js.count('"X-PDF-Client": BUILD'), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -188,6 +188,12 @@
         <button type="button" id="desktop-print" class="secondary" disabled>Imprimir documento</button>
         <button type="button" id="desktop-help" class="secondary" disabled>¿Cómo usar esta función?</button>
       </fieldset>
+      <div id="desktop-status" class="desktop-status" role="status" aria-live="polite" hidden>
+        <span id="desktop-status-text" class="desktop-status-text"></span>
+        <button type="button" id="desktop-status-action" class="secondary desktop-status-action" hidden></button>
+      </div>
+      <input type="file" id="desktop-photo-fallback" accept="image/*" capture="environment" hidden>
+      <input type="file" id="desktop-print-fallback" accept=".pdf,application/pdf" hidden>
     </section>
 
     <section id="privacidad" class="privacy">
@@ -281,5 +287,96 @@
     </div>
   </dialog>
   <aside id="tool-tooltip" class="tool-tooltip" role="tooltip" aria-hidden="true" hidden></aside>
+
+  <!-- Botón flotante fijo y panel responsivo del Asistente Copiloto Local + Búsqueda de funciones -->
+  <div id="copilot-fab-shell" class="copilot-fab-shell" aria-live="polite">
+    <section
+      id="copilot-fab-panel"
+      class="copilot-fab-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="copilot-fab-title"
+      hidden
+    >
+      <header class="copilot-fab-head">
+        <div class="copilot-fab-title-wrap">
+          <span class="copilot-sparkle" aria-hidden="true">✦</span>
+          <div>
+            <h2 id="copilot-fab-title">Asistente Copiloto Local</h2>
+            <p class="copilot-fab-sub">Busca funciones o consulta al copiloto sin perder tu posición</p>
+          </div>
+        </div>
+        <button type="button" id="copilot-fab-close" class="icon-button copilot-fab-close" aria-label="Cerrar asistente flotante" title="Cerrar (Esc)">✕</button>
+      </header>
+
+      <div class="copilot-fab-tabs" role="tablist" aria-label="Modos del asistente flotante">
+        <button type="button" role="tab" id="copilot-fab-tab-search" class="copilot-fab-tab active" data-fab-tab="search" aria-selected="true">⌕ Buscar funciones</button>
+        <button type="button" role="tab" id="copilot-fab-tab-ai" class="copilot-fab-tab" data-fab-tab="ai" aria-selected="false">✦ Copiloto IA</button>
+      </div>
+
+      <div class="copilot-fab-body">
+        <div id="copilot-fab-view-search" class="copilot-fab-view" role="tabpanel" aria-labelledby="copilot-fab-tab-search">
+          <div class="copilot-fab-search-box">
+            <span class="copilot-fab-search-icon" aria-hidden="true">⌕</span>
+            <input type="search" id="copilot-fab-tool-input" class="copilot-fab-search-input" placeholder="Buscar función (ej. unir, comprimir, OCR, firmar, censurar…)" aria-label="Buscar función en EVA PDF" autocomplete="off">
+            <button type="button" id="copilot-fab-tool-clear" class="copilot-fab-clear-btn" aria-label="Limpiar búsqueda" hidden>✕</button>
+          </div>
+          <div class="copilot-fab-cat-row" id="copilot-fab-cats" role="group" aria-label="Filtrar funciones por nivel">
+            <button type="button" class="copilot-fab-cat active" data-fab-cat="all" aria-pressed="true">Todas</button>
+            <button type="button" class="copilot-fab-cat" data-fab-cat="basic" aria-pressed="false">Básica</button>
+            <button type="button" class="copilot-fab-cat" data-fab-cat="advanced" aria-pressed="false">Avanzada</button>
+            <button type="button" class="copilot-fab-cat" data-fab-cat="professional" aria-pressed="false">Profesional</button>
+          </div>
+          <div class="copilot-fab-meta-row">
+            <span id="copilot-fab-results-count" class="copilot-fab-results-count">Funciones disponibles</span>
+            <button type="button" id="copilot-fab-ask-ai" class="copilot-fab-inline-link" hidden>✦ Consultar esto al Copiloto IA</button>
+          </div>
+          <div id="copilot-fab-results" class="copilot-fab-results" role="listbox" aria-label="Resultados de funciones"></div>
+        </div>
+
+        <div id="copilot-fab-view-ai" class="copilot-fab-view" role="tabpanel" aria-labelledby="copilot-fab-tab-ai" hidden>
+          <div class="copilot-input-wrapper copilot-fab-ai-input-wrap">
+            <span class="copilot-input-icon" aria-hidden="true">✦</span>
+            <input type="text" id="copilot-fab-ai-input" class="copilot-input" placeholder="Pregunta cómo hacer algo o analiza un PDF…" aria-label="Consulta rápida para el Copiloto EVA">
+            <button type="button" id="copilot-fab-ai-send" class="copilot-btn-send copilot-fab-ai-send">Enviar</button>
+          </div>
+          <div class="copilot-fab-chips" aria-label="Consultas rápidas">
+            <button type="button" class="copilot-chip copilot-fab-chip" data-prompt="¿Cómo reduzco el tamaño de mi PDF manteniendo la calidad de texto y vectores?">⚡ Comprimir</button>
+            <button type="button" class="copilot-chip copilot-fab-chip" data-prompt="¿Cómo firmo un documento con mi firma manuscrita y le quito el fondo blanco?">✍ Firmar</button>
+            <button type="button" class="copilot-chip copilot-fab-chip" data-prompt="¿Cómo censuro información confidencial o DNI de forma irreversible?">🛡 Censurar</button>
+            <button type="button" class="copilot-chip copilot-fab-chip" data-prompt="Quiero reconocer texto de un PDF escaneado con OCR">🔍 OCR</button>
+          </div>
+          <div class="copilot-fab-filebar">
+            <input type="file" id="copilot-fab-file-input" accept=".pdf" hidden>
+            <label for="copilot-fab-file-input" class="copilot-fab-file-btn" id="copilot-fab-file-label">📄 Adjuntar PDF local</label>
+            <span id="copilot-fab-file-name" class="copilot-fab-file-name" hidden></span>
+            <button type="button" id="copilot-fab-file-summarize" class="copilot-fab-mini-btn" hidden>Resumir</button>
+            <button type="button" id="copilot-fab-file-remove" class="copilot-fab-mini-btn" aria-label="Quitar PDF adjunto" hidden>✕</button>
+          </div>
+          <div id="copilot-fab-ai-feed" class="copilot-feed copilot-fab-feed" hidden></div>
+        </div>
+      </div>
+
+      <footer class="copilot-fab-foot">
+        <span class="copilot-fab-hint">Atajo: <kbd>Ctrl</kbd>+<kbd>K</kbd> · <kbd>Esc</kbd> cerrar</span>
+        <button type="button" id="copilot-fab-scroll-top" class="copilot-fab-top-btn" title="Volver al inicio y opciones fijas">⬆ Ir arriba</button>
+      </footer>
+    </section>
+
+    <button
+      type="button"
+      id="copilot-fab-btn"
+      class="copilot-fab-btn"
+      aria-controls="copilot-fab-panel"
+      aria-expanded="false"
+      aria-hidden="true"
+      tabindex="-1"
+      title="Abrir Asistente Copiloto Local y búsqueda de funciones (Ctrl+K)"
+    >
+      <span class="copilot-fab-sparkle" aria-hidden="true">✦</span>
+      <span class="copilot-fab-label">Copiloto · Buscar</span>
+      <span class="copilot-fab-badge" id="copilot-fab-file-badge" hidden>PDF</span>
+    </button>
+  </div>
 </body>
 </html>
