@@ -5147,3 +5147,95 @@ const BULK_TOOLS=new Set([...BATCH_TOOLS,"merge","images_to_pdf","dossier","sema
   - `node --check static/app.js` -> OK (exit 0).
   - `.\.venv\Scripts\python.exe -m unittest tests.test_pdfgear_enhancements tests.test_platform -v` -> 49/49 pruebas OK.
 --------------------------------------------------------------------------------
+
+
+[CAMBIO-029] - 2026-11-25 15:40 - Control administrativo de funciones en EVA PDF Enterprise (Habilitar / Inhabilitar con tarjetas bloqueadas "Función en desarrollo" y "Función en Mantenimiento")
+- **Resumen / Motivo**:
+  Se incorporó una función administrativa protegida por sesión para habilitar o inhabilitar cualquiera de las herramientas de EVA PDF (las 61 herramientas de la grilla + `Edición múltiple`, `Copiloto IA Local` y `Escritorio, cámara e impresión`). Cuando el administrador inhabilita una herramienta, su tarjeta se renderiza bloqueada visualmente con franja industrial y rótulo **"Función en desarrollo"** (estado `development`) o **"Función en Mantenimiento"** (estado `maintenance`) según el caso, además de bloquearse en el buscador flotante, en `Edición múltiple`, en las rutas `/editor`, `/pipeline`, `/canvas`, `/vault`, en `/api/copilot/chat` y en `/api/process/<operation>` (HTTP 503).
+  - `CLIENT_BUILD` actualizado a `"2026-11-25-admin-features-1"`.
+  - Los estados se persisten en la tabla existente `settings` de `instance/platform.sqlite3` bajo la clave `"feature_flags"`, conservando intacta la invariante de privacidad de una sola tabla (`test_no_document_tables`).
+  - La autenticación administrativa reutiliza en solo lectura las credenciales PBKDF2-SHA256 de administradores de FALCON (`control_produccion_final.db`, `role='admin' AND activo=1`) y admite respaldo por entorno (`EVA_ADMIN_USER` / `EVA_ADMIN_PASSWORD`) con límite de intentos por IP/usuario y cookie de sesión `HttpOnly`.
+  - Se preservó intacto el botón `id="fcCenterLink"` en `templates/index.html` y el orden de `.header-actions` (`#privacidad` antes de `#theme`).
+  - Los diálogos administrativos (`#eva-admin-login-dialog` y `#eva-admin-dialog`) cumplen la regla global de ventanas emergentes responsivas (`width: min(..., calc(100vw - 24px))`, `max-height: calc(100dvh - 32px)`, móvil `<= 720px`: `calc(100vw - 16px)` / `calc(100dvh - 20px)`, flex column con encabezado/pie fijos, cuerpo con scroll interno y cierre con `Esc`/`✕`).
+- **Archivos modificados**:
+  - `feature_flags.py` (creado)
+  - `server.py` (modificado)
+  - `templates/index.html` (modificado)
+  - `static/app.js` (modificado)
+  - `static/copilot.js` (modificado)
+  - `static/palette.css` (modificado)
+  - `tests/test_admin_feature_flags.py` (creado)
+- **Detalle de implementación para GitHub Copilot Chat**:
+
+  Archivo: `feature_flags.py` (creado)
+  - Módulo central de persistencia y autenticación administrativa: `load_or_create_secret`, `authenticate_admin`, `is_login_rate_limited`, `record_login_failure`, `clear_login_failures`, `get_feature_flags`, `save_feature_flags`, `update_feature_flags`, `get_blocked_feature_info`, `blocked_error_message`.
+
+  Archivo: `server.py`
+  <<< SEARCH
+  from flask import Flask, Request, jsonify, render_template, request, send_file
+  from werkzeug.exceptions import HTTPException
+  from werkzeug.middleware.proxy_fix import ProxyFix
+
+  from engines.registry import allowed_upload_suffixes
+  from isolation import InstanceLock, ProcessTree, worker_command
+  from pdf_engine import BULK_OPERATIONS, OPERATIONS, ProcessingError, capabilities, file_limit
+  from settings import ROOT, load_settings
+  from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
+  from recovery_events import install_recovery, report_failure, request_recovery
+
+  CLIENT_BUILD = "2026-11-24-desktop-fix-3"
+  === REPLACE
+  from flask import Flask, Request, jsonify, redirect, render_template, request, send_file, session
+  from werkzeug.exceptions import HTTPException
+  from werkzeug.middleware.proxy_fix import ProxyFix
+
+  from engines.registry import allowed_upload_suffixes
+  from feature_flags import (
+      authenticate_admin,
+      blocked_error_message,
+      clear_login_failures,
+      get_blocked_feature_info,
+      get_feature_flags,
+      is_login_rate_limited,
+      load_or_create_secret,
+      record_login_failure,
+      update_feature_flags,
+  )
+  from isolation import InstanceLock, ProcessTree, worker_command
+  from pdf_engine import BULK_OPERATIONS, OPERATIONS, ProcessingError, capabilities, file_limit
+  from settings import ROOT, load_settings
+  from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
+  from recovery_events import install_recovery, report_failure, request_recovery
+
+  CLIENT_BUILD = "2026-11-25-admin-features-1"
+  >>> END
+  - Se añadió configuración de sesión segura en `create_app`, `feature_flags` en `GET /api/capabilities`, rutas `GET /api/admin/session`, `POST /api/admin/login`, `POST /api/admin/logout`, `GET /api/admin/features`, `POST /api/admin/features`, y validación de bloqueo en `/editor`, `/pipeline`, `/canvas`, `/vault`, `/api/copilot/chat` y `/api/process/<operation>`.
+
+  Archivo: `templates/index.html`
+  <<< SEARCH
+        <a href="#privacidad" class="header-privacy-link">Privacidad</a>
+        <button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button>
+      </div>
+  === REPLACE
+        <a href="#privacidad" class="header-privacy-link">Privacidad</a>
+        <button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button>
+        <button type="button" id="eva-admin-btn" class="icon-button eva-admin-trigger" aria-label="Administrador de funciones" title="Acceso Administrador · Habilitar o inhabilitar funciones">🔐 Admin</button>
+      </div>
+  >>> END
+  - Se agregaron `#eva-copilot-locked`, `#eva-admin-login-dialog`, `#eva-admin-dialog` y `#eva-toast`.
+
+  Archivo: `static/app.js`
+  - Se añadieron `featureFlags`, `adminSession`, `getToolLockInfo`, `showEvaToast`, `notifyLockedTool`, `applyModuleLocks`, renderizado de tarjetas bloqueadas en `renderTools` (`🚧 Función en desarrollo` / `🛠️ Función en Mantenimiento`), bloqueo en `openTool`, `startMultiEdit`, `renderSessionTools`, `window.openToolById`, exposición de `lockedState`/`lockedLabel`/`lockedNote` en `window.getEvaToolsCatalog`, y lógica completa de inicio de sesión y consola administrativa (`renderAdminFeatureList`, `openAdminModal`).
+
+  Archivo: `static/copilot.js`
+  - En la lista de resultados del buscador flotante se muestra la insignia `🔒 Función en desarrollo` o `🔒 Función en Mantenimiento` cuando `tool.lockedState` está presente.
+
+  Archivo: `static/palette.css`
+  - Se agregaron estilos CSP-estrictos para `.tool-card.is-locked`, `.is-locked--development`, `.is-locked--maintenance`, `.tool-lock-rail`, `.tool-lock-banner`, `.eva-section-locked`, `.eva-admin-dialog` (responsivo por viewport), `.eva-admin-row` y `.eva-toast`.
+
+  Archivo: `tests/test_admin_feature_flags.py` (creado)
+  - Valida autenticación administrativa, persistencia en `settings` (sin nuevas tablas), estados `development`/`maintenance`/`enabled`, bloqueo HTTP 503 en `/api/process/<op>` y `/api/copilot/chat`, redirección `/?blocked=` en `/pipeline`, y presencia de los elementos UI en `/`.
+- **Verificación**:
+  - `node --check static/app.js` y `node --check static/copilot.js` -> OK (exit 0).
+  - `.\.venv\Scripts\python.exe -m unittest tests.test_admin_feature_flags tests.test_platform.PlatformTests.test_health_and_page tests.test_platform.PlatformTests.test_no_document_tables -v` -> 4/4 pruebas OK.
+--------------------------------------------------------------------------------

@@ -83,6 +83,7 @@
       <a href="#eva-copilot" class="header-copilot-link">✦ Copiloto IA Local</a>
       <a href="#privacidad" class="header-privacy-link">Privacidad</a>
       <button id="theme" class="icon-button" aria-label="Cambiar tema" title="Cambiar tema">◐</button>
+      <button type="button" id="eva-admin-btn" class="icon-button eva-admin-trigger" aria-label="Administrador de funciones" title="Acceso Administrador · Habilitar o inhabilitar funciones">🔐 Admin</button>
     </div>
   </header>
   <main>
@@ -105,7 +106,9 @@
           <p class="copilot-subtitle">Pregúntame cómo realizar cualquier tarea, busca herramientas o arrastra un PDF para resumirlo, hacerle preguntas o ejecutar acciones agénticas.</p>
         </div>
 
-        <div class="copilot-box">
+        <div id="eva-copilot-locked" class="eva-section-locked" hidden></div>
+
+        <div class="copilot-box" id="eva-copilot-box">
           <div class="copilot-input-row">
             <div class="copilot-input-wrapper">
               <span class="copilot-input-icon">✦</span>
@@ -286,6 +289,74 @@
       <button type="button" id="desktop-guide-ok" class="primary">¡Entendido!</button>
     </div>
   </dialog>
+
+  <dialog id="eva-admin-login-dialog" class="eva-admin-dialog eva-admin-login-dialog" aria-labelledby="eva-admin-login-title">
+    <form id="eva-admin-login-form" class="eva-admin-dialog-inner" novalidate>
+      <header class="eva-admin-head">
+        <div>
+          <span class="eyebrow">ADMINISTRACIÓN · EVA PDF ENTERPRISE</span>
+          <h2 id="eva-admin-login-title">Acceso Administrador</h2>
+        </div>
+        <button type="button" id="eva-admin-login-close" class="icon-button" aria-label="Cerrar acceso administrador">✕</button>
+      </header>
+      <div class="eva-admin-body">
+        <p class="eva-admin-desc">Inicie sesión con su cuenta de administrador para habilitar o inhabilitar herramientas de EVA PDF.</p>
+        <div id="eva-admin-login-error" class="eva-admin-error" role="alert" hidden></div>
+        <label class="eva-admin-field">
+          <span>Usuario administrador</span>
+          <input type="text" id="eva-admin-username" autocomplete="username" placeholder="Ej. admin" required>
+        </label>
+        <label class="eva-admin-field">
+          <span>Contraseña</span>
+          <input type="password" id="eva-admin-password" autocomplete="current-password" placeholder="••••••••" required>
+        </label>
+      </div>
+      <footer class="eva-admin-foot">
+        <button type="button" id="eva-admin-login-cancel" class="secondary">Cancelar</button>
+        <button type="submit" id="eva-admin-login-submit" class="primary">Ingresar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="eva-admin-dialog" class="eva-admin-dialog eva-admin-panel-dialog" aria-labelledby="eva-admin-title">
+    <div class="eva-admin-dialog-inner">
+      <header class="eva-admin-head">
+        <div>
+          <span class="eyebrow">CONSOLA ADMINISTRATIVA · CONTROL DE FUNCIONES</span>
+          <h2 id="eva-admin-title">Habilitar / Inhabilitar Funciones</h2>
+          <p id="eva-admin-user-meta" class="eva-admin-sub"></p>
+        </div>
+        <div class="eva-admin-head-actions">
+          <button type="button" id="eva-admin-logout" class="secondary">Cerrar sesión</button>
+          <button type="button" id="eva-admin-close" class="icon-button" aria-label="Cerrar panel de administrador">✕</button>
+        </div>
+      </header>
+
+      <div class="eva-admin-controls">
+        <div class="eva-admin-stats" id="eva-admin-stats"></div>
+        <div class="eva-admin-filter-row">
+          <input type="search" id="eva-admin-search" class="eva-admin-search" placeholder="Buscar función por nombre o ID…" aria-label="Buscar función en panel administrador">
+          <div class="eva-admin-filter-pills" id="eva-admin-filters" role="group" aria-label="Filtrar por estado">
+            <button type="button" class="eva-admin-pill active" data-admin-filter="all" aria-pressed="true">Todas</button>
+            <button type="button" class="eva-admin-pill" data-admin-filter="enabled" aria-pressed="false">Habilitadas</button>
+            <button type="button" class="eva-admin-pill" data-admin-filter="development" aria-pressed="false">En desarrollo</button>
+            <button type="button" class="eva-admin-pill" data-admin-filter="maintenance" aria-pressed="false">En Mantenimiento</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="eva-admin-body eva-admin-list-body">
+        <div id="eva-admin-list" class="eva-admin-list"></div>
+      </div>
+
+      <footer class="eva-admin-foot">
+        <button type="button" id="eva-admin-reset-all" class="secondary">✅ Habilitar todas</button>
+        <button type="button" id="eva-admin-done" class="primary">Listo</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <div id="eva-toast" class="eva-toast" role="status" aria-live="polite" hidden></div>
   <aside id="tool-tooltip" class="tool-tooltip" role="tooltip" aria-hidden="true" hidden></aside>
 
   <!-- Botón flotante fijo y panel responsivo del Asistente Copiloto Local + Búsqueda de funciones -->

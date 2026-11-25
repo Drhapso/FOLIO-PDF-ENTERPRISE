@@ -18,18 +18,29 @@ from urllib.parse import urlsplit
 
 import pymupdf as pdf
 from PIL import Image
-from flask import Flask, Request, jsonify, render_template, request, send_file
+from flask import Flask, Request, jsonify, redirect, render_template, request, send_file, session
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from engines.registry import allowed_upload_suffixes
+from feature_flags import (
+    authenticate_admin,
+    blocked_error_message,
+    clear_login_failures,
+    get_blocked_feature_info,
+    get_feature_flags,
+    is_login_rate_limited,
+    load_or_create_secret,
+    record_login_failure,
+    update_feature_flags,
+)
 from isolation import InstanceLock, ProcessTree, worker_command
 from pdf_engine import BULK_OPERATIONS, OPERATIONS, ProcessingError, capabilities, file_limit
 from settings import ROOT, load_settings
 from workload import AdmissionError, HEAVY_OPERATIONS, WorkloadQueue
 from recovery_events import install_recovery, report_failure, request_recovery
 
-CLIENT_BUILD = "2026-11-24-desktop-fix-3"
+CLIENT_BUILD = "2026-11-25-admin-features-1"
 LOG = logging.getLogger("pdf_lan")
 INLINE_RESULT_BYTES = 64 * 1024 * 1024
 STREAM_CHUNK = 1024 * 1024
@@ -145,6 +156,12 @@ def create_app(root: Path = ROOT) -> Flask:
         MAX_FORM_MEMORY_SIZE=128 * 1024,
         MAX_FORM_PARTS=max(config["max_files"], config["max_batch_files"]) + 4,
         TEMPLATES_AUTO_RELOAD=True,
+        SECRET_KEY=load_or_create_secret(root / "instance" / ".eva_secret", "EVA_SECRET_KEY"),
+        SESSION_COOKIE_NAME="eva_pdf_admin_session",
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=bool(config.get("secure_transport", False)),
+        PERMANENT_SESSION_LIFETIME=28800,
     )
     app.jinja_env.auto_reload = True
     lock = InstanceLock(runtime / "instance.lock")
@@ -230,20 +247,38 @@ def create_app(root: Path = ROOT) -> Flask:
     def index():
         return render_template("index.html", build=CLIENT_BUILD)
 
+    def _redirect_if_workspace_blocked(tool_id: str):
+        blocked = get_blocked_feature_info(root, tool_id)
+        if blocked:
+            return redirect(f"/?blocked={tool_id}")
+        return None
+
     @app.get("/editor")
     def editor():
+        denied = _redirect_if_workspace_blocked("edit")
+        if denied:
+            return denied
         return render_template("editor.html", build=CLIENT_BUILD)
 
     @app.get("/pipeline")
     def pipeline_workspace():
+        denied = _redirect_if_workspace_blocked("v2_pipeline_studio")
+        if denied:
+            return denied
         return render_template("pipeline.html", build=CLIENT_BUILD)
 
     @app.get("/canvas")
     def canvas_workspace():
+        denied = _redirect_if_workspace_blocked("v2_canvas_studio")
+        if denied:
+            return denied
         return render_template("canvas.html", build=CLIENT_BUILD)
 
     @app.get("/vault")
     def vault_workspace():
+        denied = _redirect_if_workspace_blocked("v2_vault_studio")
+        if denied:
+            return denied
         return render_template("vault.html", build=CLIENT_BUILD)
 
     @app.get("/health")
@@ -263,6 +298,7 @@ def create_app(root: Path = ROOT) -> Flask:
                        ai_mode=config.get("ai_mode", "disabled"),
                        wasm_viewer=bool(config.get("allow_wasm_viewer", False)),
                        max_ai_jobs=config.get("max_ai_jobs", 1),
+                       feature_flags=get_feature_flags(root),
                        queue={"max_waiting": config["max_queued_jobs"],
                               "max_wait_seconds": config["queue_wait_seconds"],
                               "max_heavy_jobs": config["max_heavy_jobs"],
@@ -272,6 +308,84 @@ def create_app(root: Path = ROOT) -> Flask:
                               "max_queued_upload_mb": config["max_queued_upload_mb"],
                               "heavy_operations": sorted(HEAVY_OPERATIONS)},
                        secure_transport=config["secure_transport"])
+
+    @app.get("/api/admin/session")
+    def admin_session_status():
+        if not session.get("eva_is_admin"):
+            return jsonify(is_admin=False, username="", nombre="")
+        return jsonify(
+            is_admin=True,
+            username=session.get("eva_admin_user", "admin"),
+            nombre=session.get("eva_admin_nombre", "ADMINISTRADOR"),
+        )
+
+    @app.post("/api/admin/login")
+    def admin_login():
+        data = request.get_json(silent=True) or {}
+        username = str(data.get("username") or "").strip()
+        password = str(data.get("password") or "")
+        ip = (request.remote_addr or "127.0.0.1").strip()
+        if not username or not password:
+            record_login_failure(ip, username)
+            return jsonify(ok=False, error="Ingrese usuario y contraseña de administrador."), 400
+        if is_login_rate_limited(ip, username):
+            resp = jsonify(ok=False, error="Demasiados intentos fallidos. Espere unos minutos.")
+            resp.status_code = 429
+            return resp
+        user = authenticate_admin(root, username, password)
+        if not user:
+            record_login_failure(ip, username)
+            return jsonify(ok=False, error="Credenciales de administrador inválidas."), 401
+        clear_login_failures(ip, username)
+        session.permanent = True
+        session["eva_is_admin"] = True
+        session["eva_admin_user"] = user["username"]
+        session["eva_admin_nombre"] = user["nombre_completo"]
+        return jsonify(
+            ok=True,
+            is_admin=True,
+            username=user["username"],
+            nombre=user["nombre_completo"],
+            feature_flags=get_feature_flags(root),
+        )
+
+    @app.post("/api/admin/logout")
+    def admin_logout():
+        session.clear()
+        return jsonify(ok=True, is_admin=False)
+
+    @app.get("/api/admin/features")
+    def admin_get_features():
+        if not session.get("eva_is_admin"):
+            return jsonify(error="Acceso restringido a administradores."), 401
+        return jsonify(ok=True, feature_flags=get_feature_flags(root))
+
+    @app.post("/api/admin/features")
+    def admin_update_features():
+        if not session.get("eva_is_admin"):
+            return jsonify(error="Acceso restringido a administradores."), 401
+        data = request.get_json(silent=True) or {}
+        reset_all = bool(data.get("reset_all"))
+        updates = data.get("updates")
+        if not reset_all and updates is None and "tool_id" in data:
+            updates = {
+                str(data.get("tool_id") or "").strip(): {
+                    "state": data.get("state", "enabled"),
+                    "note": data.get("note", ""),
+                }
+            }
+        if not reset_all and not isinstance(updates, dict):
+            return jsonify(error="Debe especificar tool_id/state, updates o reset_all."), 400
+        try:
+            saved = update_feature_flags(
+                root,
+                updates=updates,
+                reset_all=reset_all,
+                actor=str(session.get("eva_admin_user") or "admin"),
+            )
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        return jsonify(ok=True, feature_flags=saved)
 
     @app.get("/api/queue/<token>")
     def queue_status(token: str):
@@ -319,6 +433,9 @@ def create_app(root: Path = ROOT) -> Flask:
 
     @app.post("/api/copilot/chat")
     def copilot_chat():
+        blocked = get_blocked_feature_info(root, "eva_copilot")
+        if blocked:
+            return jsonify(error=blocked_error_message(blocked), feature_state=blocked["state"]), 503
         from engines.copilot_service import process_copilot_request
         prompt = request.form.get("prompt") or request.form.get("message") or ""
         if not prompt and request.is_json:
@@ -413,6 +530,13 @@ def create_app(root: Path = ROOT) -> Flask:
     def handle(operation: str):
         if operation not in OPERATIONS:
             return jsonify(error="Herramienta desconocida."), 404
+        blocked = get_blocked_feature_info(root, operation)
+        if blocked:
+            return jsonify(
+                error=blocked_error_message(blocked),
+                feature_state=blocked["state"],
+                feature_label=blocked["label"],
+            ), 503
         if not request.content_length or request.content_length > app.config["MAX_CONTENT_LENGTH"]:
             return jsonify(error="Carga vacia o superior al limite de entrada."), 413
         token = request.headers.get("X-PDF-Job", secrets.token_hex(16))

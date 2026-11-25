@@ -86,6 +86,107 @@ let busy = false, resultUrl = null, pageNumber = 1, pageCount = 1, previewImage 
 let pointerStart = null, viewController = null, previewFile = null;
 let sessionActive = false, sessionBaseName = "";
 let tooltipTimer = null, tooltipTargetCard = null;
+let featureFlags = {};
+let adminSession = { is_admin: false, username: "", nombre: "" };
+let adminFilterState = "all";
+let evaToastTimer = null;
+
+const LOCK_LABELS = {
+  development: "Función en desarrollo",
+  maintenance: "Función en Mantenimiento",
+};
+
+function getToolLockInfo(toolId) {
+  if (!toolId || !featureFlags || typeof featureFlags !== "object") return null;
+  const info = featureFlags[toolId];
+  if (!info || (info.state !== "development" && info.state !== "maintenance")) return null;
+  return {
+    state: info.state,
+    label: info.label || LOCK_LABELS[info.state] || "Función deshabilitada",
+    note: info.note || "",
+  };
+}
+
+function showEvaToast(message, isWarn = false) {
+  const el = $("eva-toast");
+  if (!el) return;
+  if (evaToastTimer) clearTimeout(evaToastTimer);
+  el.textContent = message;
+  el.classList.toggle("is-warn", Boolean(isWarn));
+  el.hidden = false;
+  evaToastTimer = setTimeout(() => {
+    el.hidden = true;
+    evaToastTimer = null;
+  }, 3800);
+}
+
+function notifyLockedTool(toolName, lockInfo) {
+  const label = lockInfo?.label || "Función deshabilitada";
+  const suffix = lockInfo?.note ? ` — ${lockInfo.note}` : "";
+  showEvaToast(`🔒 ${toolName}: ${label}${suffix}`, true);
+}
+
+function applyModuleLocks() {
+  // 1. Pestaña Edición múltiple
+  const multiTab = $("multi-edit-tab");
+  const multiLock = getToolLockInfo("multi_edit");
+  if (multiTab) {
+    multiTab.classList.toggle("is-locked", Boolean(multiLock));
+    multiTab.setAttribute("aria-disabled", multiLock ? "true" : "false");
+    multiTab.title = multiLock ? `${multiLock.label}${multiLock.note ? ": " + multiLock.note : ""}` : "";
+    multiTab.textContent = multiLock ? "🔒 Edición múltiple" : "Edición múltiple";
+  }
+
+  // 2. Copiloto IA Local
+  const copilotLock = getToolLockInfo("eva_copilot");
+  const copilotBox = $("eva-copilot-box");
+  const copilotLockedEl = $("eva-copilot-locked");
+  if (copilotLockedEl && copilotBox) {
+    if (copilotLock) {
+      copilotLockedEl.className = `eva-section-locked${copilotLock.state === "maintenance" ? " is-maintenance" : ""}`;
+      copilotLockedEl.replaceChildren();
+      const titleEl = document.createElement("strong");
+      titleEl.textContent = `🔒 Copiloto IA Local · ${copilotLock.label}`;
+      const descEl = document.createElement("span");
+      descEl.textContent = copilotLock.note || (copilotLock.state === "maintenance"
+        ? "El asistente Copiloto IA se encuentra temporalmente en mantenimiento por el administrador."
+        : "El asistente Copiloto IA se encuentra temporalmente en desarrollo.");
+      copilotLockedEl.append(titleEl, descEl);
+      copilotLockedEl.hidden = false;
+      copilotBox.hidden = true;
+    } else {
+      copilotLockedEl.hidden = true;
+      copilotBox.hidden = false;
+    }
+  }
+
+  // 3. Módulo Escritorio, cámara e impresión
+  const desktopLock = getToolLockInfo("desktop_tools");
+  const desktopActions = $("desktop-actions");
+  if (desktopLock && desktopActions) {
+    const notice = $("desktop-notice");
+    if (notice) notice.classList.remove("active");
+    const code = $("desktop-code");
+    if (code) code.textContent = desktopLock.state === "maintenance"
+      ? "EVA PDF ENTERPRISE / ESTADO: MANTENIMIENTO"
+      : "EVA PDF ENTERPRISE / ESTADO: DESARROLLO";
+    const heading = $("desktop-heading");
+    if (heading) heading.textContent = desktopLock.label;
+    const desc = $("construction-description");
+    if (desc) desc.textContent = desktopLock.note || (desktopLock.state === "maintenance"
+      ? "Este módulo se encuentra temporalmente en mantenimiento por el administrador."
+      : "Este módulo se encuentra temporalmente en desarrollo.");
+    desktopActions.disabled = true;
+    desktopActions.setAttribute("disabled", "");
+    desktopActions.classList.remove("enabled");
+    for (const btn of desktopActions.querySelectorAll("button")) {
+      btn.disabled = true;
+      btn.setAttribute("disabled", "");
+    }
+  } else if (!desktopLock && caps) {
+    applyDesktopCapabilities(caps);
+  }
+}
 const theme = localStorage.getItem("folio-theme");
 if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
 $("theme").addEventListener("click", () => {
@@ -174,15 +275,43 @@ function renderTools() {
   $("tool-grid").replaceChildren();
   const visible = tools.filter(t => (activeCategory === "all" || t.level === activeCategory) && normalized(t.name+" "+t.desc+" "+(t.detail||"")+" "+(t.keywords||"")+" "+(LEVEL_LABELS[t.level]||"")).includes(query));
   for (const tool of visible) {
+    const lockInfo = getToolLockInfo(tool.id);
     const card = document.createElement("button");
-    card.className = "tool-card"; card.dataset.category = tool.category; card.dataset.level = tool.level || "basic"; card.dataset.toolId = tool.id;
+    card.className = "tool-card" + (lockInfo ? ` is-locked is-locked--${lockInfo.state}` : "");
+    card.dataset.category = tool.category;
+    card.dataset.level = tool.level || "basic";
+    card.dataset.toolId = tool.id;
+    if (lockInfo) {
+      card.dataset.lockState = lockInfo.state;
+      card.setAttribute("aria-disabled", "true");
+    }
     const icon = document.createElement("span"); icon.className="tool-icon"; icon.textContent=tool.icon; icon.setAttribute("aria-hidden","true");
     const title = document.createElement("h3"); title.textContent=tool.name;
     const desc = document.createElement("p"); desc.textContent=tool.desc;
     const levelPill = document.createElement("span"); levelPill.className="tool-level"; levelPill.dataset.level=tool.level || "basic"; levelPill.textContent=LEVEL_LABELS[tool.level] || "Local";
-    const arrow = document.createElement("span"); arrow.className="card-arrow"; arrow.textContent="↗"; arrow.setAttribute("aria-hidden","true");
+    const arrow = document.createElement("span"); arrow.className="card-arrow"; arrow.textContent=lockInfo ? "🔒" : "↗"; arrow.setAttribute("aria-hidden","true");
+    if (lockInfo) {
+      const rail = document.createElement("span");
+      rail.className = "tool-lock-rail";
+      rail.setAttribute("aria-hidden", "true");
+      card.append(rail);
+    }
     card.append(icon, title, desc, levelPill, arrow);
-    if (unavailableInBackend(tool)) {
+    if (lockInfo) {
+      const lockBanner = document.createElement("div");
+      lockBanner.className = "tool-lock-banner";
+      const lockTitle = document.createElement("span");
+      lockTitle.className = "tool-lock-title";
+      lockTitle.textContent = (lockInfo.state === "maintenance" ? "🛠️ " : "🚧 ") + lockInfo.label;
+      lockBanner.append(lockTitle);
+      if (lockInfo.note) {
+        const lockNote = document.createElement("span");
+        lockNote.className = "tool-lock-note";
+        lockNote.textContent = lockInfo.note;
+        lockBanner.append(lockNote);
+      }
+      card.append(lockBanner);
+    } else if (unavailableInBackend(tool)) {
       const badge = document.createElement("span"); badge.className="badge"; badge.textContent="REINICIAR SERVIDOR"; card.append(badge);
     } else if (caps && tool.requires && !caps[tool.requires]) {
       const badge = document.createElement("span"); badge.className="badge"; badge.textContent="MOTOR PENDIENTE"; card.append(badge);
@@ -194,6 +323,11 @@ function renderTools() {
     card.addEventListener("blur", hideToolTooltip);
     card.addEventListener("click", () => {
       hideToolTooltip();
+      const activeLock = getToolLockInfo(tool.id);
+      if (activeLock) {
+        notifyLockedTool(tool.name, activeLock);
+        return;
+      }
       if (tool.workspaceUrl) {
         window.location.href = tool.workspaceUrl;
         return;
@@ -203,6 +337,7 @@ function renderTools() {
     $("tool-grid").append(card);
   }
   $("empty").hidden = visible.length > 0;
+  applyModuleLocks();
 }
 document.querySelectorAll(".filter").forEach(button => button.addEventListener("click", () => {
   if(button.id==="multi-edit-tab") {
@@ -219,6 +354,11 @@ document.querySelectorAll(".filter").forEach(button => button.addEventListener("
 }));
 $("search").addEventListener("input", renderTools);
 function startMultiEdit() {
+  const multiLock = getToolLockInfo("multi_edit");
+  if (multiLock) {
+    notifyLockedTool("Edición múltiple", multiLock);
+    return;
+  }
   if($("workspace").open) return;
   activeCategory="all";
   sessionActive=true;
@@ -248,14 +388,18 @@ function renderSessionTools() {
   if(!sessionActive)return;
   $("session-document").textContent=files[0]?.name || (sessionBaseName ? `${sessionBaseName}.pdf` : "Sin PDF cargado");
   for(const tool of tools.filter(item=>SESSION_TOOL_IDS.has(item.id))) {
+    const lockInfo = getToolLockInfo(tool.id);
     const button=document.createElement("button");
     button.type="button";
     button.className="session-tool";
     button.classList.toggle("active",tool.id===current.id);
-    button.disabled=busy;
+    button.disabled=busy || Boolean(lockInfo);
     button.setAttribute("aria-current",tool.id===current.id?"page":"false");
-    button.textContent=`${tool.icon} ${tool.name}`;
-    button.addEventListener("click",()=>openTool(tool,{keepSessionFile:true}));
+    button.textContent=lockInfo ? `🔒 ${tool.name} (${lockInfo.label})` : `${tool.icon} ${tool.name}`;
+    button.addEventListener("click",()=>{
+      if (lockInfo) { notifyLockedTool(tool.name, lockInfo); return; }
+      openTool(tool,{keepSessionFile:true});
+    });
     list.append(button);
   }
 }
@@ -291,6 +435,11 @@ document.addEventListener("DOMContentLoaded",async()=>{
   addFiles([file]);
 });
 function openTool(tool,{keepSessionFile=false}={}) {
+  const lockInfo = getToolLockInfo(tool?.id);
+  if (lockInfo) {
+    notifyLockedTool(tool.name || tool.id, lockInfo);
+    return;
+  }
   if(!keepSessionFile) {
     files=[];
     sessionActive=false;
@@ -689,7 +838,9 @@ function renderEdits() {
 window.addEventListener("pagehide",()=>{clearResult();files=[];edits=[];previewImage=null;previewFile=null;stopCamera();clearSignature();});
 renderTools();
 fetch("/api/capabilities").then(response=>{if(!response.ok)throw new Error();return response.json();}).then(data=>{
-  caps=data; const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente",data.addons?.nmt_offline?"Traducción ES↔EN offline lista":"Traducción NMT pendiente"];
+  caps=data;
+  featureFlags = (data && data.feature_flags && typeof data.feature_flags === "object") ? data.feature_flags : {};
+  const engines=[data.office?"Office listo":"Office pendiente",data.ocr?"OCR español/inglés listo":"OCR pendiente",data.addons?.nmt_offline?"Traducción ES↔EN offline lista":"Traducción NMT pendiente"];
   if (data.scanners && data.scanners.available) engines.push(`Escáner listo (${data.scanners.count})`);
   const hasStaleTools=tools.some(unavailableInBackend);
   const isLanHttp = location.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(location.hostname);
@@ -697,7 +848,15 @@ fetch("/api/capabilities").then(response=>{if(!response.ok)throw new Error();ret
     (hasStaleTools ? " · ⚠ Servidor en memoria desactualizado: reinicia 'servidor local.bat' y recarga (Ctrl+F5)." : "") +
     (isLanHttp ? " · ⚠ Acceso LAN sin cifrar (HTTP): active HTTPS/TLS en el servidor para proteger contraseñas y documentos." : "");
   renderTools();
+  updateAdminTriggerBadge();
   applyDesktopCapabilities(data);
+  applyModuleLocks();
+  const blockedParam = new URLSearchParams(window.location.search).get("blocked");
+  if (blockedParam) {
+    const bLock = getToolLockInfo(blockedParam);
+    const bTool = tools.find(x => x.id === blockedParam);
+    if (bLock) notifyLockedTool(bTool ? bTool.name : blockedParam, bLock);
+  }
   if($("workspace").open && current) {
     $("process").disabled=Boolean(current.requires && !caps[current.requires]) || unavailableInBackend(current);
     $("upload-limits").textContent=uploadLimits(current);
@@ -1125,6 +1284,12 @@ $("desktop-print")?.addEventListener("click", async () => {
 });
 
 window.openToolById = function(toolId, file) {
+  const lockInfo = getToolLockInfo(toolId);
+  if (lockInfo) {
+    const match = toolId === "multi_edit" ? MULTI_EDIT_START : tools.find(x => x.id === toolId);
+    notifyLockedTool(match ? match.name : toolId, lockInfo);
+    return true;
+  }
   if (toolId === "multi_edit") {
     startMultiEdit();
     if (file) {
@@ -1150,6 +1315,7 @@ window.openToolById = function(toolId, file) {
 };
 
 window.getEvaToolsCatalog = function() {
+  const multiLock = getToolLockInfo(MULTI_EDIT_START.id);
   const multiItem = {
     id: MULTI_EDIT_START.id,
     name: MULTI_EDIT_START.name,
@@ -1164,20 +1330,360 @@ window.getEvaToolsCatalog = function() {
     workspaceUrl: null,
     unavailable: false,
     pendingMotor: false,
+    lockedState: multiLock ? multiLock.state : null,
+    lockedLabel: multiLock ? multiLock.label : "",
+    lockedNote: multiLock ? multiLock.note : "",
   };
-  return [multiItem].concat(tools.map((t) => ({
+  return [multiItem].concat(tools.map((t) => {
+    const tLock = getToolLockInfo(t.id);
+    return {
+      id: t.id,
+      name: t.name,
+      icon: t.icon,
+      category: t.category,
+      level: t.level || "basic",
+      levelLabel: LEVEL_LABELS[t.level] || "Local",
+      desc: t.desc || "",
+      detail: t.detail || "",
+      keywords: t.keywords || "",
+      io: t.io || "",
+      workspaceUrl: t.workspaceUrl || null,
+      unavailable: Boolean(unavailableInBackend(t)),
+      pendingMotor: Boolean(caps && t.requires && !caps[t.requires]),
+      lockedState: tLock ? tLock.state : null,
+      lockedLabel: tLock ? tLock.label : "",
+      lockedNote: tLock ? tLock.note : "",
+    };
+  }));
+};
+
+// =========================================================================
+// CONSOLA ADMINISTRATIVA: HABILITAR / INHABILITAR FUNCIONES
+// =========================================================================
+function getAllManagedFeatures() {
+  const extraModules = [
+    { id: "multi_edit", name: "Edición múltiple", icon: "✎", levelLabel: "Módulo de sesión" },
+    { id: "eva_copilot", name: "Copiloto IA Local", icon: "✦", levelLabel: "Asistente IA" },
+    { id: "desktop_tools", name: "Escritorio, cámara e impresión", icon: "🖥️", levelLabel: "Módulo local" },
+  ];
+  return tools.map((t) => ({
     id: t.id,
     name: t.name,
     icon: t.icon,
-    category: t.category,
-    level: t.level || "basic",
     levelLabel: LEVEL_LABELS[t.level] || "Local",
-    desc: t.desc || "",
-    detail: t.detail || "",
-    keywords: t.keywords || "",
-    io: t.io || "",
-    workspaceUrl: t.workspaceUrl || null,
-    unavailable: Boolean(unavailableInBackend(t)),
-    pendingMotor: Boolean(caps && t.requires && !caps[t.requires]),
-  })));
-};
+  })).concat(extraModules);
+}
+
+function updateAdminTriggerBadge() {
+  const btn = $("eva-admin-btn");
+  if (!btn) return;
+  const blockedCount = Object.keys(featureFlags || {}).length;
+  btn.classList.toggle("is-admin", Boolean(adminSession.is_admin));
+  if (adminSession.is_admin) {
+    btn.textContent = blockedCount > 0 ? `🛡️ Admin (${blockedCount})` : "🛡️ Admin";
+    btn.title = `Sesión administrativa activa (${adminSession.nombre || adminSession.username}) · Gestionar funciones`;
+  } else {
+    btn.textContent = "🔐 Admin";
+    btn.title = "Acceso Administrador · Habilitar o inhabilitar funciones";
+  }
+}
+
+async function checkAdminSession() {
+  try {
+    const res = await fetch("/api/admin/session", { credentials: "same-origin" });
+    if (res.ok) {
+      const data = await res.json();
+      adminSession = {
+        is_admin: Boolean(data.is_admin),
+        username: data.username || "",
+        nombre: data.nombre || "",
+      };
+      updateAdminTriggerBadge();
+    }
+  } catch (_) {}
+}
+
+function renderAdminFeatureList() {
+  const listEl = $("eva-admin-list");
+  const statsEl = $("eva-admin-stats");
+  const metaEl = $("eva-admin-user-meta");
+  if (!listEl || !statsEl) return;
+
+  if (metaEl) {
+    metaEl.textContent = `Sesión activa: ${adminSession.nombre || adminSession.username || "ADMINISTRADOR"} · Los cambios se aplican de inmediato para todos los usuarios.`;
+  }
+
+  const allItems = getAllManagedFeatures();
+  let devCount = 0;
+  let maintCount = 0;
+  for (const item of allItems) {
+    const lock = getToolLockInfo(item.id);
+    if (lock?.state === "development") devCount += 1;
+    else if (lock?.state === "maintenance") maintCount += 1;
+  }
+  const enabledCount = allItems.length - devCount - maintCount;
+
+  statsEl.replaceChildren();
+  const makeStat = (text, extraCls = "") => {
+    const s = document.createElement("span");
+    s.className = "eva-admin-stat" + (extraCls ? " " + extraCls : "");
+    s.textContent = text;
+    return s;
+  };
+  statsEl.append(
+    makeStat(`Total: ${allItems.length}`),
+    makeStat(`✅ Habilitadas: ${enabledCount}`),
+    makeStat(`🚧 En desarrollo: ${devCount}`, "eva-admin-stat--dev"),
+    makeStat(`🛠️ En Mantenimiento: ${maintCount}`, "eva-admin-stat--maint")
+  );
+
+  const q = normalized(($("eva-admin-search")?.value || "").trim());
+  const filtered = allItems.filter((item) => {
+    const lock = getToolLockInfo(item.id);
+    const st = lock ? lock.state : "enabled";
+    if (adminFilterState !== "all" && st !== adminFilterState) return false;
+    if (!q) return true;
+    return normalized(`${item.name} ${item.id} ${item.levelLabel}`).includes(q);
+  });
+
+  listEl.replaceChildren();
+  if (!filtered.length) {
+    const empty = document.createElement("p");
+    empty.className = "eva-admin-desc";
+    empty.textContent = "No hay funciones que coincidan con el filtro seleccionado.";
+    listEl.append(empty);
+    return;
+  }
+
+  for (const item of filtered) {
+    const lock = getToolLockInfo(item.id);
+    const currentState = lock ? lock.state : "enabled";
+    const row = document.createElement("div");
+    row.className = "eva-admin-row" + (lock ? ` is-${lock.state}` : "");
+
+    const info = document.createElement("div");
+    info.className = "eva-admin-row-info";
+    const ico = document.createElement("span");
+    ico.className = "eva-admin-row-icon";
+    ico.textContent = item.icon;
+    ico.setAttribute("aria-hidden", "true");
+    const txt = document.createElement("div");
+    txt.className = "eva-admin-row-text";
+    const nameEl = document.createElement("strong");
+    nameEl.textContent = item.name;
+    const subEl = document.createElement("small");
+    subEl.textContent = `${item.levelLabel} · ${item.id}`;
+    txt.append(nameEl, subEl);
+    info.append(ico, txt);
+
+    const sel = document.createElement("select");
+    sel.className = "eva-admin-select";
+    sel.setAttribute("aria-label", `Estado de ${item.name}`);
+    [
+      ["enabled", "✅ Habilitada"],
+      ["development", "🚧 Función en desarrollo"],
+      ["maintenance", "🛠️ Función en Mantenimiento"],
+    ].forEach(([val, lbl]) => {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = lbl;
+      if (val === currentState) opt.selected = true;
+      sel.append(opt);
+    });
+
+    const noteInp = document.createElement("input");
+    noteInp.type = "text";
+    noteInp.className = "eva-admin-note";
+    noteInp.maxLength = 180;
+    noteInp.placeholder = "Nota opcional (ej. ajuste de motor…)";
+    noteInp.value = lock ? lock.note : "";
+    noteInp.disabled = currentState === "enabled";
+    noteInp.setAttribute("aria-label", `Nota de estado para ${item.name}`);
+
+    const persistRow = async () => {
+      const nextState = sel.value;
+      noteInp.disabled = nextState === "enabled";
+      try {
+        const res = await fetch("/api/admin/features", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            "X-PDF-Client": BUILD,
+          },
+          body: JSON.stringify({
+            tool_id: item.id,
+            state: nextState,
+            note: nextState === "enabled" ? "" : noteInp.value.trim(),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showEvaToast(data.error || "No se pudo guardar el estado.", true);
+          if (res.status === 401) {
+            adminSession = { is_admin: false, username: "", nombre: "" };
+            updateAdminTriggerBadge();
+            $("eva-admin-dialog")?.close();
+          }
+          return;
+        }
+        featureFlags = data.feature_flags || {};
+        updateAdminTriggerBadge();
+        renderTools();
+        renderAdminFeatureList();
+        const labelTxt = nextState === "enabled" ? "Habilitada" : LOCK_LABELS[nextState];
+        showEvaToast(`${item.name}: ${labelTxt}`);
+      } catch (_) {
+        showEvaToast("Error de conexión al guardar la configuración.", true);
+      }
+    };
+
+    sel.addEventListener("change", () => { void persistRow(); });
+    noteInp.addEventListener("change", () => {
+      if (sel.value !== "enabled") void persistRow();
+    });
+
+    row.append(info, sel, noteInp);
+    listEl.append(row);
+  }
+}
+
+async function openAdminModal() {
+  await checkAdminSession();
+  if (adminSession.is_admin) {
+    try {
+      const res = await fetch("/api/admin/features", { credentials: "same-origin" });
+      if (res.ok) {
+        const data = await res.json();
+        featureFlags = data.feature_flags || {};
+      }
+    } catch (_) {}
+    renderAdminFeatureList();
+    const dlg = $("eva-admin-dialog");
+    if (dlg && !dlg.open) dlg.showModal();
+  } else {
+    const errBox = $("eva-admin-login-error");
+    if (errBox) { errBox.hidden = true; errBox.textContent = ""; }
+    if ($("eva-admin-password")) $("eva-admin-password").value = "";
+    const loginDlg = $("eva-admin-login-dialog");
+    if (loginDlg && !loginDlg.open) {
+      loginDlg.showModal();
+      $("eva-admin-username")?.focus();
+    }
+  }
+}
+
+$("eva-admin-btn")?.addEventListener("click", () => { void openAdminModal(); });
+$("eva-admin-login-close")?.addEventListener("click", () => $("eva-admin-login-dialog")?.close());
+$("eva-admin-login-cancel")?.addEventListener("click", () => $("eva-admin-login-dialog")?.close());
+$("eva-admin-login-dialog")?.addEventListener("click", (e) => {
+  if (e.target === $("eva-admin-login-dialog")) $("eva-admin-login-dialog").close();
+});
+
+$("eva-admin-login-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errBox = $("eva-admin-login-error");
+  const submitBtn = $("eva-admin-login-submit");
+  const username = ($("eva-admin-username")?.value || "").trim();
+  const password = $("eva-admin-password")?.value || "";
+  if (errBox) { errBox.hidden = true; errBox.textContent = ""; }
+  if (submitBtn) submitBtn.disabled = true;
+  try {
+    const res = await fetch("/api/admin/login", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-PDF-Client": BUILD,
+      },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      if (errBox) {
+        errBox.textContent = data.error || "Credenciales de administrador inválidas.";
+        errBox.hidden = false;
+      }
+      return;
+    }
+    adminSession = {
+      is_admin: true,
+      username: data.username || username,
+      nombre: data.nombre || username.toUpperCase(),
+    };
+    featureFlags = data.feature_flags || featureFlags;
+    updateAdminTriggerBadge();
+    renderTools();
+    $("eva-admin-login-dialog")?.close();
+    renderAdminFeatureList();
+    $("eva-admin-dialog")?.showModal();
+    showEvaToast(`Sesión de administrador iniciada (${adminSession.nombre}).`);
+  } catch (_) {
+    if (errBox) {
+      errBox.textContent = "No fue posible contactar el servidor local.";
+      errBox.hidden = false;
+    }
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+});
+
+$("eva-admin-close")?.addEventListener("click", () => $("eva-admin-dialog")?.close());
+$("eva-admin-done")?.addEventListener("click", () => $("eva-admin-dialog")?.close());
+$("eva-admin-dialog")?.addEventListener("click", (e) => {
+  if (e.target === $("eva-admin-dialog")) $("eva-admin-dialog").close();
+});
+$("eva-admin-search")?.addEventListener("input", renderAdminFeatureList);
+$("eva-admin-filters")?.querySelectorAll("[data-admin-filter]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    adminFilterState = btn.dataset.adminFilter || "all";
+    $("eva-admin-filters").querySelectorAll("[data-admin-filter]").forEach((item) => {
+      const isAct = item === btn;
+      item.classList.toggle("active", isAct);
+      item.setAttribute("aria-pressed", String(isAct));
+    });
+    renderAdminFeatureList();
+  });
+});
+
+$("eva-admin-reset-all")?.addEventListener("click", async () => {
+  try {
+    const res = await fetch("/api/admin/features", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-PDF-Client": BUILD,
+      },
+      body: JSON.stringify({ reset_all: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showEvaToast(data.error || "No se pudo restablecer el estado.", true);
+      return;
+    }
+    featureFlags = data.feature_flags || {};
+    updateAdminTriggerBadge();
+    renderTools();
+    renderAdminFeatureList();
+    showEvaToast("Todas las funciones fueron habilitadas.");
+  } catch (_) {
+    showEvaToast("Error de conexión al habilitar todas las funciones.", true);
+  }
+});
+
+$("eva-admin-logout")?.addEventListener("click", async () => {
+  try {
+    await fetch("/api/admin/logout", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "X-PDF-Client": BUILD },
+    });
+  } catch (_) {}
+  adminSession = { is_admin: false, username: "", nombre: "" };
+  updateAdminTriggerBadge();
+  $("eva-admin-dialog")?.close();
+  showEvaToast("Sesión administrativa cerrada.");
+});
+
+void checkAdminSession();

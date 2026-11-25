@@ -432,17 +432,22 @@
       fabResults.innerHTML = filtered
         .map((tool, idx) => {
           const activeCls = idx === fabHighlightedIndex ? " is-highlighted" : "";
-          const badgeHtml = tool.unavailable
-            ? `<span class="copilot-fab-item-warn">Reiniciar servidor</span>`
-            : tool.pendingMotor
-              ? `<span class="copilot-fab-item-warn">Motor pendiente</span>`
-              : "";
+          const lockedCls = tool.lockedState ? ` is-locked is-locked--${tool.lockedState}` : "";
+          const badgeHtml = tool.lockedState
+            ? `<span class="copilot-fab-item-warn copilot-fab-item-locked">🔒 ${escapeHtml(tool.lockedLabel || "Función deshabilitada")}</span>`
+            : tool.unavailable
+              ? `<span class="copilot-fab-item-warn">Reiniciar servidor</span>`
+              : tool.pendingMotor
+                ? `<span class="copilot-fab-item-warn">Motor pendiente</span>`
+                : "";
+          const arrowChar = tool.lockedState ? "🔒" : "↗";
           return `
             <button
               type="button"
               role="option"
               aria-selected="${idx === fabHighlightedIndex ? "true" : "false"}"
-              class="copilot-fab-item${activeCls}"
+              aria-disabled="${tool.lockedState ? "true" : "false"}"
+              class="copilot-fab-item${activeCls}${lockedCls}"
               data-fab-tool-id="${escapeHtml(tool.id)}"
               data-fab-index="${idx}"
             >
@@ -452,10 +457,10 @@
                   <strong>${escapeHtml(tool.name)}</strong>
                   <span class="copilot-fab-item-level" data-level="${escapeHtml(tool.level)}">${escapeHtml(tool.levelLabel)}</span>
                 </span>
-                <span class="copilot-fab-item-desc">${escapeHtml(tool.desc)}</span>
+                <span class="copilot-fab-item-desc">${escapeHtml(tool.lockedNote || tool.desc)}</span>
                 ${badgeHtml}
               </span>
-              <span class="copilot-fab-item-arrow" aria-hidden="true">↗</span>
+              <span class="copilot-fab-item-arrow" aria-hidden="true">${arrowChar}</span>
             </button>
           `;
         })

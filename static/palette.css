@@ -382,3 +382,438 @@ dialog::backdrop, .acro-dialog::backdrop { background: var(--backdrop); }
 @media (max-width: 520px) {
   .topbar .brand-suffix { display: none; }
 }
+
+/* =============================================================================
+   CONTROL ADMINISTRATIVO DE FUNCIONES Y TARJETAS BLOQUEADAS
+   ============================================================================= */
+
+.eva-admin-trigger {
+  width: auto;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.eva-admin-trigger.is-admin {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--accent);
+}
+
+/* Tarjeta bloqueada: Función en desarrollo / Función en Mantenimiento */
+.tool-card.is-locked {
+  position: relative;
+  overflow: hidden;
+  cursor: not-allowed;
+  opacity: 0.92;
+  background-image: none;
+}
+.tool-card.is-locked--development {
+  border-color: #f59e0b;
+  border-top-color: #f59e0b;
+}
+.tool-card.is-locked--maintenance {
+  border-color: #ef4444;
+  border-top-color: #ef4444;
+}
+.tool-card.is-locked:hover,
+.tool-card.is-locked:focus-visible {
+  transform: none;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.tool-card.is-locked .tool-icon,
+.tool-card.is-locked h3,
+.tool-card.is-locked p,
+.tool-card.is-locked .tool-level {
+  opacity: 0.52;
+}
+.tool-lock-rail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 7px;
+  pointer-events: none;
+}
+.tool-card.is-locked--development .tool-lock-rail {
+  background: repeating-linear-gradient(135deg, #f9bb2c 0 10px, #141018 10px 20px);
+}
+.tool-card.is-locked--maintenance .tool-lock-rail {
+  background: repeating-linear-gradient(135deg, #ef4444 0 10px, #141018 10px 20px);
+}
+.tool-lock-banner {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid transparent;
+  width: 100%;
+}
+.tool-card.is-locked--development .tool-lock-banner {
+  background: rgba(249, 187, 44, 0.14);
+  border-color: rgba(249, 187, 44, 0.55);
+  color: #b45309;
+}
+:root[data-theme=dark] .tool-card.is-locked--development .tool-lock-banner {
+  background: rgba(249, 187, 44, 0.16);
+  color: #fde68a;
+}
+.tool-card.is-locked--maintenance .tool-lock-banner {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #b91c1c;
+}
+:root[data-theme=dark] .tool-card.is-locked--maintenance .tool-lock-banner {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+}
+.tool-lock-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tool-lock-note {
+  font-size: 11px;
+  opacity: 0.9;
+  line-height: 1.35;
+}
+.filter.is-locked {
+  opacity: 0.72;
+  border: 1px dashed #f59e0b;
+}
+.eva-section-locked {
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid #f59e0b;
+  background: var(--warning-bg);
+  color: var(--warning);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.eva-section-locked.is-maintenance {
+  border-color: #ef4444;
+  background: var(--error-soft);
+  color: var(--error);
+}
+.eva-section-locked[hidden] {
+  display: none !important;
+}
+.eva-section-locked strong {
+  font-size: 15px;
+}
+.eva-section-locked span {
+  font-size: 13px;
+}
+.copilot-fab-item.is-locked {
+  opacity: 0.74;
+}
+.copilot-fab-item-locked {
+  font-weight: 700;
+}
+
+/* Modales administrativos responsivos (regla global del workspace) */
+.eva-admin-dialog {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  width: min(920px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+.eva-admin-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.eva-admin-login-dialog {
+  width: min(460px, calc(100vw - 24px));
+}
+.eva-admin-dialog-inner {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+.eva-admin-head,
+.eva-admin-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px 20px;
+  background: var(--soft);
+}
+.eva-admin-head {
+  border-bottom: 1px solid var(--border);
+}
+.eva-admin-head h2 {
+  margin: 4px 0 0;
+  font-size: 18px;
+}
+.eva-admin-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.eva-admin-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.eva-admin-controls {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.eva-admin-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.eva-admin-stat {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--soft);
+  color: var(--text);
+}
+.eva-admin-stat--dev {
+  border-color: rgba(245, 158, 11, 0.6);
+  color: var(--warning);
+}
+.eva-admin-stat--maint {
+  border-color: rgba(239, 68, 68, 0.6);
+  color: var(--error);
+}
+.eva-admin-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.eva-admin-search {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.eva-admin-filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.eva-admin-pill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.eva-admin-pill.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.eva-admin-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.eva-admin-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.eva-admin-error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--error);
+  background: var(--error-soft);
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 600;
+}
+.eva-admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.eva-admin-field input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.eva-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.eva-admin-row {
+  display: grid;
+  grid-template-columns: minmax(min(220px, 100%), 1.3fr) minmax(min(180px, 100%), 215px) minmax(min(160px, 100%), 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.eva-admin-row.is-development {
+  border-left: 4px solid #f59e0b;
+}
+.eva-admin-row.is-maintenance {
+  border-left: 4px solid #ef4444;
+}
+.eva-admin-row-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.eva-admin-row-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--soft);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  font-size: 15px;
+}
+.eva-admin-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.eva-admin-row-text strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.eva-admin-row-text small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.eva-admin-select,
+.eva-admin-note {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.eva-admin-foot {
+  border-top: 1px solid var(--border);
+  justify-content: flex-end;
+}
+.eva-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 22px;
+  z-index: 120;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 11px 16px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  font-weight: 600;
+}
+.eva-toast.is-warn {
+  border-color: #f59e0b;
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.eva-toast[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 900px) {
+  .eva-admin-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .eva-admin-row-info {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .eva-admin-dialog,
+  .eva-admin-login-dialog {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 20px);
+  }
+  .eva-admin-dialog-inner {
+    max-height: calc(100dvh - 20px);
+  }
+  .eva-admin-head,
+  .eva-admin-controls,
+  .eva-admin-body,
+  .eva-admin-foot {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .eva-admin-row {
+    grid-template-columns: 1fr;
+  }
+  .eva-admin-foot .primary,
+  .eva-admin-foot .secondary,
+  .eva-admin-head-actions .secondary {
+    width: 100%;
+    text-align: center;
+  }
+}
